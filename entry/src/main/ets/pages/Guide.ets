@@ -4,6 +4,7 @@ import { AppStorageV2 } from "@kit.ArkUI"
 
 @ComponentV2
 export struct Guide {
+  @Local pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
   @Local randomIdx: RandomNum = AppStorageV2.connect(RandomNum, 'dailyRand', () => new RandomNum())!
 
   @Builder
@@ -46,7 +47,7 @@ export struct Guide {
           .fontSize(25)
           .fontWeight(FontWeight.Medium)
           .fontColor('#fff')
-        Search({placeholder: '搜索SCP编号、名称或描述'})
+        Search({placeholder: '搜索SCP编号、名称或描述…'})
           .searchIcon({src: $r('app.media.search')})
           .placeholderColor(Color.Gray)
           .placeholderFont({ size: 16, weight: FontWeight.Normal })
@@ -60,17 +61,18 @@ export struct Guide {
 
         // 今日推荐
         Column({space: 15}) {
-          Row({space: 5}) {
+          Row({space: 10}) {
             Image($r('app.media.star'))
               .fillColor('#ffddb333')
               .width(20)
             Text('今日推荐 SCP')
               .fontSize(18)
               .fontColor('#fff')
+              .fontWeight(FontWeight.Medium)
           }
           .width('100%')
           .justifyContent(FlexAlign.Start)
-          .padding({bottom: 15})
+          .padding({bottom: 15, top: 10})
           // this.dailyCard(mockSCPs[this.randomIdx.getNum()])  // 不刷新！无法追踪内部状态！
           // dailyCard
           // TODO: 详情页跳转
@@ -85,6 +87,7 @@ export struct Guide {
                 Text(mockSCPs[this.randomIdx.getNum()].number)
                   .fontColor('#ff4444')
                   .fontSize(14)
+                  .fontWeight(FontWeight.Bold)
                 Text(mockSCPs[this.randomIdx.getNum()].objectClass)
                   .border({radius: 5, width: 0.8, color: '#ee717182'})
                   .fontWeight(FontWeight.Bold)
@@ -95,6 +98,7 @@ export struct Guide {
               Text(mockSCPs[this.randomIdx.getNum()].title)
                 .fontColor('#fff')
                 .fontSize(18)
+                .fontWeight(FontWeight.Bold)
               Text(mockSCPs[this.randomIdx.getNum()].description)
                 .fontColor('#a0a0a0')
                 .fontSize(14)
@@ -106,8 +110,11 @@ export struct Guide {
           }
           .alignItems(VerticalAlign.Top)
           .width('100%')
-          .onClick(() => console.log('random SCP_objs'))
-          .padding({ bottom: 15 , left: 10, right: 10})
+          // .onClick(() => console.log('random SCP_objs'))
+          .padding({ bottom: 10 , left: 10, right: 10})
+          .onClick(() => {
+            this.pathStack.pushPathByName('scpObjDetail', null, false)
+          })
         }
         .margin({top: 10})
         .padding(15)
@@ -154,11 +161,12 @@ export struct Guide {
                 .padding({top: 3, bottom: 3, left: 6, right: 6})
             }
             .width('100%')
-            Column({space: 10}) {
+            Column({space: 15}) {
               Row({space: 5}) {
                 Text(item.number)
                   .fontColor('#ff4444')
                   .fontSize(14)
+                  .fontWeight(FontWeight.Bold)
                 Text(`Series ${item.series.toString()}`)
                   .fontColor('#a0a0a0')
                   .fontSize(12)
@@ -168,6 +176,7 @@ export struct Guide {
                 .fontColor('#fff')
                 .fontSize(18)
                 .width('100%')
+                .fontWeight(FontWeight.Bold)
               Text(item.description)
                 .width('100%')
                 .fontColor('#a0a0a0')
@@ -178,11 +187,11 @@ export struct Guide {
                 ForEach(item.tags, (tag: string, index: number) => {
                   Text(index < 3 ? tag : `+${item.tags.length-3}`)
                     .backgroundColor('#ff282525')
-                    .borderRadius(10)
+                    .borderRadius(6)
                     .fontColor('#fff')
-                    .fontSize(12)
+                    .fontSize(14)
                     .fontWeight(FontWeight.Bold)
-                    .padding({left: 15, right: 15, top: 5, bottom: 5})
+                    .padding({left: 12, right: 12, top: 5, bottom: 5})
                 })
               }.width('100%')
             }
@@ -191,8 +200,8 @@ export struct Guide {
           }
           .width('100%')
           .backgroundColor('#1e1e1e')
-          .borderRadius(20)
           .justifyContent(FlexAlign.Start)
+          .border({radius: 10, width: 0.5, color: '#ee717182'})
         })
       }
       .padding({left: 25, right: 25})

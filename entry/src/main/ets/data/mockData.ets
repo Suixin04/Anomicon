@@ -120,6 +120,6 @@ export const mockTales: Tale[] = [
 我需要帮助。但这意味着我必须用通讯器呼叫支援，这意味着我必须移开视线...`,
     datePublished: '2008-07-30',
     tags: ['收容失效', '紧急', '雕像'],
-    relatedSCPs: ['SCP-173']
+    relatedSCPs: ['SCP-173', 'SCP-XXX']
   }
 ];
