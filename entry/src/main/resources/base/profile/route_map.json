@@ -1,0 +1,12 @@
+{
+  "routerMap": [
+    {
+      "name": "Homepage",
+      "pageSourceFile": "src/main/ets/pages/Homepage.ets",
+      "buildFunction": "homepageBuilder",
+      "data": {
+        "description": "this is Homepage"
+      }
+    }
+  ]
+}

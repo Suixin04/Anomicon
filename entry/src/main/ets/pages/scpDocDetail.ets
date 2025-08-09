@@ -1,5 +1,5 @@
 @ComponentV2
-export struct Story {
+export struct scpDocDetail {
   build() {
 
   }
