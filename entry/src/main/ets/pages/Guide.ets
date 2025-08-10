@@ -212,13 +212,15 @@ export struct Guide {
               // 标签列表
               Row({space: 8}) {
                 ForEach(item.tags, (tag: string, index: number) => {
-                  Text(index < 3 ? tag : `+${item.tags.length-3}`)
-                    .backgroundColor('#ff282525')
-                    .borderRadius(6)
-                    .fontColor('#fff')
-                    .fontSize(14)
-                    .fontWeight(FontWeight.Bold)
-                    .padding({left: 12, right: 12, top: 5, bottom: 5})
+                  if (index <= 3) {
+                    Text(index < 3 ? tag : `+${item.tags.length-3}`)
+                      .backgroundColor('#ff282525')
+                      .borderRadius(6)
+                      .fontColor('#fff')
+                      .fontSize(14)
+                      .fontWeight(FontWeight.Bold)
+                      .padding({left: 12, right: 12, top: 5, bottom: 5})
+                  }
                 })
               }.width('100%')
             }
