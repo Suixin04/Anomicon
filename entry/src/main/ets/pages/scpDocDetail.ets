@@ -34,9 +34,9 @@ function cusTitle(tale: Tale) {
 @Entry
 @ComponentV2
 struct scpDocDetail {
-  // 导航路径栈
+  // 导航路径栈，用于页面导航
   pathStack: NavPathStack = new NavPathStack();
-  // 当前显示的故事对象
+  // 当前显示的故事对象，默认为第一个故事
   @Local tale: Tale = mockTales[0];
 
   build() {
@@ -76,6 +76,7 @@ struct scpDocDetail {
             }
             .width('100%')
             .margin({bottom: 10})
+            // 如果存在相关SCP项目，则显示相关SCP列表
             if (this.tale.relatedSCPs.length > 0) {
               Row() {
                 Text('相关SCP:')
@@ -98,7 +99,9 @@ struct scpDocDetail {
                   .borderRadius(6)
                   .padding({left: 6, right: 6, top: 5, bottom: 5})
                   .margin({right: 3, bottom: 3})
+                  // 点击相关SCP项目可跳转到对应的SCP详情页
                   .onClick(() => {
+                    // 根据SCP编号查找对应的SCP对象
                     this.pathStack.pushPathByName('scpObjDetail', mockSCPs.find(item => item.number == scp), false)
                   })
                 })

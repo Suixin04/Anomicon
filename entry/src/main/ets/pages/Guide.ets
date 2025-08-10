@@ -5,14 +5,17 @@ import { AppStorageV2 } from "@kit.ArkUI"
 // SCP图鉴页面组件
 @ComponentV2
 export struct Guide {
-  // 导航路径栈
+  // 导航路径栈，用于页面跳转
   @Local pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
   // 随机数，用于生成每日推荐SCP项目
   @Local randomIdx: RandomNum = AppStorageV2.connect(RandomNum, 'dailyRand', () => new RandomNum())!
 
+  // SCP数据源
   private data: SCPSource = new SCPSource()
 
+  // 组件即将显示时的处理函数
   aboutToAppear(): void {
+    // 将所有SCP项目添加到数据源中
     for(let i = 0; i < mockSCPs.length; i++){
       this.data.pushData(mockSCPs[i])
     }
@@ -60,13 +63,14 @@ export struct Guide {
 
   build() {
     List({space: 20}) {
+      // 页面标题
       ListItem() {
         Text('SCP 基金会')
           .fontSize(25)
           .fontWeight(FontWeight.Medium)
           .fontColor('#fff')
       }
-        // 页面标题
+      .width('100%')
 
         // 搜索框
       ListItem() {
@@ -100,10 +104,7 @@ export struct Guide {
 
           // 推荐SCP项目卡片
           Row({ space: 15 }) {
-            // Image(mockSCPs[this.randomIdx.getNum()].image)
-            //   .width(80)
-            //   .height(80)
-            //   .borderRadius(8)
+            // 使用ImageWithLoading组件显示SCP项目图片，支持加载状态显示
             ImageWithLoading({src: mockSCPs[this.randomIdx.getNum()].image, imgWidth: 80, imgHeight: 80, imgRadius: 8})
             Column({ space: 10 }) {
               Row({ space: 8 }) {
@@ -191,15 +192,12 @@ export struct Guide {
         this.title('SCP档案', `${mockSCPs.length} 个项目`)
       }
 
-        // 遍历显示所有SCP项目
+        // 遍历显示所有SCP项目，使用LazyForEach实现按需加载提高性能
       LazyForEach(this.data, (item: SCP) => {
         ListItem() {
           Column({space: 10}) {
             Stack({alignContent: Alignment.TopEnd}) {
-              // Image(item.image)
-              //   .width('100%')
-              //   .height(128)
-              //   .objectFit(ImageFit.Cover)
+              // 使用ImageWithLoading组件显示SCP项目图片，支持加载状态显示
               ImageWithLoading({src: item.image, imgWidth: '100%', imgHeight: 128, imgRadius: 0})
               // SCP项目等级标签
               Text(item.objectClass)

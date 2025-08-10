@@ -3,7 +3,7 @@ import { AppStorageV2 } from "@kit.ArkUI"
 // 收藏页面组件
 @ComponentV2
 export struct Favourite {
-  // 导航路径栈
+  // 导航路径栈，用于页面跳转
   @Local pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
 
   build() {

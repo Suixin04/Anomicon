@@ -16,7 +16,7 @@ export function homepageBuilder() {
 @Entry
 @ComponentV2
 struct Homepage {
-  // 导航路径栈
+  // 导航路径栈，用于页面间导航
   pathStack: NavPathStack = new NavPathStack();
   // 图标大小
   @Local iconSize: number = 24
@@ -69,12 +69,16 @@ struct Homepage {
             TabContent() {
               // 根据标签索引显示对应页面内容
               if (index == 0) {
+                // 图鉴页面
                 Guide()
               } else if (index == 1) {
+                // 故事页面
                 Story()
               } else if (index == 2) {
+                // 收藏页面
                 Favourite()
               } else if (index == 3) {
+                // 设置页面
                 Settings()
               }
             }
@@ -98,7 +102,10 @@ struct Homepage {
         .onChange((index: number) => {
           this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
             // 切换到图鉴页面时，生成新的随机推荐SCP项目
-            if (index === 0) {this.randomIdx.setNum(Math.floor(Math.random() * mockSCPs.length)); console.log(this.randomIdx.getNum().toString())}
+            if (index === 0) {
+              this.randomIdx.setNum(Math.floor(Math.random() * mockSCPs.length)); 
+              console.log(this.randomIdx.getNum().toString())
+            }
             this.currentIdx = index
           })
         })

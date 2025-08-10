@@ -50,7 +50,7 @@ export interface Tale {
 // 随机数类，用于生成每日推荐SCP项目
 @ObservedV2
 export class RandomNum {
-  // 随机索引值
+  // 随机索引值，初始化时生成一个随机数
   @Trace randomIdx: number = Math.floor(Math.random() * mockSCPs.length)
   
   // 设置随机索引值
@@ -69,10 +69,12 @@ class BasicDataSource implements IDataSource {
   private listeners: DataChangeListener[] = [];
   private originDataArray: SCP[] = [];
 
+  // 获取数据总数
   public totalCount(): number {
     return this.originDataArray.length;
   }
 
+  // 根据索引获取数据
   public getData(index: number): SCP {
     return this.originDataArray[index];
   }
@@ -134,6 +136,7 @@ class BasicDataSource implements IDataSource {
     });
   }
 
+  // 通知数据集变化
   notifyDatasetChange(operations: DataOperation[]): void {
     this.listeners.forEach(listener => {
       listener.onDatasetChange(operations);
@@ -141,24 +144,28 @@ class BasicDataSource implements IDataSource {
   }
 }
 
-
+// SCP数据源类，继承自BasicDataSource
 export class SCPSource extends BasicDataSource {
   private dataArray: SCP[] = [];
 
+  // 获取数据总数
   public totalCount(): number {
     return this.dataArray.length;
   }
 
+  // 根据索引获取数据
   public getData(index: number): SCP {
     return this.dataArray[index];
   }
 
+  // 向数据数组中添加数据
   public pushData(data: SCP): void {
     this.dataArray.push(data);
     this.notifyDataAdd(this.dataArray.length - 1);
   }
 }
 
+// 带加载状态的图片组件
 @ComponentV2
 export struct ImageWithLoading {
   // 图片的URL，通过@Prop接收

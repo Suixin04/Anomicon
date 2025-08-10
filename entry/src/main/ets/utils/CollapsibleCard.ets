@@ -6,6 +6,7 @@ export struct CollapsibleCard {
   @Param @Require title: string = '';
   // 卡片内容（必需参数，支持字符串或字符串数组）
   @Param @Require content: string | Array<string>; 
+  
   // 卡片展开状态，默认只有"项目描述"是展开的
   @Local private isExpanded: boolean = this.title == '项目描述' ? true : false;
 
@@ -14,19 +15,22 @@ export struct CollapsibleCard {
   private collapsedIcon: Resource = $r('app.media.ic_arrow_down');
 
   build() {
+    // 主容器
     Column() {
-      // 标题行，点击可切换展开/折叠状态
+      // 标题栏，包含标题和展开/折叠图标
       Row({space: 10}) {
+        // 标题图标
         Image($r('app.media.file_text'))
           .width(20)
 
+        // 标题文本
         Text(this.title)
           .fontColor('#fff')
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
 
-        // 根据展开状态显示不同图标
+        // 展开/折叠图标，根据状态切换显示
         Image(this.isExpanded ? this.expandedIcon : this.collapsedIcon)
           .width(24)
           .height(24)
@@ -34,20 +38,21 @@ export struct CollapsibleCard {
       .width('100%')
       .padding({ top: 10, bottom: 10, left: 15, right: 15 })
       .backgroundColor('#1e1e1e')
-      // 根据展开状态动态设置圆角
+      // 动态设置边框圆角，当展开时顶部有圆角，底部无圆角
       .border({ radius: this.isExpanded ? { topLeft: 10, topRight: 10, bottomLeft: 0, bottomRight: 0 } : 10 })
+      // 点击事件处理，添加动画效果
       .onClick(() => {
-        // 添加动画效果
         animateTo({ duration: 300 }, () => {
           this.isExpanded = !this.isExpanded;
         });
       })
 
-      // 内容区域，根据 isExpanded 状态显示或隐藏
+      // 内容区域，仅在展开时显示
       if (this.isExpanded) {
         Column() {
-          // 如果内容是数组，则循环渲染
+          // 内容部分，根据内容类型（字符串或数组）进行渲染
           if (this.content instanceof Array) {
+            // 如果是字符串数组，使用ForEach循环渲染
             ForEach(this.content, (item: string) => {
               Text(item)
                 .fontSize(16)
@@ -56,7 +61,7 @@ export struct CollapsibleCard {
                 .margin({ bottom: 10 })
             })
           } else {
-            // 如果内容是单个字符串
+            // 如果是单个字符串，直接渲染
             Text(this.content)
               .fontSize(16)
               .fontColor('#fff')
@@ -67,8 +72,9 @@ export struct CollapsibleCard {
         .width('100%')
         .padding(15)
         .backgroundColor('#1e1e1e')
-        // 为内容区域设置底部圆角
+        // 设置内容区域的底部圆角
         .border({ radius: { topLeft: 0, topRight: 0, bottomLeft: 10, bottomRight: 10 } })
+        // 添加过渡动画效果
         .transition({
           type: TransitionType.All,
           scale: { x: 1, y: 1 },
@@ -77,6 +83,7 @@ export struct CollapsibleCard {
       }
     }
     .width('100%')
+    // 设置整体边框和阴影效果
     .border({ width: 0.5, color: '#ee717182', radius: 10})
     .shadow({ radius: 8, color: '#1A000000', offsetX: 0, offsetY: 4 })
   }

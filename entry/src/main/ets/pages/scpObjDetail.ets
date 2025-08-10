@@ -43,9 +43,9 @@ function cusTitle(scp: SCP) {
 @ComponentV2
 @Preview
 struct scpObjDetail {
-  // 导航路径栈
+  // 导航路径栈，用于页面导航
   pathStack: NavPathStack = new NavPathStack();
-  // 当前显示的SCP项目
+  // 当前显示的SCP项目，默认为第一个SCP项目
   @Local scpItem: SCP = mockSCPs[0];
 
   build() {
@@ -53,10 +53,7 @@ struct scpObjDetail {
       Scroll() {
         Column({space: 20}) {
           Column({ space: 15 }) {
-            // SCP项目图片
-            // Image(this.scpItem.image)
-            //   .objectFit(ImageFit.Cover)
-            //   .border({width: 0.5, color: '#ee717182', radius: 10})
+            // SCP项目图片，使用ImageWithLoading组件支持加载状态显示
             ImageWithLoading({src: this.scpItem.image, imgWidth: '100%', imgHeight: '100%', imgRadius: 0})
           }
           .height(200)
@@ -149,9 +146,10 @@ struct scpObjDetail {
           .backgroundColor('#1e1e1e')
           .padding(25)
 
-          // 可折叠的信息卡片
+          // 可折叠的信息卡片，显示项目描述和特殊收容措施
           CollapsibleCard({title: '项目描述', content: this.scpItem.description})
           CollapsibleCard({title: '特殊收容措施', content: this.scpItem.containmentProcedures})
+          // 如果存在附录信息，则显示附录卡片
           if (this.scpItem.addendum) {
             CollapsibleCard({title: '附录', content: this.scpItem.addendum})
           }
