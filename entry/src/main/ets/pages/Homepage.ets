@@ -4,7 +4,7 @@ import { Settings } from "./Settings"
 import { Story } from "./Story"
 import { AppStorageV2, curves } from "@kit.ArkUI"
 import { RandomNum, TabClass } from "../utils/types"
-import { mockSCPs } from "../data/mockData"
+import { mockSCPs } from "../data/Data"
 
 // 主页构建器
 @Builder

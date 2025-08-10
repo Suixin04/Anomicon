@@ -1,4 +1,5 @@
-import { mockSCPs, mockTales } from "../data/mockData";
+import { mockSCPs, mockTales } from "../data/Data";
+import { Tale } from "../utils/types";
 
 // SCP文档详情页面构建器
 @Builder
@@ -8,16 +9,16 @@ export function DocBuilder() {
 
 // 自定义标题构建器
 @Builder
-function cusTitle() {
+function cusTitle(tale: Tale) {
   Column({space: 10}){
     // 文档标题
-    Text(mockTales[0].title)
+    Text(tale.title)
       .fontColor('#fff')
       .fontSize(18)
       .width('100%')
       .fontWeight(FontWeight.Bold)
     // 作者和发布日期信息
-    Text('作者: ' + mockTales[0].author + ' • ' + mockTales[0].datePublished)
+    Text('作者: ' + tale.author + ' • ' + tale.datePublished)
       .width('100%')
       .fontColor('#a0a0a0')
       .fontSize(14)
@@ -35,6 +36,8 @@ function cusTitle() {
 struct scpDocDetail {
   // 导航路径栈
   pathStack: NavPathStack = new NavPathStack();
+  // 当前显示的故事对象
+  @Local tale: Tale = mockTales[0];
 
   build() {
     NavDestination() {
@@ -42,7 +45,7 @@ struct scpDocDetail {
         Column({space: 20}) {
           Column({ space: 15 }) {
             // 文档内容
-            Text(mockTales[0].content)
+            Text(this.tale.content)
               .fontSize(14)
               .fontColor('#fff')
           }
@@ -60,7 +63,7 @@ struct scpDocDetail {
             .width('100%')
             // 标签列表
             Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(mockTales[0].tags, (tag: string, index: number) => {
+              ForEach(this.tale.tags, (tag: string, index: number) => {
                 Text(tag)
                   .backgroundColor('#ff282525')
                   .borderRadius(6)
@@ -73,30 +76,35 @@ struct scpDocDetail {
             }
             .width('100%')
             .margin({bottom: 10})
-            Row() {
-              Text('相关SCP:')
-                .fontSize(14)
-                .fontColor('#a0a0a0')
+            if (this.tale.relatedSCPs.length > 0) {
+              Row() {
+                Text('相关SCP:')
+                  .fontSize(14)
+                  .fontColor('#a0a0a0')
+              }
+              .width('100%')
+              // 相关SCP项目列表
+              Flex({ wrap: FlexWrap.Wrap }) {
+                ForEach(this.tale.relatedSCPs, (scp: string, index: number) => {
+                  Row({space: 5}) {
+                    Text(scp)
+                      .fontColor('#fff')
+                      .fontSize(10)
+                      .fontWeight(FontWeight.Bold)
+                    Image($r('app.media.outer_link'))
+                      .width(12)
+                  }
+                  .backgroundColor('#ff282525')
+                  .borderRadius(6)
+                  .padding({left: 6, right: 6, top: 5, bottom: 5})
+                  .margin({right: 3, bottom: 3})
+                  .onClick(() => {
+                    this.pathStack.pushPathByName('scpObjDetail', mockSCPs.find(item => item.number == scp), false)
+                  })
+                })
+              }
+              .width('100%')
             }
-            .width('100%')
-            // 相关SCP项目列表
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(mockTales[1].relatedSCPs, (scp: string, index: number) => {
-                Row({space: 5}) {
-                  Text(scp)
-                    .fontColor('#fff')
-                    .fontSize(10)
-                    .fontWeight(FontWeight.Bold)
-                  Image($r('app.media.outer_link'))
-                    .width(12)
-                }
-                .backgroundColor('#ff282525')
-                .borderRadius(6)
-                .padding({left: 6, right: 6, top: 5, bottom: 5})
-                .margin({right: 3, bottom: 3})
-              })
-            }
-            .width('100%')
           }
           .border({width: 0.5, color: '#ee717182', radius: 10})
           .width('100%')
@@ -114,11 +122,17 @@ struct scpDocDetail {
       .width('100%')
       .height('100%')
     }
-    .title(cusTitle)
+    .title(cusTitle(this.tale))
     .backgroundColor('#121212')
     .backButtonIcon($r("app.media.arrow_left"))
     // 页面准备就绪时的回调处理
     .onReady((context: NavDestinationContext) => {
-      this.pathStack = context.pathStack;})
+      this.pathStack = context.pathStack;
+      // 获取传递的参数
+      const param = context.pathInfo.param as Tale
+      if (param) {
+        this.tale = param
+      }
+    })
   }
 }

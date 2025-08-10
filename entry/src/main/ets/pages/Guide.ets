@@ -1,4 +1,4 @@
-import { mockSCPs } from "../data/mockData"
+import { mockSCPs } from "../data/Data"
 import { RandomNum, SCP } from "../utils/types"
 import { AppStorageV2 } from "@kit.ArkUI"
 

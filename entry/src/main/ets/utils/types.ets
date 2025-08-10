@@ -1,4 +1,4 @@
-import { mockSCPs } from "../data/mockData";
+import { mockSCPs } from "../data/Data";
 
 // 底部标签栏配置接口
 export interface TabClass {
@@ -8,22 +8,22 @@ export interface TabClass {
 }
 
 // SCP项目分类标准
-export type SCPClass =
-  '无' |
-  'Unknown' |
-  'Safe' |     // 安全 - 需最低限度监管
-  'Euclid' |   // 欧几里得 - 需特定收容措施
-  'Keter' |    // 克特级 - 极度危险需最高优先级收容
-  'Thaumiel' | // 瑟姆级 - 用于收容其他SCP
-  'Apollyon' | // 阿波罗级 - 无法被完全收容
-  'Explained'; // 已解明 - 已解明异常特性
+// export type SCPClass =
+//   '无' |
+//   'Unknown' |
+//   'Safe' |     // 安全 - 需最低限度监管
+//   'Euclid' |   // 欧几里得 - 需特定收容措施
+//   'Keter' |    // 克特级 - 极度危险需最高优先级收容
+//   'Thaumiel' | // 瑟姆级 - 用于收容其他SCP
+//   'Apollyon' | // 阿波罗级 - 无法被完全收容
+//   'Explained'; // 已解明 - 已解明异常特性
 
 // SCP项目接口定义
 export interface SCP {
   id: string;                           // 项目唯一标识
   number: string;                       // SCP编号
   title: string;                        // 项目标题
-  objectClass: SCPClass;                // 项目等级
+  objectClass: string;                // 项目等级
   image?: string;                       // 项目图片URL
   description: string;                  // 项目描述
   containmentProcedures: string;        // 特殊收容措施

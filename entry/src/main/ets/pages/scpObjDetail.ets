@@ -1,4 +1,4 @@
-import { mockSCPs } from "../data/mockData";
+import { mockSCPs } from "../data/Data";
 import { CollapsibleCard } from "../utils/CollapsibleCard";
 import { SCP } from "../utils/types";
 

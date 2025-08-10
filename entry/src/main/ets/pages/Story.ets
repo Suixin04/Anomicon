@@ -1,4 +1,4 @@
-import { mockTales } from "../data/mockData"
+import { mockTales } from "../data/Data"
 import { Tale } from "../utils/types"
 import { AppStorageV2 } from "@kit.ArkUI"
 
@@ -106,9 +106,9 @@ export struct Story {
           .backgroundColor('#1e1e1e')
           .justifyContent(FlexAlign.Start)
           .padding({left: 20, right: 20, top: 30, bottom: 30})
-          // 点击跳转到文档详情页
+          // 点击跳转到文档详情页并传递参数
           .onClick(() => {
-            this.pathStack.pushPathByName('scpDocDetail', null, false)
+            this.pathStack.pushPathByName('scpDocDetail', item, false)
           })
         })
       }
