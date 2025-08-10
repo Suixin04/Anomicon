@@ -1,4 +1,3 @@
-import { HashMap } from "@kit.ArkUI";
 import { mockSCPs } from "../data/mockData";
 
 // 底部标签栏配置接口
@@ -10,30 +9,14 @@ export interface TabClass {
 
 // SCP项目分类标准
 export type SCPClass =
+  '无' |
+  'Unknown' |
   'Safe' |     // 安全 - 需最低限度监管
   'Euclid' |   // 欧几里得 - 需特定收容措施
   'Keter' |    // 克特级 - 极度危险需最高优先级收容
   'Thaumiel' | // 瑟姆级 - 用于收容其他SCP
   'Apollyon' | // 阿波罗级 - 无法被完全收容
   'Explained'; // 已解明 - 已解明异常特性
-
-// SCP项目等级对应的颜色映射表
-export const colorHash = new HashMap<string, string>();
-colorHash.set('Safe', '#FF10B981');
-colorHash.set('Euclid', '#FFEAB308');
-colorHash.set('Keter', '#FFEF4444');
-colorHash.set('Thaumiel', '#FF3B82F6');
-colorHash.set('Apollyon', '#FF8B5CF6');
-colorHash.set('Explained', '#FF6B7280');
-
-// SCP项目等级对应的图标映射表
-export const iconHash = new HashMap<string, string>();
-iconHash.set('Safe', '🟢');
-iconHash.set('Euclid', '🟡');
-iconHash.set('Keter', '🔴');
-iconHash.set('Thaumiel', '🔵');
-iconHash.set('Apollyon', '🟣');
-iconHash.set('Explained', '⚪');
 
 // SCP项目接口定义
 export interface SCP {
