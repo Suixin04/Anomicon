@@ -1,6 +1,6 @@
 import { mockSCPs } from "../data/Data";
 import { CollapsibleCard } from "../utils/CollapsibleCard";
-import { SCP } from "../utils/types";
+import { ImageWithLoading, SCP } from "../utils/types";
 
 // SCP对象详情页面构建器
 @Builder
@@ -54,12 +54,14 @@ struct scpObjDetail {
         Column({space: 20}) {
           Column({ space: 15 }) {
             // SCP项目图片
-            Image(this.scpItem.image)
-              .objectFit(ImageFit.Cover)
-              .border({width: 0.5, color: '#ee717182', radius: 10})
+            // Image(this.scpItem.image)
+            //   .objectFit(ImageFit.Cover)
+            //   .border({width: 0.5, color: '#ee717182', radius: 10})
+            ImageWithLoading({src: this.scpItem.image, imgWidth: '100%', imgHeight: '100%', imgRadius: 0})
           }
           .height(200)
           .width('100%')
+          .border({width: 0.5, color: '#ee717182', radius: 10})
           // 项目信息网格布局
           GridRow({columns: 2}) {
             GridCol() {

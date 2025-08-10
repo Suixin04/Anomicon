@@ -1,5 +1,5 @@
 import { mockSCPs } from "../data/Data"
-import { RandomNum, SCP, SCPSource } from "../utils/types"
+import { ImageWithLoading, RandomNum, SCP, SCPSource } from "../utils/types"
 import { AppStorageV2 } from "@kit.ArkUI"
 
 // SCP图鉴页面组件
@@ -100,10 +100,11 @@ export struct Guide {
 
           // 推荐SCP项目卡片
           Row({ space: 15 }) {
-            Image(mockSCPs[this.randomIdx.getNum()].image)
-              .width(80)
-              .height(80)
-              .borderRadius(8)
+            // Image(mockSCPs[this.randomIdx.getNum()].image)
+            //   .width(80)
+            //   .height(80)
+            //   .borderRadius(8)
+            ImageWithLoading({src: mockSCPs[this.randomIdx.getNum()].image, imgWidth: 80, imgHeight: 80, imgRadius: 8})
             Column({ space: 10 }) {
               Row({ space: 8 }) {
                 // SCP编号
@@ -195,10 +196,11 @@ export struct Guide {
         ListItem() {
           Column({space: 10}) {
             Stack({alignContent: Alignment.TopEnd}) {
-              Image(item.image)
-                .width('100%')
-                .height(128)
-                .objectFit(ImageFit.Cover)
+              // Image(item.image)
+              //   .width('100%')
+              //   .height(128)
+              //   .objectFit(ImageFit.Cover)
+              ImageWithLoading({src: item.image, imgWidth: '100%', imgHeight: 128, imgRadius: 0})
               // SCP项目等级标签
               Text(item.objectClass)
                 .margin({top: 10, right: 10})
