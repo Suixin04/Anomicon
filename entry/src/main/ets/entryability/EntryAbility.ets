@@ -4,18 +4,23 @@ import { window } from '@kit.ArkUI';
 
 const DOMAIN = 0x0000;
 
+// 应用程序主入口能力类
 export default class EntryAbility extends UIAbility {
+  // Ability创建时的回调函数
   onCreate(want: Want, launchParam: AbilityConstant.LaunchParam): void {
+    // 设置应用颜色模式
     this.context.getApplicationContext().setColorMode(ConfigurationConstant.ColorMode.COLOR_MODE_NOT_SET);
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onCreate');
   }
 
+  // Ability销毁时的回调函数
   onDestroy(): void {
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onDestroy');
   }
 
+  // 窗口阶段创建时的回调函数
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    // Main window is created, set main page for this ability
+    // 主窗口已创建，为此Ability设置主页面
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageCreate');
 
     windowStage.loadContent('pages/Index', (err) => {
@@ -27,18 +32,21 @@ export default class EntryAbility extends UIAbility {
     });
   }
 
+  // 窗口阶段销毁时的回调函数
   onWindowStageDestroy(): void {
-    // Main window is destroyed, release UI related resources
+    // 主窗口已销毁，释放UI相关资源
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onWindowStageDestroy');
   }
 
+  // Ability进入前台时的回调函数
   onForeground(): void {
-    // Ability has brought to foreground
+    // Ability已切换到前台
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onForeground');
   }
 
+  // Ability进入后台时的回调函数
   onBackground(): void {
-    // Ability has back to background
+    // Ability已切换到后台
     hilog.info(DOMAIN, 'testTag', '%{public}s', 'Ability onBackground');
   }
 }

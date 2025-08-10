@@ -1,19 +1,23 @@
 import { mockSCPs } from "../data/mockData";
 import { CollapsibleCard } from "../utils/CollapsibleCard";
 
+// SCP对象详情页面构建器
 @Builder
 export function ObjBuilder() {
   scpObjDetail()
 }
 
+// 自定义标题构建器
 @Builder
 function cusTitle() {
   Column({space: 10}){
     Row({space: 8}) {
+      // SCP编号
       Text(mockSCPs[0].number)
         .fontColor('#ff4444')
         .fontSize(14)
         .fontWeight(FontWeight.Normal)
+      // SCP项目等级
       Text(mockSCPs[0].objectClass)
         .border({radius: 5, width: 0.8, color: '#ee717182'})
         .fontWeight(FontWeight.Bold)
@@ -22,6 +26,7 @@ function cusTitle() {
         .padding({top: 3, bottom: 3, left: 6, right: 6})
     }
     .width('100%')
+    // SCP标题
     Text(mockSCPs[0].title)
       .fontColor('#fff')
       .fontSize(18)
@@ -32,10 +37,12 @@ function cusTitle() {
   .height('100%')
 }
 
+// SCP对象详情页面组件
 @Entry
 @ComponentV2
 @Preview
 struct scpObjDetail {
+  // 导航路径栈
   pathStack: NavPathStack = new NavPathStack();
 
   build() {
@@ -43,12 +50,14 @@ struct scpObjDetail {
       Scroll() {
         Column({space: 20}) {
           Column({ space: 15 }) {
+            // SCP项目图片
             Image(mockSCPs[0].image)
               .objectFit(ImageFit.Cover)
               .border({width: 0.5, color: '#ee717182', radius: 10})
           }
           .height(200)
           .width('100%')
+          // 项目信息网格布局
           GridRow({columns: 2}) {
             GridCol() {
               Column() {
@@ -112,6 +121,7 @@ struct scpObjDetail {
                     .fontSize(14)
                     .fontColor('#a0a0a0')
                 }.width('100%')
+                // 标签列表
                 Flex({ wrap: FlexWrap.Wrap }) {
                   ForEach(mockSCPs[0].tags, (tag: string, index: number) => {
                     Text(tag)
@@ -134,6 +144,7 @@ struct scpObjDetail {
           .backgroundColor('#1e1e1e')
           .padding(25)
 
+          // 可折叠的信息卡片
           CollapsibleCard({title: '项目描述', content: mockSCPs[0].description})
           CollapsibleCard({title: '特殊收容措施', content: mockSCPs[0].containmentProcedures})
           CollapsibleCard({title: '附录', content: mockSCPs[0].addendum})
@@ -151,6 +162,7 @@ struct scpObjDetail {
     .title(cusTitle)
     .backgroundColor('#121212')
     .backButtonIcon($r("app.media.arrow_left"))
+    // 页面菜单
     .menus([
       {
         value: '分享',
@@ -167,6 +179,7 @@ struct scpObjDetail {
         }
       }
     ])
+    // 页面准备就绪时的回调处理
     .onReady((context: NavDestinationContext) => {
       this.pathStack = context.pathStack;})
   }

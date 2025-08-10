@@ -2,22 +2,29 @@ import { mockSCPs } from "../data/mockData"
 import { RandomNum, SCP } from "../utils/types"
 import { AppStorageV2 } from "@kit.ArkUI"
 
+// SCP图鉴页面组件
 @ComponentV2
 export struct Guide {
+  // 导航路径栈
   @Local pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
+  // 随机数，用于生成每日推荐SCP项目
   @Local randomIdx: RandomNum = AppStorageV2.connect(RandomNum, 'dailyRand', () => new RandomNum())!
 
+  // 自定义按钮构建器
   @Builder
   cusButton (text:string, isSelected: boolean, image?:ResourceStr | string) {
     Row({space: 10}) {
+      // 如果提供了图标，则显示图标
       if (image) {
         Image(image)
           .width(14)
       }
+      // 按钮文字，选中时显示黑色，未选中时显示白色
       Text(text)
         .fontSize(14)
         .fontColor(isSelected ? '#000' : '#fff')
     }
+    // 根据选中状态设置按钮背景色和边框
     .backgroundColor(isSelected? '#ff4444' : '#10717182')
     .border({radius: 8, width: isSelected ? 0 : 0.5, color: '#ee717182'})
     .justifyContent(FlexAlign.Center)
@@ -25,12 +32,15 @@ export struct Guide {
     .justifyContent(FlexAlign.Start)
   }
 
+  // 标题构建器
   @Builder
   title (fixText: string, varText: string) {
     Row() {
+      // 固定标题文字
       Text(fixText)
         .fontSize(18)
         .fontColor('#fff')
+      // 可变标题文字
       Text(varText)
         .fontSize(14)
         .fontColor('#fff')
@@ -43,10 +53,12 @@ export struct Guide {
   build() {
     Scroll() {
       Column({space: 20}) {
+        // 页面标题
         Text('SCP 基金会')
           .fontSize(25)
           .fontWeight(FontWeight.Medium)
           .fontColor('#fff')
+        // 搜索框
         Search({placeholder: '搜索SCP编号、名称或描述…'})
           .searchIcon({src: $r('app.media.search')})
           .placeholderColor(Color.Gray)
@@ -59,7 +71,7 @@ export struct Guide {
           .borderRadius(8)
           .onSubmit(() => console.log('Searching'))
 
-        // 今日推荐
+        // 今日推荐区域
         Column({space: 15}) {
           Row({space: 10}) {
             Image($r('app.media.star'))
@@ -73,21 +85,20 @@ export struct Guide {
           .width('100%')
           .justifyContent(FlexAlign.Start)
           .padding({bottom: 15, top: 10})
-          // this.dailyCard(mockSCPs[this.randomIdx.getNum()])  // 不刷新！无法追踪内部状态！
-          // dailyCard
-          // TODO: 详情页跳转
+          // 推荐SCP项目卡片
           Row({space: 15}) {
             Image(mockSCPs[this.randomIdx.getNum()].image)
               .width(80)
               .height(80)
               .borderRadius(8)
-            // .height()
             Column({space: 10}) {
               Row({space: 8}) {
+                // SCP编号
                 Text(mockSCPs[this.randomIdx.getNum()].number)
                   .fontColor('#ff4444')
                   .fontSize(14)
                   .fontWeight(FontWeight.Bold)
+                // SCP项目等级
                 Text(mockSCPs[this.randomIdx.getNum()].objectClass)
                   .border({radius: 5, width: 0.8, color: '#ee717182'})
                   .fontWeight(FontWeight.Bold)
@@ -95,10 +106,12 @@ export struct Guide {
                   .fontSize(12)
                   .padding({top: 3, bottom: 3, left: 6, right: 6})
               }
+              // SCP项目标题
               Text(mockSCPs[this.randomIdx.getNum()].title)
                 .fontColor('#fff')
                 .fontSize(18)
                 .fontWeight(FontWeight.Bold)
+              // SCP项目描述
               Text(mockSCPs[this.randomIdx.getNum()].description)
                 .fontColor('#a0a0a0')
                 .fontSize(14)
@@ -110,7 +123,7 @@ export struct Guide {
           }
           .alignItems(VerticalAlign.Top)
           .width('100%')
-          // .onClick(() => console.log('random SCP_objs'))
+          // 点击跳转到SCP项目详情页
           .padding({ bottom: 10 , left: 10, right: 10})
           .onClick(() => {
             this.pathStack.pushPathByName('scpObjDetail', null, false)
@@ -122,8 +135,7 @@ export struct Guide {
         .backgroundColor('#22ff4444')
         .border({radius: 10, width: 0.5, color: '#ee717182'})
 
-        // 随机访问
-        // TODO: 详情页跳转
+        // 随机探索按钮
         Row({space: 10}) {
           Image($r('app.media.shuffle'))
             .width(14)
@@ -137,14 +149,16 @@ export struct Guide {
         .justifyContent(FlexAlign.Center)
         .padding({top: 10, bottom: 10})
 
-        // 系列按钮
+        // 分类筛选按钮
         Row({space: 10}) {
           this.cusButton('全部', true)
           this.cusButton('Series 1', false)
         }
         .width('100%')
+        // SCP档案标题
         this.title('SCP档案', `${mockSCPs.length} 个项目`)
 
+        // 遍历显示所有SCP项目
         ForEach(mockSCPs, (item: SCP, index: number) => {
           Column({space: 10}) {
             Stack({alignContent: Alignment.TopEnd}) {
@@ -152,6 +166,7 @@ export struct Guide {
                 .width('100%')
                 .height(128)
                 .objectFit(ImageFit.Cover)
+              // SCP项目等级标签
               Text(item.objectClass)
                 .margin({top: 10, right: 10})
                 .border({radius: 5, width: 0.8, color: '#ee717182'})
@@ -163,26 +178,31 @@ export struct Guide {
             .width('100%')
             Column({space: 15}) {
               Row({space: 5}) {
+                // SCP编号
                 Text(item.number)
                   .fontColor('#ff4444')
                   .fontSize(14)
                   .fontWeight(FontWeight.Bold)
+                // 系列信息
                 Text(`Series ${item.series.toString()}`)
                   .fontColor('#a0a0a0')
                   .fontSize(12)
               }
               .width('100%')
+              // SCP标题
               Text(item.title)
                 .fontColor('#fff')
                 .fontSize(18)
                 .width('100%')
                 .fontWeight(FontWeight.Bold)
+              // SCP描述
               Text(item.description)
                 .width('100%')
                 .fontColor('#a0a0a0')
                 .fontSize(14)
                 .maxLines(3)
                 .textOverflow({overflow: TextOverflow.Ellipsis})
+              // 标签列表
               Row({space: 8}) {
                 ForEach(item.tags, (tag: string, index: number) => {
                   Text(index < 3 ? tag : `+${item.tags.length-3}`)
@@ -207,7 +227,6 @@ export struct Guide {
       .padding({left: 25, right: 25})
       .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
       .width('100%')
-      // .height('100%')
     }
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)

@@ -6,20 +6,27 @@ import { AppStorageV2, curves } from "@kit.ArkUI"
 import { RandomNum, TabClass } from "../utils/types"
 import { mockSCPs } from "../data/mockData"
 
+// 主页构建器
 @Builder
 export function homepageBuilder() {
   Homepage()
 }
 
+// 应用主页组件
 @Entry
 @ComponentV2
 struct Homepage {
+  // 导航路径栈
   pathStack: NavPathStack = new NavPathStack();
+  // 图标大小
   @Local iconSize: number = 24
+  // 当前选中的标签索引
   @Local currentIdx: number = 0
 
+  // 随机数，用于生成每日推荐SCP项目
   @Local randomIdx: RandomNum = AppStorageV2.connect(RandomNum, 'dailyRand', () => new RandomNum())!
 
+  // 底部标签栏信息配置
   tabInfo: TabClass[] = [
     { icon: $r('app.media.house'), icon_em: $r('app.media.house_em'), text: '图鉴' },
     { icon: $r('app.media.book'), icon_em: $r('app.media.book_em'), text: '故事' },
@@ -27,9 +34,11 @@ struct Homepage {
     { icon: $r('app.media.settings'), icon_em: $r('app.media.settings_em'), text: '设置' },
   ]
 
+  // 标签栏构建器
   @Builder
   tabBuilder(item: TabClass, index: number) {
     Column({ space: 4 }) {
+      // 根据当前选中状态显示不同图标和大小
       if (this.currentIdx == index) {
         Image(item.icon)
           .width(index == this.currentIdx ? 26.4 : 24)
@@ -40,6 +49,7 @@ struct Homepage {
           .width(index == this.currentIdx ? 26.4 : 24)
           .height(index == this.currentIdx ? 26.4 : 24)
       }
+      // 标签文字，选中时显示红色，未选中时显示灰色
       Text(item.text)
         .fontSize(12)
         .fontColor(this.currentIdx == index ? '#ff4444' : '#a0a0a0')
@@ -52,9 +62,12 @@ struct Homepage {
   build() {
     NavDestination() {
       RelativeContainer() {
+        // 底部标签导航栏
         Tabs({ barPosition: BarPosition.End }) {
+          // 遍历标签信息，创建标签页
           ForEach(this.tabInfo, (item: TabClass, index: number) => {
             TabContent() {
+              // 根据标签索引显示对应页面内容
               if (index == 0) {
                 Guide()
               } else if (index == 1) {
@@ -81,8 +94,10 @@ struct Homepage {
         .height('100%')
         .backgroundColor('#1e1e1e')
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM, SafeAreaEdge.TOP])
+        // 标签切换时的回调处理
         .onChange((index: number) => {
           this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+            // 切换到图鉴页面时，生成新的随机推荐SCP项目
             if (index === 0) {this.randomIdx.setNum(Math.floor(Math.random() * mockSCPs.length)); console.log(this.randomIdx.getNum().toString())}
             this.currentIdx = index
           })
@@ -90,7 +105,7 @@ struct Homepage {
         .animationMode(AnimationMode.NO_ANIMATION)
       }
     }
-    // .title('SCP基金会')
+    // 页面准备就绪时的回调处理
     .onReady((context: NavDestinationContext) => {
       this.pathStack = context.pathStack;
     })

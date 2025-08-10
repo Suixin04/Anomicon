@@ -1,5 +1,6 @@
 import { SCP, Tale } from "../utils/types";
 
+// SCP项目模拟数据
 export const mockSCPs: SCP[] = [
   {
     id: '173',
@@ -89,6 +90,7 @@ SCP-106能够穿过任何固体物质，在其通过时留下一个大约3米直
   }
 ];
 
+// SCP故事模拟数据
 export const mockTales: Tale[] = [
   {
     id: 'tale-001',

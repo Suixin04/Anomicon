@@ -1,18 +1,22 @@
 import { AppStorageV2 } from "@kit.ArkUI"
 
+// 收藏页面组件
 @ComponentV2
 export struct Favourite {
+  // 导航路径栈
   @Local pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
 
   build() {
     Scroll() {
       Column({ space: 20 }) {
+        // 页面标题
         Text('我的收藏')
           .fontSize(25)
           .fontWeight(FontWeight.Medium)
           .fontColor('#fff')
           .margin({bottom: 40})
 
+        // 空收藏提示
         Column({ space: 15 }) {
           Text('💝')
             .fontSize(50)

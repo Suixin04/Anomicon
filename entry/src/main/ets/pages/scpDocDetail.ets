@@ -1,18 +1,22 @@
 import { mockSCPs, mockTales } from "../data/mockData";
 
+// SCP文档详情页面构建器
 @Builder
 export function DocBuilder() {
   scpDocDetail()
 }
 
+// 自定义标题构建器
 @Builder
 function cusTitle() {
   Column({space: 10}){
+    // 文档标题
     Text(mockTales[0].title)
       .fontColor('#fff')
       .fontSize(18)
       .width('100%')
       .fontWeight(FontWeight.Bold)
+    // 作者和发布日期信息
     Text('作者: ' + mockTales[0].author + ' • ' + mockTales[0].datePublished)
       .width('100%')
       .fontColor('#a0a0a0')
@@ -25,9 +29,11 @@ function cusTitle() {
     .height('100%')
 }
 
+// SCP文档详情页面组件
 @Entry
 @ComponentV2
 struct scpDocDetail {
+  // 导航路径栈
   pathStack: NavPathStack = new NavPathStack();
 
   build() {
@@ -35,6 +41,7 @@ struct scpDocDetail {
       Scroll() {
         Column({space: 20}) {
           Column({ space: 15 }) {
+            // 文档内容
             Text(mockTales[0].content)
               .fontSize(14)
               .fontColor('#fff')
@@ -51,6 +58,7 @@ struct scpDocDetail {
                 .fontColor('#a0a0a0')
             }
             .width('100%')
+            // 标签列表
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(mockTales[0].tags, (tag: string, index: number) => {
                 Text(tag)
@@ -71,6 +79,7 @@ struct scpDocDetail {
                 .fontColor('#a0a0a0')
             }
             .width('100%')
+            // 相关SCP项目列表
             Flex({ wrap: FlexWrap.Wrap }) {
               ForEach(mockTales[1].relatedSCPs, (scp: string, index: number) => {
                 Row({space: 5}) {
@@ -108,6 +117,7 @@ struct scpDocDetail {
     .title(cusTitle)
     .backgroundColor('#121212')
     .backButtonIcon($r("app.media.arrow_left"))
+    // 页面准备就绪时的回调处理
     .onReady((context: NavDestinationContext) => {
       this.pathStack = context.pathStack;})
   }
