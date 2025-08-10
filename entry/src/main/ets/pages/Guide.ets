@@ -1,5 +1,5 @@
 import { mockSCPs } from "../data/Data"
-import { RandomNum, SCP } from "../utils/types"
+import { RandomNum, SCP, SCPSource } from "../utils/types"
 import { AppStorageV2 } from "@kit.ArkUI"
 
 // SCP图鉴页面组件
@@ -9,6 +9,14 @@ export struct Guide {
   @Local pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
   // 随机数，用于生成每日推荐SCP项目
   @Local randomIdx: RandomNum = AppStorageV2.connect(RandomNum, 'dailyRand', () => new RandomNum())!
+
+  private data: SCPSource = new SCPSource()
+
+  aboutToAppear(): void {
+    for(let i = 0; i < mockSCPs.length; i++){
+      this.data.pushData(mockSCPs[i])
+    }
+  }
 
   // 自定义按钮构建器
   @Builder
@@ -51,29 +59,33 @@ export struct Guide {
   }
 
   build() {
-    Scroll() {
-      Column({space: 20}) {
-        // 页面标题
+    List({space: 20}) {
+      ListItem() {
         Text('SCP 基金会')
           .fontSize(25)
           .fontWeight(FontWeight.Medium)
           .fontColor('#fff')
+      }
+        // 页面标题
+
         // 搜索框
-        Search({placeholder: '搜索SCP编号、名称或描述…'})
-          .searchIcon({src: $r('app.media.search')})
+      ListItem() {
+        Search({ placeholder: '搜索SCP编号、名称或描述…' })
+          .searchIcon({ src: $r('app.media.search') })
           .placeholderColor(Color.Gray)
           .placeholderFont({ size: 16, weight: FontWeight.Normal })
           .textFont({ size: 16, weight: FontWeight.Normal })
           .backgroundColor('#10717182')
-          .border({color: '#ee717182', width: 0.5})
+          .border({ color: '#ee717182', width: 0.5 })
           .width('95%')
           .height(35)
           .borderRadius(8)
           .onSubmit(() => console.log('Searching'))
-
+      }
         // 今日推荐区域
-        Column({space: 15}) {
-          Row({space: 10}) {
+      ListItem() {
+        Column({ space: 15 }) {
+          Row({ space: 10 }) {
             Image($r('app.media.star'))
               .fillColor('#ffddb333')
               .width(20)
@@ -84,15 +96,16 @@ export struct Guide {
           }
           .width('100%')
           .justifyContent(FlexAlign.Start)
-          .padding({bottom: 15, top: 10})
+          .padding({ bottom: 15, top: 10 })
+
           // 推荐SCP项目卡片
-          Row({space: 15}) {
+          Row({ space: 15 }) {
             Image(mockSCPs[this.randomIdx.getNum()].image)
               .width(80)
               .height(80)
               .borderRadius(8)
-            Column({space: 10}) {
-              Row({space: 8}) {
+            Column({ space: 10 }) {
+              Row({ space: 8 }) {
                 // SCP编号
                 Text(mockSCPs[this.randomIdx.getNum()].number)
                   .fontColor('#ff4444')
@@ -100,12 +113,18 @@ export struct Guide {
                   .fontWeight(FontWeight.Bold)
                 // SCP项目等级
                 Text(mockSCPs[this.randomIdx.getNum()].objectClass)
-                  .border({radius: 5, width: 0.8, color: '#ee717182'})
+                  .border({ radius: 5, width: 0.8, color: '#ee717182' })
                   .fontWeight(FontWeight.Bold)
                   .fontColor('#fff')
                   .fontSize(12)
-                  .padding({top: 3, bottom: 3, left: 6, right: 6})
+                  .padding({
+                    top: 3,
+                    bottom: 3,
+                    left: 6,
+                    right: 6
+                  })
               }
+
               // SCP项目标题
               Text(mockSCPs[this.randomIdx.getNum()].title)
                 .fontColor('#fff')
@@ -116,7 +135,7 @@ export struct Guide {
                 .fontColor('#a0a0a0')
                 .fontSize(14)
                 .maxLines(2)
-                .textOverflow({overflow: TextOverflow.Ellipsis})
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
@@ -124,19 +143,20 @@ export struct Guide {
           .alignItems(VerticalAlign.Top)
           .width('100%')
           // 点击跳转到SCP项目详情页
-          .padding({ bottom: 10 , left: 10, right: 10})
+          .padding({ bottom: 10, left: 10, right: 10 })
           .onClick(() => {
             this.pathStack.pushPathByName('scpObjDetail', mockSCPs[this.randomIdx.getNum()], false)
           })
         }
-        .margin({top: 10})
+        .margin({ top: 10 })
         .padding(15)
         .width('100%')
         .backgroundColor('#22ff4444')
-        .border({radius: 10, width: 0.5, color: '#ee717182'})
-
+        .border({ radius: 10, width: 0.5, color: '#ee717182' })
+      }
+      ListItem() {
         // 随机探索按钮
-        Row({space: 10}) {
+        Row({ space: 10 }) {
           Image($r('app.media.shuffle'))
             .width(14)
           Text('随机探索 SCP')
@@ -147,7 +167,7 @@ export struct Guide {
         .borderRadius(8)
         .width('100%')
         .justifyContent(FlexAlign.Center)
-        .padding({top: 10, bottom: 10})
+        .padding({ top: 10, bottom: 10 })
         // 添加点击事件，随机跳转到一个SCP项目详情页
         .onClick(() => {
           // 生成一个随机索引
@@ -155,18 +175,24 @@ export struct Guide {
           // 跳转到随机选择的SCP项目详情页
           this.pathStack.pushPathByName('scpObjDetail', mockSCPs[randomIndex], false);
         })
+      }
 
+      ListItem() {
         // 分类筛选按钮
-        Row({space: 10}) {
+        Row({ space: 10 }) {
           this.cusButton('全部', true)
           this.cusButton('Series 1', false)
         }
         .width('100%')
+      }
         // SCP档案标题
+      ListItem() {
         this.title('SCP档案', `${mockSCPs.length} 个项目`)
+      }
 
         // 遍历显示所有SCP项目
-        ForEach(mockSCPs, (item: SCP, index: number) => {
+      LazyForEach(this.data, (item: SCP) => {
+        ListItem() {
           Column({space: 10}) {
             Stack({alignContent: Alignment.TopEnd}) {
               Image(item.image)
@@ -235,15 +261,14 @@ export struct Guide {
           .onClick(() => {
             this.pathStack.pushPathByName('scpObjDetail', item, false)
           })
-        })
-      }
-      .padding({left: 25, right: 25})
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
-      .width('100%')
+        }
+      }, (item: string) => item)
     }
-    .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
     .height('100%')
+    .width('100%')
+    .padding({left: 25, right: 25})
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
     .width('100%')
   }
 }
