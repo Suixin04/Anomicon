@@ -126,7 +126,7 @@ export struct Guide {
           // 点击跳转到SCP项目详情页
           .padding({ bottom: 10 , left: 10, right: 10})
           .onClick(() => {
-            this.pathStack.pushPathByName('scpObjDetail', null, false)
+            this.pathStack.pushPathByName('scpObjDetail', mockSCPs[this.randomIdx.getNum()], false)
           })
         }
         .margin({top: 10})
@@ -148,6 +148,13 @@ export struct Guide {
         .width('100%')
         .justifyContent(FlexAlign.Center)
         .padding({top: 10, bottom: 10})
+        // 添加点击事件，随机跳转到一个SCP项目详情页
+        .onClick(() => {
+          // 生成一个随机索引
+          const randomIndex = Math.floor(Math.random() * mockSCPs.length);
+          // 跳转到随机选择的SCP项目详情页
+          this.pathStack.pushPathByName('scpObjDetail', mockSCPs[randomIndex], false);
+        })
 
         // 分类筛选按钮
         Row({space: 10}) {
@@ -222,6 +229,10 @@ export struct Guide {
           .backgroundColor('#1e1e1e')
           .justifyContent(FlexAlign.Start)
           .border({radius: 10, width: 0.5, color: '#ee717182'})
+          // 点击跳转到SCP项目详情页并传递参数
+          .onClick(() => {
+            this.pathStack.pushPathByName('scpObjDetail', item, false)
+          })
         })
       }
       .padding({left: 25, right: 25})

@@ -1,5 +1,6 @@
 import { mockSCPs } from "../data/mockData";
 import { CollapsibleCard } from "../utils/CollapsibleCard";
+import { SCP } from "../utils/types";
 
 // SCP对象详情页面构建器
 @Builder
@@ -9,16 +10,16 @@ export function ObjBuilder() {
 
 // 自定义标题构建器
 @Builder
-function cusTitle() {
+function cusTitle(scp: SCP) {
   Column({space: 10}){
     Row({space: 8}) {
       // SCP编号
-      Text(mockSCPs[0].number)
+      Text(scp.number)
         .fontColor('#ff4444')
         .fontSize(14)
         .fontWeight(FontWeight.Normal)
       // SCP项目等级
-      Text(mockSCPs[0].objectClass)
+      Text(scp.objectClass)
         .border({radius: 5, width: 0.8, color: '#ee717182'})
         .fontWeight(FontWeight.Bold)
         .fontColor('#fff')
@@ -27,7 +28,7 @@ function cusTitle() {
     }
     .width('100%')
     // SCP标题
-    Text(mockSCPs[0].title)
+    Text(scp.title)
       .fontColor('#fff')
       .fontSize(18)
       .fontWeight(FontWeight.Bold)
@@ -44,6 +45,8 @@ function cusTitle() {
 struct scpObjDetail {
   // 导航路径栈
   pathStack: NavPathStack = new NavPathStack();
+  // 当前显示的SCP项目
+  @Local scpItem: SCP = mockSCPs[0];
 
   build() {
     NavDestination() {
@@ -51,7 +54,7 @@ struct scpObjDetail {
         Column({space: 20}) {
           Column({ space: 15 }) {
             // SCP项目图片
-            Image(mockSCPs[0].image)
+            Image(this.scpItem.image)
               .objectFit(ImageFit.Cover)
               .border({width: 0.5, color: '#ee717182', radius: 10})
           }
@@ -67,7 +70,7 @@ struct scpObjDetail {
                     .fontColor('#a0a0a0')
                 }.width('100%')
                 Row() {
-                  Text(mockSCPs[0].objectClass)
+                  Text(this.scpItem.objectClass)
                     .margin({top: 5})
                     .border({radius: 5, width: 0.8, color: '#ee717182'})
                     .fontWeight(FontWeight.Bold)
@@ -87,7 +90,7 @@ struct scpObjDetail {
                     .fontColor('#a0a0a0')
                 }.width('100%')
                 Row() {
-                  Text(`Series ${mockSCPs[0].series.toString()}`)
+                  Text(`Series ${this.scpItem.series.toString()}`)
                     .margin({top: 5})
                     .fontColor('#fff')
                 }
@@ -104,7 +107,7 @@ struct scpObjDetail {
                     .fontColor('#a0a0a0')
                 }.width('100%')
                 Row() {
-                  Text(mockSCPs[0].dateAdded)
+                  Text(this.scpItem.dateAdded)
                     .fontSize(14)
                     .margin({top: 5})
                     .fontColor('#fff')
@@ -123,7 +126,7 @@ struct scpObjDetail {
                 }.width('100%')
                 // 标签列表
                 Flex({ wrap: FlexWrap.Wrap }) {
-                  ForEach(mockSCPs[0].tags, (tag: string, index: number) => {
+                  ForEach(this.scpItem.tags, (tag: string, index: number) => {
                     Text(tag)
                       .backgroundColor('#ff282525')
                       .borderRadius(6)
@@ -145,9 +148,11 @@ struct scpObjDetail {
           .padding(25)
 
           // 可折叠的信息卡片
-          CollapsibleCard({title: '项目描述', content: mockSCPs[0].description})
-          CollapsibleCard({title: '特殊收容措施', content: mockSCPs[0].containmentProcedures})
-          CollapsibleCard({title: '附录', content: mockSCPs[0].addendum})
+          CollapsibleCard({title: '项目描述', content: this.scpItem.description})
+          CollapsibleCard({title: '特殊收容措施', content: this.scpItem.containmentProcedures})
+          if (this.scpItem.addendum) {
+            CollapsibleCard({title: '附录', content: this.scpItem.addendum})
+          }
         }
         .padding({left: 25, right: 25, top: 25})
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
@@ -159,7 +164,7 @@ struct scpObjDetail {
       .width('100%')
       .height('100%')
     }
-    .title(cusTitle)
+    .title(cusTitle(this.scpItem))
     .backgroundColor('#121212')
     .backButtonIcon($r("app.media.arrow_left"))
     // 页面菜单
@@ -181,6 +186,12 @@ struct scpObjDetail {
     ])
     // 页面准备就绪时的回调处理
     .onReady((context: NavDestinationContext) => {
-      this.pathStack = context.pathStack;})
+      this.pathStack = context.pathStack;
+      // 获取传递的参数
+      const param = context.pathInfo.param as SCP;
+      if (param) {
+        this.scpItem = param;
+      }
+    })
   }
 }
