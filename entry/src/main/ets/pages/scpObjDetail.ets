@@ -1,6 +1,8 @@
 import { CollapsibleCard } from "../utils/CollapsibleCard";
 import { ImageWithLoading, SCP } from "../utils/types";
 import { scpApi } from "../utils/ScpApi";
+import { FavoriteService } from "../common/service/FavoriteService";
+import { promptAction } from '@kit.ArkUI';
 
 // SCP对象详情页面构建器
 @Builder
@@ -57,6 +59,10 @@ struct scpObjDetail {
   @Local scpItem: SCP | null = null;
   // 加载状态
   @Local isLoading: boolean = true;
+  // 收藏状态
+  @Local isFavorited: boolean = false;
+  // 收藏操作加载状态
+  @Local favoriteLoading: boolean = false;
 
   // 根据 number 提取数字部分用于API调用
   private extractScpNumber(fullNumber: string): string {
@@ -79,12 +85,56 @@ struct scpObjDetail {
         // 如果API获取失败，使用传入的参数作为降级处理
         this.scpItem = scpParam;
       }
+      
+      // 检查收藏状态
+      await this.checkFavoriteStatus();
     } catch (error) {
       console.error('加载SCP详情失败:', error);
       // 发生错误时使用传入的参数
       this.scpItem = scpParam;
     } finally {
       this.isLoading = false;
+    }
+  }
+
+  // 检查收藏状态
+  private async checkFavoriteStatus(): Promise<void> {
+    if (this.scpItem) {
+      try {
+        this.isFavorited = await FavoriteService.getInstance().isFavorited(this.scpItem.id);
+      } catch (error) {
+        console.error('检查收藏状态失败:', error);
+      }
+    }
+  }
+
+  // 切换收藏状态
+  private async toggleFavorite(): Promise<void> {
+    if (!this.scpItem || this.favoriteLoading) {
+      return;
+    }
+
+    this.favoriteLoading = true;
+    try {
+      const success = await FavoriteService.getInstance().toggleSCPFavorite(this.scpItem);
+      if (success) {
+        this.isFavorited = !this.isFavorited;
+        const message = this.isFavorited ? '已添加到收藏' : '已取消收藏';
+        promptAction.showToast({
+          message: message
+        });
+      } else {
+        promptAction.showToast({
+          message: '操作失败，请重试'
+        });
+      }
+    } catch (error) {
+      console.error('切换收藏状态失败:', error);
+      promptAction.showToast({
+        message: '操作失败，请重试'
+      });
+    } finally {
+      this.favoriteLoading = false;
     }
   }
 
@@ -224,22 +274,26 @@ struct scpObjDetail {
     .menus([
       {
         value: '分享',
-        icon: ($r('app.media.heart_em')),
+        icon: ($r("app.media.share")),
         action: () => {
           console.info('分享按钮点击');
         }
       },
       {
-        value: '收藏',
-        icon: ($r("app.media.share")),
+        value: this.isFavorited ? '取消收藏' : '收藏',
+        icon: this.isFavorited ? $r('app.media.heart_em') : $r('app.media.heart'),
         action: () => {
-          console.info('收藏按钮点击');
+          this.toggleFavorite();
         }
       }
     ])
     // 页面准备就绪时的回调处理
     .onReady((context: NavDestinationContext) => {
       this.pathStack = context.pathStack;
+      
+      // 初始化收藏服务
+      FavoriteService.initialize(getContext(this));
+      
       // 获取传递的参数
       const param = context.pathInfo.param as SCP;
       if (param) {

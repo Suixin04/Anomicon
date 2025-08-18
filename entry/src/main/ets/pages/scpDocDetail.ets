@@ -1,6 +1,8 @@
 import { mockSCPs, mockTales } from "../data/Data";
 import { Tale } from "../utils/types";
 import { CollapsibleCard } from "../utils/CollapsibleCard";
+import { FavoriteService } from '../common/service/FavoriteService';
+import { promptAction } from '@kit.ArkUI';
 
 // SCP文档详情页面构建器
 @Builder
@@ -39,6 +41,10 @@ struct scpDocDetail {
   pathStack: NavPathStack = new NavPathStack();
   // 当前显示的故事对象，默认为第一个故事
   @Local tale: Tale = mockTales[0];
+  // 收藏状态
+  @Local isFavorited: boolean = false;
+  // 收藏操作加载状态
+  @Local favoriteLoading: boolean = false;
 
   // 构建标签和相关信息的内容
   private buildTagsAndRelatedContent(): string[] {
@@ -55,6 +61,47 @@ struct scpDocDetail {
     }
     
     return content;
+  }
+
+  // 检查收藏状态
+  private async checkFavoriteStatus(): Promise<void> {
+    if (this.tale) {
+      try {
+        this.isFavorited = await FavoriteService.getInstance().isFavorited(this.tale.id);
+      } catch (error) {
+        console.error('检查收藏状态失败:', error);
+      }
+    }
+  }
+
+  // 切换收藏状态
+  private async toggleFavorite(): Promise<void> {
+    if (!this.tale || this.favoriteLoading) {
+      return;
+    }
+
+    this.favoriteLoading = true;
+    try {
+      const success = await FavoriteService.getInstance().toggleTaleFavorite(this.tale);
+      if (success) {
+        this.isFavorited = !this.isFavorited;
+        const message = this.isFavorited ? '已添加到收藏' : '已取消收藏';
+        promptAction.showToast({
+           message: message
+         });
+      } else {
+        promptAction.showToast({
+           message: '操作失败，请重试'
+         });
+      }
+    } catch (error) {
+      console.error('切换收藏状态失败:', error);
+      promptAction.showToast({
+         message: '操作失败，请重试'
+       });
+    } finally {
+      this.favoriteLoading = false;
+    }
   }
 
   build() {
@@ -82,13 +129,36 @@ struct scpDocDetail {
     .title(cusTitle(this.tale))
     .backgroundColor('#121212')
     .backButtonIcon($r("app.media.arrow_left"))
+    // 页面菜单
+    .menus([
+      {
+        value: '分享',
+        icon: ($r("app.media.share")),
+        action: () => {
+          console.info('分享按钮点击');
+        }
+      },
+      {
+        value: this.isFavorited ? '取消收藏' : '收藏',
+        icon: this.isFavorited ? $r('app.media.heart_em') : $r('app.media.heart'),
+        action: () => {
+          this.toggleFavorite();
+        }
+      }
+    ])
     // 页面准备就绪时的回调处理
     .onReady((context: NavDestinationContext) => {
       this.pathStack = context.pathStack;
+      
+      // 初始化收藏服务
+      FavoriteService.initialize(getContext(this));
+      
       // 获取传递的参数
       const param = context.pathInfo.param as Tale
       if (param) {
-        this.tale = param
+        this.tale = param;
+        // 检查收藏状态
+        this.checkFavoriteStatus();
       }
     })
   }
