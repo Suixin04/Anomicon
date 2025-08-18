@@ -4,7 +4,6 @@ import { Settings } from "./Settings"
 import { Story } from "./Story"
 import { AppStorageV2, curves } from "@kit.ArkUI"
 import { RandomNum, TabClass } from "../utils/types"
-import { mockSCPs } from "../data/Data"
 
 // 主页构建器
 @Builder
@@ -101,11 +100,6 @@ struct Homepage {
         // 标签切换时的回调处理
         .onChange((index: number) => {
           this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-            // 切换到图鉴页面时，生成新的随机推荐SCP项目
-            if (index === 0) {
-              this.randomIdx.setNum(Math.floor(Math.random() * mockSCPs.length)); 
-              console.log(this.randomIdx.getNum().toString())
-            }
             this.currentIdx = index
           })
         })

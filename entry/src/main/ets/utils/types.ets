@@ -50,8 +50,8 @@ export interface Tale {
 // 随机数类，用于生成每日推荐SCP项目
 @ObservedV2
 export class RandomNum {
-  // 随机索引值，初始化时生成一个随机数
-  @Trace randomIdx: number = Math.floor(Math.random() * mockSCPs.length)
+  // 随机索引值，初始化默认0，由页面在加载数据后设定上限范围
+  @Trace randomIdx: number = 0;
   
   // 设置随机索引值
   setNum(Num: number) {
@@ -145,8 +145,9 @@ class BasicDataSource implements IDataSource {
 }
 
 // SCP数据源类，继承自BasicDataSource
+@ObservedV2
 export class SCPSource extends BasicDataSource {
-  private dataArray: SCP[] = [];
+  @Trace private dataArray: SCP[] = [];
 
   // 获取数据总数
   public totalCount(): number {
@@ -162,6 +163,12 @@ export class SCPSource extends BasicDataSource {
   public pushData(data: SCP): void {
     this.dataArray.push(data);
     this.notifyDataAdd(this.dataArray.length - 1);
+  }
+
+  // 设置数据
+  public setData(newData: SCP[]): void {
+    this.dataArray = [...newData];
+    this.notifyDataReload();
   }
 }
 
