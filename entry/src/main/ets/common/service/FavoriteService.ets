@@ -36,6 +36,21 @@ const TAG = 'FavoriteService';
 export class FavoriteService {
   private static isInitialized: boolean = false;
   private static instance: FavoriteService | null = null;
+  
+  // 收藏变更监听集合（用于跨页面刷新）
+  private changeListeners: Set<() => void> = new Set();
+
+  // 订阅收藏变更，返回取消订阅函数
+  addChangeListener(listener: () => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  private notifyChange(): void {
+    this.changeListeners.forEach((fn) => {
+      try { fn(); } catch (e) { hilog.error(0x0000, TAG, 'notifyChange error: ' + e); }
+    });
+  }
 
   /**
    * Get singleton instance of FavoriteService.
@@ -84,16 +99,15 @@ export class FavoriteService {
     try {
       const favoriteItem = FavoriteItem.fromSCP(scp);
       const success = await RDBStoreUtil.insertFavorite(favoriteItem);
-      
       if (success) {
         // Update preferences
         const currentCount = PreferencesUtil.getFavoriteCount();
         PreferencesUtil.saveFavoriteCount(currentCount + 1);
         PreferencesUtil.saveLastFavoriteDate(new Date().toISOString());
-        
         hilog.info(0x0000, TAG, `Added SCP ${scp.number} to favorites`);
+        // 通知变更
+        this.notifyChange();
       }
-      
       return success;
     } catch (error) {
       hilog.error(0x0000, TAG, 'Failed to add SCP to favorites: ' + error);
@@ -108,16 +122,14 @@ export class FavoriteService {
     try {
       const favoriteItem = FavoriteItem.fromTale(tale);
       const success = await RDBStoreUtil.insertFavorite(favoriteItem);
-      
       if (success) {
-        // Update preferences
         const currentCount = PreferencesUtil.getFavoriteCount();
         PreferencesUtil.saveFavoriteCount(currentCount + 1);
         PreferencesUtil.saveLastFavoriteDate(new Date().toISOString());
-        
         hilog.info(0x0000, TAG, `Added Tale ${tale.title} to favorites`);
+        // 通知变更
+        this.notifyChange();
       }
-      
       return success;
     } catch (error) {
       hilog.error(0x0000, TAG, 'Failed to add Tale to favorites: ' + error);
@@ -131,15 +143,14 @@ export class FavoriteService {
   async removeFromFavorites(itemId: string): Promise<boolean> {
     try {
       const success = await RDBStoreUtil.deleteFavorite(itemId);
-      
       if (success) {
         // Update preferences
         const currentCount = PreferencesUtil.getFavoriteCount();
         PreferencesUtil.saveFavoriteCount(Math.max(0, currentCount - 1));
-        
         hilog.info(0x0000, TAG, `Removed item ${itemId} from favorites`);
+        // 通知变更
+        this.notifyChange();
       }
-      
       return success;
     } catch (error) {
       hilog.error(0x0000, TAG, 'Failed to remove from favorites: ' + error);

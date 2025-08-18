@@ -2,7 +2,9 @@ import { mockSCPs, mockTales } from "../data/Data";
 import { Tale } from "../utils/types";
 import { CollapsibleCard } from "../utils/CollapsibleCard";
 import { FavoriteService } from '../common/service/FavoriteService';
+import { ShareService } from '../common/service/ShareService';
 import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 
 // SCP文档详情页面构建器
 @Builder
@@ -104,6 +106,26 @@ struct scpDocDetail {
     }
   }
 
+  // 分享Tale故事
+  private async shareTale(): Promise<void> {
+    if (!this.tale) {
+      promptAction.showToast({
+        message: '暂无可分享的内容'
+      });
+      return;
+    }
+
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      await ShareService.getInstance().shareTale(context, this.tale);
+    } catch (error) {
+      console.error('分享失败:', error);
+      promptAction.showToast({
+        message: '分享失败，请重试'
+      });
+    }
+  }
+
   build() {
     NavDestination() {
       Scroll() {
@@ -135,7 +157,7 @@ struct scpDocDetail {
         value: '分享',
         icon: ($r("app.media.share")),
         action: () => {
-          console.info('分享按钮点击');
+          this.shareTale();
         }
       },
       {

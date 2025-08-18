@@ -16,6 +16,26 @@ export struct Favourite {
   // 当前选择的类型过滤器
   @Local selectedType: string = 'ALL' // 'ALL', 'SCP', 'TALE'
 
+  // 取消收藏变更订阅的函数
+  private unsubscribeFavoriteChange?: () => void;
+
+  // 页面即将显示：刷新数据并订阅收藏变更
+  async aboutToAppear(): Promise<void> {
+    await this.loadFavorites();
+    // 防止重复订阅
+    this.unsubscribeFavoriteChange?.();
+    this.unsubscribeFavoriteChange = FavoriteService.getInstance().addChangeListener(() => {
+      // 任意页面收藏状态变更时，刷新当前列表
+      this.loadFavorites();
+    });
+  }
+
+  // 页面即将隐藏：取消订阅，避免内存泄漏
+  aboutToDisappear(): void {
+    this.unsubscribeFavoriteChange?.();
+    this.unsubscribeFavoriteChange = undefined;
+  }
+
   // 加载收藏列表
   private async loadFavorites(): Promise<void> {
     this.isLoading = true;
@@ -80,7 +100,9 @@ export struct Favourite {
         tags: [],
         isFavorited: true
       };
-      this.pathStack.pushPathByName('scpObjDetail', scpItem);
+      this.pathStack.pushPathByName('scpObjDetail', scpItem, (_popInfo) => {
+        this.loadFavorites();
+      });
     } else if (item.type === 'TALE') {
       // 构造Tale对象
       const taleItem: Tale = {
@@ -92,7 +114,9 @@ export struct Favourite {
         tags: [],
         relatedSCPs: []
       };
-      this.pathStack.pushPathByName('scpDocDetail', taleItem);
+      this.pathStack.pushPathByName('scpDocDetail', taleItem, (_popInfo) => {
+        this.loadFavorites();
+      });
     }
   }
 
@@ -212,29 +236,32 @@ export struct Favourite {
 
         // 类型过滤器
         Row({ space: 10 }) {
-          Button('全部')
-            .backgroundColor(this.selectedType === 'ALL' ? '#ff6b35' : '#333')
-            .fontColor('#fff')
+          Text('全部')
+            .backgroundColor(this.selectedType === 'ALL' ? '#ff4444' : '#10717182')
+            .fontColor(this.selectedType === 'ALL' ? '#000' : '#fff')
             .fontSize(14)
-            .padding({ left: 15, right: 15, top: 8, bottom: 8 })
+            .border({radius: 8, width: this.selectedType === 'ALL' ? 0 : 0.5, color: '#ee717182'})
+            .padding({ left: 13, right: 13, top: 8, bottom: 8 })
             .onClick(() => {
               this.selectedType = 'ALL';
               this.loadFavorites();
             })
-          Button('SCP项目')
-            .backgroundColor(this.selectedType === 'SCP' ? '#ff6b35' : '#333')
-            .fontColor('#fff')
+          Text('SCP项目')
+            .backgroundColor(this.selectedType === 'SCP' ? '#ff4444' : '#10717182')
+            .fontColor(this.selectedType === 'SCP' ? '#000' : '#fff')
             .fontSize(14)
-            .padding({ left: 15, right: 15, top: 8, bottom: 8 })
+            .border({radius: 8, width: this.selectedType === 'SCP' ? 0 : 0.5, color: '#ee717182'})
+            .padding({ left: 13, right: 13, top: 8, bottom: 8 })
             .onClick(() => {
               this.selectedType = 'SCP';
               this.loadFavorites();
             })
-          Button('故事文档')
-            .backgroundColor(this.selectedType === 'TALE' ? '#ff6b35' : '#333')
-            .fontColor('#fff')
+          Text('故事文档')
+            .backgroundColor(this.selectedType === 'TALE' ? '#ff4444' : '#10717182')
+            .fontColor(this.selectedType === 'TALE' ? '#000' : '#fff')
             .fontSize(14)
-            .padding({ left: 15, right: 15, top: 8, bottom: 8 })
+            .border({radius: 8, width: this.selectedType === 'TALE' ? 0 : 0.5, color: '#ee717182'})
+            .padding({ left: 13, right: 13, top: 8, bottom: 8 })
             .onClick(() => {
               this.selectedType = 'TALE';
               this.loadFavorites();

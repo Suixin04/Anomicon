@@ -2,7 +2,9 @@ import { CollapsibleCard } from "../utils/CollapsibleCard";
 import { ImageWithLoading, SCP } from "../utils/types";
 import { scpApi } from "../utils/ScpApi";
 import { FavoriteService } from "../common/service/FavoriteService";
+import { ShareService } from "../common/service/ShareService";
 import { promptAction } from '@kit.ArkUI';
+import { common } from '@kit.AbilityKit';
 
 // SCP对象详情页面构建器
 @Builder
@@ -135,6 +137,26 @@ struct scpObjDetail {
       });
     } finally {
       this.favoriteLoading = false;
+    }
+  }
+
+  // 分享SCP项目
+  private async shareSCP(): Promise<void> {
+    if (!this.scpItem) {
+      promptAction.showToast({
+        message: '暂无可分享的内容'
+      });
+      return;
+    }
+
+    try {
+      const context = getContext(this) as common.UIAbilityContext;
+      await ShareService.getInstance().shareSCP(context, this.scpItem);
+    } catch (error) {
+      console.error('分享失败:', error);
+      promptAction.showToast({
+        message: '分享失败，请重试'
+      });
     }
   }
 
@@ -276,7 +298,7 @@ struct scpObjDetail {
         value: '分享',
         icon: ($r("app.media.share")),
         action: () => {
-          console.info('分享按钮点击');
+          this.shareSCP();
         }
       },
       {

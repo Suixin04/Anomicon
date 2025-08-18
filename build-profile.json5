@@ -1,6 +1,20 @@
 {
   "app": {
-    "signingConfigs": [],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001A63EC54F2303E3149E0B0A2030A85332358B47AC3DB254F5DB35F68FA245E04C41F5B10B02F15",
+          "profile": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.p12",
+          "storePassword": "0000001A3CC661C480A62F25731BAE5ADAFA0C56462EFE3843F88B7763A7758D3F94F377EFACFFCAFD31"
+        }
+      }
+    ],
     "products": [
       {
         "name": "default",
