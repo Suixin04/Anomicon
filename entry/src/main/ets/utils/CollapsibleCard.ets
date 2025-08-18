@@ -1,3 +1,5 @@
+import { curves } from '@kit.ArkUI';
+
 // 可折叠卡片组件，用于显示可展开/折叠的内容
 @ComponentV2
 @Preview
@@ -11,8 +13,7 @@ export struct CollapsibleCard {
   @Local private isExpanded: boolean = this.title == '项目描述' ? true : false;
 
   // 展开/折叠按钮图标
-  private expandedIcon: Resource = $r('app.media.ic_arrow_up');
-  private collapsedIcon: Resource = $r('app.media.ic_arrow_down');
+  private arrowIcon: Resource = $r('app.media.ic_arrow_down');
 
   build() {
     // 主容器
@@ -30,19 +31,22 @@ export struct CollapsibleCard {
           .fontWeight(FontWeight.Bold)
           .layoutWeight(1)
 
-        // 展开/折叠图标，根据状态切换显示
-        Image(this.isExpanded ? this.expandedIcon : this.collapsedIcon)
+        // 展开/折叠箭头图标，带旋转动画
+        Image(this.arrowIcon)
           .width(24)
           .height(24)
+          .rotate({ angle: this.isExpanded ? 180 : 0 })
+          .animation({ curve: curves.interpolatingSpring(0, 1, 228, 22) })
       }
       .width('100%')
       .padding({ top: 10, bottom: 10, left: 15, right: 15 })
       .backgroundColor('#1e1e1e')
       // 动态设置边框圆角，当展开时顶部有圆角，底部无圆角
       .border({ radius: this.isExpanded ? { topLeft: 10, topRight: 10, bottomLeft: 0, bottomRight: 0 } : 10 })
+      .animation({ curve: curves.interpolatingSpring(0, 1, 528, 39) })
       // 点击事件处理，添加动画效果
       .onClick(() => {
-        animateTo({ duration: 300 }, () => {
+        this.getUIContext()?.animateTo({ curve: curves.interpolatingSpring(0, 1, 528, 39) }, () => {
           this.isExpanded = !this.isExpanded;
         });
       })
@@ -74,11 +78,13 @@ export struct CollapsibleCard {
         .backgroundColor('#1e1e1e')
         // 设置内容区域的底部圆角
         .border({ radius: { topLeft: 0, topRight: 0, bottomLeft: 10, bottomRight: 10 } })
+        // 添加展开动画效果
+        .animation({ curve: curves.interpolatingSpring(0, 1, 528, 39) })
         // 添加过渡动画效果
         .transition({
           type: TransitionType.All,
-          scale: { x: 1, y: 1 },
-          opacity: 1
+          scale: { x: 1, y: 0 },
+          opacity: 0
         })
       }
     }

@@ -1,5 +1,6 @@
 import { mockSCPs, mockTales } from "../data/Data";
 import { Tale } from "../utils/types";
+import { CollapsibleCard } from "../utils/CollapsibleCard";
 
 // SCP文档详情页面构建器
 @Builder
@@ -39,81 +40,34 @@ struct scpDocDetail {
   // 当前显示的故事对象，默认为第一个故事
   @Local tale: Tale = mockTales[0];
 
+  // 构建标签和相关信息的内容
+  private buildTagsAndRelatedContent(): string[] {
+    const content: string[] = [];
+    
+    // 添加标签信息
+    if (this.tale.tags && this.tale.tags.length > 0) {
+      content.push('标签: ' + this.tale.tags.join(', '));
+    }
+    
+    // 添加相关SCP信息
+    if (this.tale.relatedSCPs && this.tale.relatedSCPs.length > 0) {
+      content.push('相关SCP: ' + this.tale.relatedSCPs.join(', '));
+    }
+    
+    return content;
+  }
+
   build() {
     NavDestination() {
       Scroll() {
         Column({space: 20}) {
-          Column({ space: 15 }) {
-            // 文档内容
-            Text(this.tale.content)
-              .fontSize(14)
-              .fontColor('#fff')
-          }
-          .border({width: 0.5, color: '#ee717182', radius: 10})
-          .width('100%')
-          .backgroundColor('#1e1e1e')
-          .justifyContent(FlexAlign.Start)
-          .padding({left: 20, right: 20, top: 30, bottom: 30})
-          Column({ space: 5 }) {
-            Row() {
-              Text('标签:')
-                .fontSize(14)
-                .fontColor('#a0a0a0')
-            }
-            .width('100%')
-            // 标签列表
-            Flex({ wrap: FlexWrap.Wrap }) {
-              ForEach(this.tale.tags, (tag: string, index: number) => {
-                Text(tag)
-                  .backgroundColor('#ff282525')
-                  .borderRadius(6)
-                  .fontColor('#fff')
-                  .fontSize(10)
-                  .fontWeight(FontWeight.Bold)
-                  .padding({left: 6, right: 6, top: 5, bottom: 5})
-                  .margin({right: 3, bottom: 3})
-              })
-            }
-            .width('100%')
-            .margin({bottom: 10})
-            // 如果存在相关SCP项目，则显示相关SCP列表
-            if (this.tale.relatedSCPs.length > 0) {
-              Row() {
-                Text('相关SCP:')
-                  .fontSize(14)
-                  .fontColor('#a0a0a0')
-              }
-              .width('100%')
-              // 相关SCP项目列表
-              Flex({ wrap: FlexWrap.Wrap }) {
-                ForEach(this.tale.relatedSCPs, (scp: string, index: number) => {
-                  Row({space: 5}) {
-                    Text(scp)
-                      .fontColor('#fff')
-                      .fontSize(10)
-                      .fontWeight(FontWeight.Bold)
-                    Image($r('app.media.outer_link'))
-                      .width(12)
-                  }
-                  .backgroundColor('#ff282525')
-                  .borderRadius(6)
-                  .padding({left: 6, right: 6, top: 5, bottom: 5})
-                  .margin({right: 3, bottom: 3})
-                  // 点击相关SCP项目可跳转到对应的SCP详情页
-                  .onClick(() => {
-                    // 根据SCP编号查找对应的SCP对象
-                    this.pathStack.pushPathByName('scpObjDetail', mockSCPs.find(item => item.number == scp), false)
-                  })
-                })
-              }
-              .width('100%')
-            }
-          }
-          .border({width: 0.5, color: '#ee717182', radius: 10})
-          .width('100%')
-          .backgroundColor('#1e1e1e')
-          .justifyContent(FlexAlign.Start)
-          .padding({left: 20, right: 20, top: 30, bottom: 30})
+          // 使用CollapsibleCard显示文档内容
+          CollapsibleCard({title: '文档内容', content: this.tale.content})
+          // 使用CollapsibleCard显示标签和相关信息
+          CollapsibleCard({
+            title: '标签与相关信息',
+            content: this.buildTagsAndRelatedContent()
+          })
         }
         .padding({left: 25, right: 25, top: 25})
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
