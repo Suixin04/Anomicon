@@ -151,7 +151,7 @@ struct scpDocDetail {
       this.pathStack = context.pathStack;
       
       // 初始化收藏服务
-      FavoriteService.initialize(getContext(this));
+      FavoriteService.getInstance().initialize(getContext(this));
       
       // 获取传递的参数
       const param = context.pathInfo.param as Tale
