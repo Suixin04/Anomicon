@@ -30,8 +30,8 @@ export struct Favourite {
     });
   }
 
-  // 页面即将隐藏：取消订阅，避免内存泄漏
-  aboutToDisappear(): void {
+  // 页面将被销毁：取消订阅，避免内存泄漏
+  aboutToBeDeleted(): void {
     this.unsubscribeFavoriteChange?.();
     this.unsubscribeFavoriteChange = undefined;
   }
