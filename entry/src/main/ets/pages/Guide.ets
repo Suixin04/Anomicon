@@ -1,6 +1,7 @@
 import { ImageWithLoading, RandomNum, SCP, SCPSource } from "../utils/types"
 import { AppStorageV2 } from "@kit.ArkUI"
 import { scpApi } from "../utils/ScpApi"
+import { SkeletonScreen } from "../components/SkeletonScreen"
 
 // 标题构建器
 // @Builder
@@ -46,6 +47,7 @@ export struct Guide {
   @Local private hasMore: boolean = true
   @Local private isRefreshing: boolean = false
   @Local private isSearching: boolean = false
+  @Local private loadError: boolean = false
   private searchTimeout: number | null = null
 
   // 计算过滤后的SCP列表
@@ -76,6 +78,10 @@ export struct Guide {
 
   // 组件即将显示时的处理函数
   async aboutToAppear(): Promise<void> {
+    // 立即设置加载状态，确保骨架屏能够及时显示
+    this.isLoading = true
+    this.loadError = false
+    
     // 检查API服务器健康状态
     const isHealthy = await scpApi.checkHealth()
     if (!isHealthy) {
@@ -89,7 +95,6 @@ export struct Guide {
 
   // 加载初始数据
   private async loadInitialData(): Promise<void> {
-    this.isLoading = true
     try {
       const list = await scpApi.getScpList(this.pageSize, 1)
       
@@ -101,15 +106,18 @@ export struct Guide {
         this.randomIdx.setNum(Math.floor(Math.random() * this.scpList.length))
         // 更新数据源（只调用一次）
         this.updateDataSource()
+        this.isLoading = false
       } else {
         console.error('未能从API获取到SCP列表')
         this.hasMore = false
+        this.loadError = true
+        this.isLoading = false
       }
     } catch (error) {
       console.error('加载初始数据失败:', error)
       this.hasMore = false
-    } finally {
-      this.isLoading = false
+      this.loadError = true
+      // 保持isLoading为true以继续显示骨架屏，或者可以显示错误状态
     }
   }
 
@@ -248,17 +256,18 @@ export struct Guide {
 
   build() {
     Refresh({ refreshing: this.isRefreshing }) {
-      List({space: 20}) {
-        ListItem() {
+      // 初始加载时显示骨架屏或错误状态
+      if ((this.isLoading || this.loadError) && this.scpList.length === 0 && !this.isSearchMode) {
+        Column({ space: 20 }) {
+          // 标题
           Text('SCP 基金会')
             .fontSize(25)
             .fontWeight(FontWeight.Medium)
             .fontColor('#fff')
-        }
-        .width('100%')
-
-        // 搜索框
-        ListItem() {
+            .width('100%')
+            .padding({ left: 25, right: 25 })
+          
+          // 搜索框
           Search({ placeholder: '搜索SCP编号、名称或描述…' })
             .searchIcon({ src: $r('app.media.search') })
             .placeholderColor(Color.Gray)
@@ -270,17 +279,85 @@ export struct Guide {
             .width('95%')
             .height(35)
             .borderRadius(8)
+            .margin({ left: 25, right: 25 })
             .onChange((v: string) => {
               this.keyword = v
-              // 使用防抖搜索
               this.debouncedSearch(v)
             })
             .onSubmit(() => {
-              // 提交时立即执行搜索
               this.performSearch(this.keyword)
             })
+          
+          if (this.loadError) {
+            // 错误状态
+            Column({ space: 15 }) {
+              Text('加载失败')
+                .fontSize(18)
+                .fontColor('#ff4444')
+                .fontWeight(FontWeight.Medium)
+              
+              Text('无法连接到服务器，请检查网络连接或稍后重试')
+                .fontSize(14)
+                .fontColor('#a0a0a0')
+                .textAlign(TextAlign.Center)
+                .maxLines(2)
+              
+              Button('重试')
+                .fontSize(16)
+                .fontColor('#fff')
+                .backgroundColor('#ff4444')
+                .borderRadius(8)
+                .padding({ left: 30, right: 30, top: 10, bottom: 10 })
+                .onClick(() => {
+                  this.loadError = false
+                  this.loadInitialData()
+                })
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .padding({ top: 100 })
+          } else {
+            // 骨架屏
+            SkeletonScreen({ visible: true, itemCount: 5 })
+          }
         }
         .width('100%')
+        .height('100%')
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
+      } else {
+        List({space: 20}) {
+          ListItem() {
+            Text('SCP 基金会')
+              .fontSize(25)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#fff')
+          }
+          .width('100%')
+
+          // 搜索框
+          ListItem() {
+            Search({ placeholder: '搜索SCP编号、名称或描述…' })
+              .searchIcon({ src: $r('app.media.search') })
+              .placeholderColor(Color.Gray)
+              .placeholderFont({ size: 16, weight: FontWeight.Normal })
+              .textFont({ size: 16, weight: FontWeight.Normal })
+              .fontColor('#fff')
+              .backgroundColor('#10717182')
+              .border({ color: '#ee717182', width: 0.5 })
+              .width('95%')
+              .height(35)
+              .borderRadius(8)
+              .onChange((v: string) => {
+                this.keyword = v
+                // 使用防抖搜索
+                this.debouncedSearch(v)
+              })
+              .onSubmit(() => {
+                // 提交时立即执行搜索
+                this.performSearch(this.keyword)
+              })
+          }
+          .width('100%')
 
         // 今日推荐区域
         if (this.scpList.length > 0 && !this.isSearchMode) {
@@ -503,16 +580,17 @@ export struct Guide {
               .padding(20)
           }
         }
+        }
+        .scrollBar(BarState.Off)
+        .height('100%')
+        .width('100%')
+        .padding({left: 25, right: 25})
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
+        .width('100%')
+        .onScrollIndex((first: number, last: number, center: number) => {
+          this.onScrollIndex(first, last, center)
+        })
       }
-      .scrollBar(BarState.Off)
-      .height('100%')
-      .width('100%')
-      .padding({left: 25, right: 25})
-      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
-      .width('100%')
-      .onScrollIndex((first: number, last: number, center: number) => {
-        this.onScrollIndex(first, last, center)
-      })
     }
     .onRefreshing(() => {
       this.onRefresh()
