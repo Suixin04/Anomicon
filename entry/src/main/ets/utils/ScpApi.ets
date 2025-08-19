@@ -87,12 +87,19 @@ export class ScpApi {
    * 获取SCP列表
    * @param limit 限制返回数量（默认20）
    * @param page 页码（默认1）
+   * @param series 系列编号（可选，1-9）
    * @returns Promise<SCP[]>
    */
-  async getScpList(limit: number = 20, page: number = 1): Promise<SCP[]> {
+  async getScpList(limit: number = 20, page: number = 1, series?: number): Promise<SCP[]> {
     try {
       const offset = (page - 1) * limit;
-      const url = `${this.baseUrl}/scp?limit=${limit}&offset=${offset}`;
+      let url = `${this.baseUrl}/scp?limit=${limit}&offset=${offset}`;
+      
+      // 如果指定了系列，添加系列过滤参数
+      if (series && series > 0) {
+        url += `&series=${series}`;
+      }
+      
       const response = await this.httpRequest.request(url, {
         method: http.RequestMethod.GET,
         expectDataType: http.HttpDataType.STRING,
@@ -122,9 +129,12 @@ export class ScpApi {
    * @param limit 限制返回数量（默认50）
    * @returns Promise<SCP[]>
    */
-  async searchScp(keyword: string, limit: number = 50): Promise<SCP[]> {
+  async searchScp(keyword: string, limit: number = 50, series?: number): Promise<SCP[]> {
     try {
-      const url = `${this.baseUrl}/search?q=${encodeURIComponent(keyword)}&limit=${limit}`;
+      let url = `${this.baseUrl}/search?q=${encodeURIComponent(keyword)}&limit=${limit}`;
+      if (series && series > 0) {
+        url += `&series=${series}`;
+      }
       const response = await this.httpRequest.request(url, {
         method: http.RequestMethod.GET,
         expectDataType: http.HttpDataType.STRING,

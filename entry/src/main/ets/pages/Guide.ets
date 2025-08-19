@@ -3,8 +3,13 @@ import { AppStorageV2 } from "@kit.ArkUI"
 import { scpApi } from "../utils/ScpApi"
 import { SkeletonScreen } from "../components/SkeletonScreen"
 
+// 系列状态类
+@ObservedV2
+class SeriesState {
+  @Trace value: number = 0
+}
+
 // 标题构建器
-// @Builder
 @ComponentV2
 struct title_cus {
   @Param fixText: string = 'SCP档案'
@@ -21,6 +26,22 @@ struct title_cus {
     .padding({top: 10})
     .justifyContent(FlexAlign.SpaceBetween)
     .width('100%')
+  }
+}
+
+// 自定义按钮组件
+@ComponentV2
+struct CustomButton {
+  @Param text: string = ''
+  @Param isSelected: boolean = false
+  
+  build() {
+    Button(this.text, {type: ButtonType.Normal})
+      .fontSize(14)
+      .fontColor(this.isSelected ? '#000' : '#fff')
+      .backgroundColor(this.isSelected ? '#ff4444' : '#10717182')
+      .border({radius: 8, width: this.isSelected ? 0 : 0.5, color: '#ee717182'})
+      .padding({top: 8, bottom: 8, left: 13, right: 13})
   }
 }
 
@@ -48,16 +69,33 @@ export struct Guide {
   @Local private isRefreshing: boolean = false
   @Local private isSearching: boolean = false
   @Local private loadError: boolean = false
+  @Local private selectedSeries: number = 0 // 0表示全部，1-9表示对应系列
+  @Local private seriesState: SeriesState = new SeriesState() // 使用对象包装确保UI更新
   private searchTimeout: number | null = null
 
   // 计算过滤后的SCP列表
   private get filteredScpList(): SCP[] {
-    if (!this.keyword || this.keyword.trim() === '') {
-      return this.scpList
+    let baseList: SCP[] = []
+    
+    if (this.keyword && this.keyword.trim() !== '') {
+      // 搜索模式下返回API搜索结果
+      baseList = this.searchResults
+    } else {
+      // 非搜索模式下使用本地列表
+      baseList = this.scpList
     }
     
-    // 搜索模式下返回API搜索结果
-    return this.searchResults
+    // 如果选择了特定系列，进行系列筛选
+    if (this.seriesState.value > 0) {
+      return baseList.filter(scp => {
+        const scpNumber = parseInt(scp.number.replace('SCP-', ''))
+        const seriesStart = (this.seriesState.value - 1) * 1000 + 1
+        const seriesEnd = this.seriesState.value * 1000
+        return scpNumber >= seriesStart && scpNumber <= seriesEnd
+      })
+    }
+    
+    return baseList
   }
   
   // 判断是否为搜索模式
@@ -96,7 +134,9 @@ export struct Guide {
   // 加载初始数据
   private async loadInitialData(): Promise<void> {
     try {
-      const list = await scpApi.getScpList(this.pageSize, 1)
+      // 根据当前选择的系列加载数据
+      const series = this.seriesState.value > 0 ? this.seriesState.value : undefined
+      const list = await scpApi.getScpList(this.pageSize, 1, series)
       
       if (list.length > 0) {
         this.scpList = list
@@ -132,7 +172,7 @@ export struct Guide {
         // 普通模式下的刷新
         this.currentPage = 1
         this.hasMore = true
-        const list = await scpApi.getScpList(this.pageSize, 1)
+        const list = await scpApi.getScpList(this.pageSize, 1, this.seriesState.value > 0 ? this.seriesState.value : undefined)
         if (list.length > 0) {
           this.scpList = list
           this.hasMore = list.length === this.pageSize
@@ -158,7 +198,7 @@ export struct Guide {
     this.isLoading = true
     try {
       const nextPage = this.currentPage + 1
-      const newList = await scpApi.getScpList(this.pageSize, nextPage)
+      const newList = await scpApi.getScpList(this.pageSize, nextPage, this.seriesState.value > 0 ? this.seriesState.value : undefined)
       
       if (newList.length > 0) {
         // 追加新数据到现有列表
@@ -175,6 +215,26 @@ export struct Guide {
       console.error('加载更多数据失败:', error)
     } finally {
       this.isLoading = false
+    }
+  }
+
+  // 新增：系列切换时仅更新懒加载列表的数据
+  private async loadSeriesData(): Promise<void> {
+    try {
+      const series = this.seriesState.value > 0 ? this.seriesState.value : undefined
+      const list = await scpApi.getScpList(this.pageSize, 1, series)
+      // 不清空列表与不切换全局 isLoading，避免顶层骨架/整页刷新
+      this.scpList = list
+      this.currentPage = 1
+      this.hasMore = list.length === this.pageSize
+      // 更新推荐项
+      if (this.scpList.length > 0) {
+        this.randomIdx.setNum(Math.floor(Math.random() * this.scpList.length))
+      }
+      // 只更新懒加载数据源
+      this.updateDataSource()
+    } catch (e) {
+      console.error('切换系列加载失败:', e)
     }
   }
 
@@ -201,7 +261,7 @@ export struct Guide {
 
     this.isSearching = true
     try {
-      const results = await scpApi.searchScp(keyword.trim(), 50)
+      const results = await scpApi.searchScp(keyword.trim(), 50, this.seriesState.value > 0 ? this.seriesState.value : undefined)
       this.searchResults = results
     } catch (error) {
       console.error('搜索失败:', error)
@@ -235,24 +295,7 @@ export struct Guide {
     }
   }
 
-  // 自定义按钮构建器
-  @Builder
-  cusButton (text:string, isSelected: boolean, image?:ResourceStr | string) {
-    Row({space: 10}) {
-      if (image) {
-        Image(image)
-          .width(14)
-      }
-      Text(text)
-        .fontSize(14)
-        .fontColor(isSelected ? '#000' : '#fff')
-    }
-    .backgroundColor(isSelected? '#ff4444' : '#10717182')
-    .border({radius: 8, width: isSelected ? 0 : 0.5, color: '#ee717182'})
-    .justifyContent(FlexAlign.Center)
-    .padding({top: 8, bottom: 8, left: 13, right: 13})
-    .justifyContent(FlexAlign.Start)
-  }
+
 
   build() {
     Refresh({ refreshing: this.isRefreshing }) {
@@ -449,10 +492,36 @@ export struct Guide {
         }
 
         ListItem() {
-          Row({ space: 10 }) {
-            this.cusButton('全部', true)
-            this.cusButton('Series 1', false)
+          Scroll() {
+            Row({ space: 10 }) {
+              Row() {
+                CustomButton({ text: '全部', isSelected: this.seriesState.value === 0 })
+              }
+              .onClick(async () => {
+                  this.seriesState.value = 0
+                  // 退出搜索模式
+                  this.keyword = ''
+                  // 在后台加载新系列数据
+                  await this.loadSeriesData()
+                })
+              
+              ForEach([1, 2, 3, 4, 5, 6, 7, 8, 9], (series: number) => {
+                Row() {
+                  CustomButton({ text: `Series ${series}`, isSelected: this.seriesState.value === series })
+                }
+                .onClick(async () => {
+                  this.seriesState.value = series
+                  // 退出搜索模式
+                  this.keyword = ''
+                  // 在后台加载新系列数据，仅更新懒加载组件
+                  await this.loadSeriesData()
+                })
+              }, (series: number) => series.toString())
+            }
+            .padding({ left: 5, right: 5 })
           }
+          .scrollable(ScrollDirection.Horizontal)
+          .scrollBar(BarState.Off)
           .width('100%')
         }
 
