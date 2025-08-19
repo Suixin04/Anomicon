@@ -277,13 +277,14 @@ struct scpObjDetail {
       } else {
         Scroll() {
           Column({space: 20}) {
-            Column({ space: 15 }) {
-              // SCP项目图片，使用ImageWithLoading组件支持加载状态显示
-              ImageWithLoading({src: this.scpItem.image, imgWidth: '100%', imgHeight: '100%', imgRadius: 0})
+            if (this.scpItem.image) {
+              Column({ space: 15 }) {
+                // SCP项目图片，使用ImageWithLoading组件支持加载状态显示
+                ImageWithLoading({src: this.scpItem.image, imgWidth: '100%', imgHeight: '100%', objectFit: ImageFit.Contain})
+              }
+              .height(200)
+              .border({width: 0.5, color: '#ee717182', radius: 10})
             }
-            .height(200)
-            .width('100%')
-            .border({width: 0.5, color: '#ee717182', radius: 10})
             // 项目信息网格布局
             GridRow({columns: 2}) {
               GridCol() {

@@ -109,9 +109,26 @@ export struct Guide {
   // 推荐项 getter（避免在 UI 语法中声明 const）
   private get recommendedScp(): SCP | null {
     if (this.scpList.length === 0) return null;
-    const idx = this.randomIdx.getNum();
+    const idx = this.getDailyRecommendedIndex();
     if (idx < 0 || idx >= this.scpList.length) return null;
     return this.scpList[idx];
+  }
+
+  // 根据当前日期生成固定的推荐索引
+  private getDailyRecommendedIndex(): number {
+    if (this.scpList.length === 0) return 0;
+    
+    // 获取当前日期的年月日
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth() + 1; // getMonth() 返回 0-11，需要加1
+    const day = today.getDate();
+    
+    // 使用年月日组合作为种子生成固定索引
+    const seed = year * 10000 + month * 100 + day;
+    const index = seed % this.scpList.length;
+    
+    return index;
   }
 
   // 组件即将显示时的处理函数
@@ -142,8 +159,7 @@ export struct Guide {
         this.scpList = list
         this.currentPage = 1
         this.hasMore = list.length === this.pageSize
-        // 初始化每日推荐随机索引
-        this.randomIdx.setNum(Math.floor(Math.random() * this.scpList.length))
+        // 每日推荐现在基于日期固定，无需设置随机索引
         // 更新数据源（只调用一次）
         this.updateDataSource()
         this.isLoading = false
@@ -178,8 +194,7 @@ export struct Guide {
           this.hasMore = list.length === this.pageSize
           // 更新数据源（只调用一次）
           this.updateDataSource()
-          // 更新推荐项目
-          this.randomIdx.setNum(Math.floor(Math.random() * this.scpList.length))
+          // 推荐项目现在基于日期固定，无需更新随机索引
         }
       }
     } catch (error) {
@@ -227,10 +242,7 @@ export struct Guide {
       this.scpList = list
       this.currentPage = 1
       this.hasMore = list.length === this.pageSize
-      // 更新推荐项
-      if (this.scpList.length > 0) {
-        this.randomIdx.setNum(Math.floor(Math.random() * this.scpList.length))
-      }
+      // 推荐项目现在基于日期固定，无需更新随机索引
       // 只更新懒加载数据源
       this.updateDataSource()
     } catch (e) {
@@ -420,7 +432,7 @@ export struct Guide {
               .padding({ bottom: 15, top: 10 })
 
               Row({ space: 15 }) {
-                ImageWithLoading({src: this.recommendedScp?.image, imgWidth: 80, imgHeight: 80, imgRadius: 8})
+                ImageWithLoading({src: this.recommendedScp?.image, imgWidth: 80, imgHeight: 80, imgRadius: {topLeft: 8, topRight: 8, bottomLeft: 8, bottomRight: 8}})
                 Column({ space: 10 }) {
                   Row({ space: 8 }) {
                     Text(this.recommendedScp?.number ?? '')
@@ -533,7 +545,7 @@ export struct Guide {
           ListItem() {
             Column({space: 10}) {
               Stack({alignContent: Alignment.TopEnd}) {
-                ImageWithLoading({src: item.image, imgWidth: '100%', imgHeight: 128, imgRadius: 10})
+                ImageWithLoading({src: item.image, imgWidth: '100%', imgHeight: 128, imgRadius: {topLeft: 10, topRight: 10}})
                 Text(item.objectClass)
                   .margin({top: 10, right: 10})
                   .border({radius: 5, width: 0.8, color: '#ee717182'})

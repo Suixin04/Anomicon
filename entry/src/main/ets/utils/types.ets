@@ -190,7 +190,7 @@ export struct ImageWithLoading {
   // 高度，支持百分比或固定值
   @Param @Require imgHeight: string | number;
   // 图片圆角
-  @Param @Require imgRadius: number;
+  @Param imgRadius: BorderRadiuses = {topLeft: 0, topRight: 0, bottomLeft: 0, bottomRight: 0};
   // 图片填充模式
   @Param objectFit: ImageFit = ImageFit.Cover;
 
@@ -210,11 +210,11 @@ export struct ImageWithLoading {
 
       // 当图片加载失败时显示一个占位符
       if (!this.isLoading && this.isError) {
-        Image($r('app.media.image_off'))
-          .width(60)
-          .height(60)
-          .borderRadius({topLeft: this.imgRadius, topRight: this.imgRadius})
-          .objectFit(this.objectFit)
+        Image($r('app.media.SCP_icon'))
+          .width(this.imgWidth)
+          .height(this.imgHeight)
+          .borderRadius(this.imgRadius)
+          .objectFit(ImageFit.Cover)
           .backgroundColor(Color.Gray);
       }
 
@@ -222,7 +222,7 @@ export struct ImageWithLoading {
       Image(this.src)
         .width(this.imgWidth)
         .height(this.imgHeight)
-        .borderRadius({topLeft: this.imgRadius, topRight: this.imgRadius})
+        .borderRadius(this.imgRadius)
         .objectFit(this.objectFit)
         .onComplete(() => {
           this.isLoading = false;
