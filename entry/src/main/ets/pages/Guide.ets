@@ -35,6 +35,8 @@ export struct Guide {
   @Local private data: SCPSource = new SCPSource()
   // 本地缓存的当前列表
   @Local private scpList: SCP[] = []
+  // 搜索结果列表
+  @Local private searchResults: SCP[] = []
   // 搜索关键词
   @Local private keyword: string = ''
 
@@ -43,7 +45,23 @@ export struct Guide {
   @Local private isLoading: boolean = false
   @Local private hasMore: boolean = true
   @Local private isRefreshing: boolean = false
-  @Local private isSearchMode: boolean = false
+  @Local private isSearching: boolean = false
+  private searchTimeout: number | null = null
+
+  // 计算过滤后的SCP列表
+  private get filteredScpList(): SCP[] {
+    if (!this.keyword || this.keyword.trim() === '') {
+      return this.scpList
+    }
+    
+    // 搜索模式下返回API搜索结果
+    return this.searchResults
+  }
+  
+  // 判断是否为搜索模式
+  private get isSearchMode(): boolean {
+    return this.keyword.trim() !== ''
+  }
 
   // 每页加载的数据量
   private readonly pageSize: number = 20
@@ -58,27 +76,31 @@ export struct Guide {
 
   // 组件即将显示时的处理函数
   async aboutToAppear(): Promise<void> {
+    // 检查API服务器健康状态
+    const isHealthy = await scpApi.checkHealth()
+    if (!isHealthy) {
+      console.error('[ERROR] API服务器连接失败，请确保服务器正在运行')
+    } else {
+      console.log('[INFO] API服务器连接正常')
+    }
+    
     await this.loadInitialData()
   }
 
   // 加载初始数据
   private async loadInitialData(): Promise<void> {
-    console.log('[DEBUG] 开始加载初始数据...')
     this.isLoading = true
     try {
       const list = await scpApi.getScpList(this.pageSize, 1)
-      console.log('[DEBUG] API 返回数据:', list.length, '条')
       
       if (list.length > 0) {
-        console.log('[DEBUG] 第一条数据:', JSON.stringify(list[0]))
         this.scpList = list
         this.currentPage = 1
         this.hasMore = list.length === this.pageSize
         // 初始化每日推荐随机索引
         this.randomIdx.setNum(Math.floor(Math.random() * this.scpList.length))
-        // 重新创建数据源
-        this.data.setData(this.scpList)
-        console.log('[DEBUG] 数据源总数:', this.data.totalCount())
+        // 更新数据源（只调用一次）
+        this.updateDataSource()
       } else {
         console.error('未能从API获取到SCP列表')
         this.hasMore = false
@@ -88,7 +110,6 @@ export struct Guide {
       this.hasMore = false
     } finally {
       this.isLoading = false
-      console.log('[DEBUG] 加载完成，isLoading:', this.isLoading, '数据源总数:', this.data.totalCount())
     }
   }
 
@@ -98,7 +119,7 @@ export struct Guide {
     try {
       if (this.isSearchMode) {
         // 搜索模式下的刷新
-        await this.doSearch()
+        await this.performSearch(this.keyword)
       } else {
         // 普通模式下的刷新
         this.currentPage = 1
@@ -107,8 +128,8 @@ export struct Guide {
         if (list.length > 0) {
           this.scpList = list
           this.hasMore = list.length === this.pageSize
-          // 重新创建数据源
-          this.data.setData(this.scpList)
+          // 更新数据源（只调用一次）
+          this.updateDataSource()
           // 更新推荐项目
           this.randomIdx.setNum(Math.floor(Math.random() * this.scpList.length))
         }
@@ -149,29 +170,51 @@ export struct Guide {
     }
   }
 
-  // 执行搜索
-  private async doSearch(): Promise<void> {
-    if (!this.keyword || this.keyword.trim() === '') {
-      // 还原为初始列表
-      this.isSearchMode = false
-      this.currentPage = 1
-      this.hasMore = true
-      this.data.setData(this.scpList)
+  // 带防抖的搜索方法
+  private debouncedSearch(keyword: string): void {
+    // 清除之前的定时器
+    if (this.searchTimeout !== null) {
+      clearTimeout(this.searchTimeout)
+    }
+
+    // 设置新的定时器
+    this.searchTimeout = setTimeout(() => {
+      this.performSearch(keyword)
+    }, 500) // 500ms 防抖延迟
+  }
+
+  // 执行API搜索
+  private async performSearch(keyword: string): Promise<void> {
+    if (!keyword || keyword.trim() === '') {
+      this.searchResults = []
+      this.updateDataSource()
       return
     }
 
-    this.isSearchMode = true
-    this.isLoading = true
+    this.isSearching = true
     try {
-      // 搜索模式下，每次搜索获取更多结果
-      const res = await scpApi.searchScp(this.keyword.trim(), 100)
-      // 使用新的数据源以触发 LazyForEach 刷新
-      this.data.setData(res)
-      this.hasMore = false // 搜索结果不支持分页加载
+      const results = await scpApi.searchScp(keyword.trim(), 50)
+      this.searchResults = results
     } catch (error) {
       console.error('搜索失败:', error)
+      this.searchResults = []
     } finally {
-      this.isLoading = false
+      this.isSearching = false
+      this.updateDataSource()
+    }
+  }
+
+  // 更新数据源
+  private updateDataSource(): void {
+    const filteredData = this.filteredScpList
+    this.data.setData(filteredData)
+    
+    // 搜索模式下不支持分页加载
+    if (this.isSearchMode) {
+      this.hasMore = false
+    } else {
+      // 非搜索模式下恢复分页状态
+      this.hasMore = this.scpList.length >= this.currentPage * this.pageSize
     }
   }
 
@@ -227,9 +270,17 @@ export struct Guide {
             .width('95%')
             .height(35)
             .borderRadius(8)
-            .onChange((v: string) => this.keyword = v)
-            .onSubmit(async () => await this.doSearch())
+            .onChange((v: string) => {
+              this.keyword = v
+              // 使用防抖搜索
+              this.debouncedSearch(v)
+            })
+            .onSubmit(() => {
+              // 提交时立即执行搜索
+              this.performSearch(this.keyword)
+            })
         }
+        .width('100%')
 
         // 今日推荐区域
         if (this.scpList.length > 0 && !this.isSearchMode) {
@@ -297,25 +348,27 @@ export struct Guide {
           }
         }
 
-        ListItem() {
-          Row({ space: 10 }) {
-            Image($r('app.media.shuffle'))
-              .width(14)
-            Text('随机探索 SCP')
-              .fontSize(14)
-              .fontColor('#000')
-          }
-          .backgroundColor('#ff4444')
-          .borderRadius(8)
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-          .padding({ top: 10, bottom: 10 })
-          .onClick(() => {
-            if (this.scpList.length > 0) {
-              const randomIndex = Math.floor(Math.random() * this.scpList.length);
-              this.pathStack.pushPathByName('scpObjDetail', this.scpList[randomIndex], false);
+        if (!this.isSearchMode) {
+          ListItem() {
+            Row({ space: 10 }) {
+              Image($r('app.media.shuffle'))
+                .width(14)
+              Text('随机探索 SCP')
+                .fontSize(14)
+                .fontColor('#000')
             }
-          })
+            .backgroundColor('#ff4444')
+            .borderRadius(8)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .padding({ top: 10, bottom: 10 })
+            .onClick(() => {
+              if (this.scpList.length > 0) {
+                const randomIndex = Math.floor(Math.random() * this.scpList.length);
+                this.pathStack.pushPathByName('scpObjDetail', this.scpList[randomIndex], false);
+              }
+            })
+          }
         }
 
         ListItem() {
@@ -391,10 +444,39 @@ export struct Guide {
               this.pathStack.pushPathByName('scpObjDetail', item, false)
             })
           }
-        }, (item: string) => item)
+        }, (item: SCP) => item.id)
+
+        // 搜索状态指示器
+        if (this.isSearching) {
+          ListItem() {
+            Row({ space: 10 }) {
+              LoadingProgress()
+                .width(20)
+                .height(20)
+              Text('搜索中...')
+                .fontSize(14)
+                .fontColor('#a0a0a0')
+            }
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            .padding(20)
+          }
+        }
+
+        // 搜索无结果提示
+        if (this.isSearchMode && !this.isSearching && this.filteredScpList.length === 0) {
+          ListItem() {
+            Text('没有找到匹配的SCP，试试其他关键词。')
+              .fontSize(14)
+              .fontColor('#a0a0a0')
+              .width('100%')
+              .textAlign(TextAlign.Center)
+              .padding(20)
+          }
+        }
 
         // 加载状态指示器
-        if (this.isLoading && !this.isRefreshing) {
+        if (this.isLoading && !this.isRefreshing && !this.isSearchMode) {
           ListItem() {
             Row({ space: 10 }) {
               LoadingProgress()

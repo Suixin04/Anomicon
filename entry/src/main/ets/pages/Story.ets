@@ -45,7 +45,6 @@ export struct Story {
           .width('95%')
           .height(35)
           .borderRadius(8)
-          .onSubmit(() => console.log('Searching'))
 
         // 外围文档标题
         this.title('外围文档', `${mockTales.length} 个故事`)

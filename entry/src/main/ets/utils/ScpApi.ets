@@ -136,7 +136,8 @@ export class ScpApi {
         const responseData: HttpResponseData = JSON.parse(response.result as string);
         if (responseData.results && Array.isArray(responseData.results)) {
           // 直接映射搜索结果，不再对每个条目单独请求详情
-          return responseData.results.map(this.mapToSCP);
+          const mappedResults = responseData.results.map(this.mapToSCP);
+          return mappedResults;
         }
       }
       console.error('SCP搜索请求失败:', response.responseCode, response.result);
