@@ -1,5 +1,5 @@
 import { CollapsibleCard } from "../utils/CollapsibleCard";
-import { ImageWithLoading, SCP } from "../utils/types";
+import { ImageWithLoading, SCP, CollapsibleCardData } from "../utils/types";
 import { scpApi } from "../utils/ScpApi";
 import { FavoriteService } from "../common/service/FavoriteService";
 import { ShareService } from "../common/service/ShareService";
@@ -65,6 +65,102 @@ struct scpObjDetail {
   @Local isFavorited: boolean = false;
   // 收藏操作加载状态
   @Local favoriteLoading: boolean = false;
+  // 动态卡片数据
+  @Local cardDataList: CollapsibleCardData[] = [];
+
+  // 生成动态卡片数据
+  private generateCardData(scp: SCP): CollapsibleCardData[] {
+    const cards: CollapsibleCardData[] = [];
+
+    // 1. 项目描述 - 优先级最高
+    if (scp.description && scp.description.trim() !== '') {
+      cards.push({
+        title: '项目描述',
+        content: scp.description,
+        priority: 1
+      });
+    }
+
+    // 2. 特殊收容措施 - 优先级第二
+    if (scp.containmentProcedures && scp.containmentProcedures.trim() !== '') {
+      cards.push({
+        title: '特殊收容措施',
+        content: scp.containmentProcedures,
+        priority: 2
+      });
+    }
+
+    // 3. 附录 - 优先级第三
+    if (scp.addendum && scp.addendum.trim() !== '') {
+      cards.push({
+        title: '附录',
+        content: scp.addendum,
+        priority: 3
+      });
+    }
+
+    // 4. 访谈记录 - 优先级第四
+    if (scp.interviews && scp.interviews.trim() !== '') {
+      cards.push({
+        title: '访谈记录',
+        content: scp.interviews,
+        priority: 4
+      });
+    }
+
+    // 5. 动态字段 - 根据字段名称确定优先级和标题
+    if (scp.dynamicFields) {
+      let dynamicPriority = 10; // 动态字段从优先级10开始
+      const entries = Object.entries(scp.dynamicFields);
+      for (let i = 0; i < entries.length; i++) {
+        const key = entries[i][0];
+        const value = entries[i][1];
+        if (value && value.trim() !== '') {
+          // 将字段名转换为更友好的标题
+          const title = this.formatFieldTitle(key);
+          cards.push({
+            title: title,
+            content: value,
+            priority: dynamicPriority++
+          });
+        }
+      }
+    }
+
+    // 按优先级排序
+    return cards.sort((a, b) => a.priority - b.priority);
+  }
+
+  // 格式化字段标题，将API字段名转换为用户友好的标题
+  private formatFieldTitle(fieldName: string): string {
+    // 处理常见的字段名模式
+    const titleMappings: Record<string, string> = {
+      'addendum_a': '附录A',
+      'addendum_b': '附录B',
+      'addendum_c': '附录C',
+      'interview_log': '访谈记录',
+      'experiment_log': '实验记录',
+      'incident_report': '事故报告',
+      'recovery_log': '回收记录',
+      'exploration_log': '探索记录'
+    };
+
+    // 检查是否有直接映射
+    const lowerFieldName = fieldName.toLowerCase();
+    if (titleMappings[lowerFieldName]) {
+      return titleMappings[lowerFieldName];
+    }
+
+    // 处理包含中文的字段名（直接使用）
+    if (/[\u4e00-\u9fa5]/.test(fieldName)) {
+      return fieldName;
+    }
+
+    // 处理英文字段名：转换下划线为空格，首字母大写
+    return fieldName
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, l => l.toUpperCase());
+  }
 
   // 根据 number 提取数字部分用于API调用
   private extractScpNumber(fullNumber: string): string {
@@ -86,6 +182,11 @@ struct scpObjDetail {
         console.error('未能获取到SCP详情，使用传入的参数');
         // 如果API获取失败，使用传入的参数作为降级处理
         this.scpItem = scpParam;
+      }
+      
+      // 生成动态卡片数据
+      if (this.scpItem) {
+        this.cardDataList = this.generateCardData(this.scpItem);
       }
       
       // 检查收藏状态
@@ -270,13 +371,14 @@ struct scpObjDetail {
             .backgroundColor('#1e1e1e')
             .padding(25)
 
-            // 可折叠的信息卡片，显示项目描述和特殊收容措施
-            CollapsibleCard({title: '项目描述', content: this.scpItem.description})
-            CollapsibleCard({title: '特殊收容措施', content: this.scpItem.containmentProcedures})
-            // 如果存在附录信息，则显示附录卡片
-            if (this.scpItem.addendum) {
-              CollapsibleCard({title: '附录', content: this.scpItem.addendum})
-            }
+            // 动态渲染折叠卡片
+            ForEach(this.cardDataList, (cardData: CollapsibleCardData, index: number) => {
+              CollapsibleCard({
+                title: cardData.title,
+                content: cardData.content,
+                defaultExpanded: cardData.title == '项目描述' ? true : false
+              })
+            }, (cardData: CollapsibleCardData, index: number) => `${cardData.title}-${index}`)
           }
           .padding({left: 25, right: 25, top: 25})
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])

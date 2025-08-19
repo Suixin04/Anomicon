@@ -33,6 +33,14 @@ export interface SCP {
   dateAdded: string;                    // 添加日期
   tags: string[];                       // 标签列表
   isFavorited?: boolean;                // 是否已收藏
+  dynamicFields?: Record<string, string>; // 动态字段，用于存储API返回的额外内容
+}
+
+// 折叠卡片数据接口
+export interface CollapsibleCardData {
+  title: string;                        // 卡片标题
+  content: string | Array<string>;     // 卡片内容
+  priority: number;                     // 显示优先级，数字越小优先级越高
 }
 
 // SCP故事接口定义

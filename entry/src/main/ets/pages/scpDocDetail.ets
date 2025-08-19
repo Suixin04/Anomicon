@@ -1,8 +1,9 @@
 import { mockSCPs, mockTales } from "../data/Data";
-import { Tale } from "../utils/types";
+import { Tale, SCP } from "../utils/types";
 import { CollapsibleCard } from "../utils/CollapsibleCard";
 import { FavoriteService } from '../common/service/FavoriteService';
 import { ShareService } from '../common/service/ShareService';
+import { scpApi } from "../utils/ScpApi";
 import { promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 
@@ -48,22 +49,7 @@ struct scpDocDetail {
   // 收藏操作加载状态
   @Local favoriteLoading: boolean = false;
 
-  // 构建标签和相关信息的内容
-  private buildTagsAndRelatedContent(): string[] {
-    const content: string[] = [];
-    
-    // 添加标签信息
-    if (this.tale.tags && this.tale.tags.length > 0) {
-      content.push('标签: ' + this.tale.tags.join(', '));
-    }
-    
-    // 添加相关SCP信息
-    if (this.tale.relatedSCPs && this.tale.relatedSCPs.length > 0) {
-      content.push('相关SCP: ' + this.tale.relatedSCPs.join(', '));
-    }
-    
-    return content;
-  }
+
 
   // 检查收藏状态
   private async checkFavoriteStatus(): Promise<void> {
@@ -126,17 +112,129 @@ struct scpDocDetail {
     }
   }
 
+  // 根据SCP编号获取SCP数据并跳转
+  private async navigateToSCP(scpNumber: string): Promise<void> {
+    try {
+      // 从SCP编号中提取数字部分（例如：从"SCP-173"提取"173"）
+      const numberOnly = scpNumber.replace(/^SCP-/i, '').replace(/^0+/, '') || '0';
+      
+      // 通过API获取SCP详情
+      const scpData = await scpApi.getScpDetail(numberOnly);
+      
+      if (scpData) {
+        // 跳转到SCP详情页
+        this.pathStack.pushPathByName('scpObjDetail', scpData, false);
+      } else {
+        // 如果API获取失败，尝试从本地数据中查找
+        const localScp = mockSCPs.find(item => item.number === scpNumber);
+        if (localScp) {
+          this.pathStack.pushPathByName('scpObjDetail', localScp, false);
+        } else {
+          promptAction.showToast({
+            message: `未找到 ${scpNumber} 的详细信息`
+          });
+        }
+      }
+    } catch (error) {
+      console.error('获取SCP数据失败:', error);
+      // 降级处理：尝试使用本地数据
+      const localScp = mockSCPs.find(item => item.number === scpNumber);
+      if (localScp) {
+        this.pathStack.pushPathByName('scpObjDetail', localScp, false);
+      } else {
+        promptAction.showToast({
+          message: `获取 ${scpNumber} 信息失败，请重试`
+        });
+      }
+    }
+  }
+
   build() {
     NavDestination() {
       Scroll() {
         Column({space: 20}) {
-          // 使用CollapsibleCard显示文档内容
-          CollapsibleCard({title: '文档内容', content: this.tale.content})
-          // 使用CollapsibleCard显示标签和相关信息
-          CollapsibleCard({
-            title: '标签与相关信息',
-            content: this.buildTagsAndRelatedContent()
-          })
+          // 文档内容卡片
+          Column({ space: 15 }) {
+            // 文档内容
+            Text(this.tale.content)
+              .fontSize(14)
+              .fontColor('#fff')
+              .lineHeight(24)
+          }
+          .border({width: 0.5, color: '#ee717182', radius: 10})
+          .width('100%')
+          .backgroundColor('#1e1e1e')
+          .justifyContent(FlexAlign.Start)
+          .padding({left: 20, right: 20, top: 30, bottom: 30})
+
+          // 标签和相关信息卡片
+          Column({ space: 15 }) {
+            // 标签部分
+            if (this.tale.tags && this.tale.tags.length > 0) {
+              Column({ space: 5 }) {
+                Row() {
+                  Text('标签:')
+                    .fontSize(14)
+                    .fontColor('#a0a0a0')
+                }
+                .width('100%')
+                // 标签列表
+                Flex({ wrap: FlexWrap.Wrap }) {
+                  ForEach(this.tale.tags, (tag: string, index: number) => {
+                    Text(tag)
+                      .backgroundColor('#ff282525')
+                      .borderRadius(6)
+                      .fontColor('#fff')
+                      .fontSize(10)
+                      .fontWeight(FontWeight.Bold)
+                      .padding({left: 6, right: 6, top: 5, bottom: 5})
+                      .margin({right: 3, bottom: 3})
+                  })
+                }
+                .width('100%')
+                .margin({bottom: 10})
+              }
+            }
+
+            // 相关SCP部分
+            if (this.tale.relatedSCPs && this.tale.relatedSCPs.length > 0) {
+              Column({ space: 5 }) {
+                Row() {
+                  Text('相关SCP:')
+                    .fontSize(14)
+                    .fontColor('#a0a0a0')
+                }
+                .width('100%')
+                // 相关SCP项目列表
+                Flex({ wrap: FlexWrap.Wrap }) {
+                  ForEach(this.tale.relatedSCPs, (scp: string, index: number) => {
+                    Row({space: 5}) {
+                      Text(scp)
+                        .fontColor('#fff')
+                        .fontSize(10)
+                        .fontWeight(FontWeight.Bold)
+                      Image($r('app.media.outer_link'))
+                        .width(12)
+                    }
+                    .backgroundColor('#ff282525')
+                    .borderRadius(6)
+                    .padding({left: 6, right: 6, top: 5, bottom: 5})
+                    .margin({right: 3, bottom: 3})
+                    // 点击相关SCP项目可跳转到对应的SCP详情页
+                    .onClick(() => {
+                      this.navigateToSCP(scp);
+                    })
+                  })
+                }
+                .width('100%')
+              }
+            }
+          }
+          .border({width: 0.5, color: '#ee717182', radius: 10})
+          .width('100%')
+          .backgroundColor('#1e1e1e')
+          .justifyContent(FlexAlign.Start)
+          .padding({left: 20, right: 20, top: 30, bottom: 30})
         }
         .padding({left: 25, right: 25, top: 25})
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])

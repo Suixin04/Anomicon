@@ -171,6 +171,24 @@ export class ScpApi {
     const id = apiData.id || `scp-${apiData.number || 'unknown'}`;
     const scpNumber = apiData.id || (apiData.number ? `SCP-${apiData.number}` : 'SCP-???');
 
+    // 定义已知的固定字段，用于过滤动态字段
+    const knownFields = new Set([
+      'id', 'number', 'name', 'title', 'class', 'objectClass', 'series', 
+      'images', 'description', 'containment', 'containmentProcedures', 
+      'addendum', 'interviews', 'dateAdded', 'tags', 'error'
+    ]);
+
+    // 提取动态字段
+    const dynamicFields: Record<string, string> = {};
+    const entries: [string, string | number | string[] | undefined][] = Object.entries(apiData);
+    for (let i = 0; i < entries.length; i++) {
+      const key: string = entries[i][0];
+      const value: string | number | string[] | undefined = entries[i][1];
+      if (!knownFields.has(key) && typeof value === 'string' && value.trim() !== '') {
+        dynamicFields[key] = value;
+      }
+    }
+
     return {
       id: id,
       number: scpNumber,
@@ -184,7 +202,8 @@ export class ScpApi {
       series: apiData.series ?? 1, // 直接使用API返回的series，若不存在则默认为1
       dateAdded: apiData.dateAdded || new Date().toISOString().split('T')[0],
       tags: Array.isArray(apiData.tags) ? apiData.tags : [],
-      isFavorited: false // 默认未收藏
+      isFavorited: false, // 默认未收藏
+      dynamicFields: Object.keys(dynamicFields).length > 0 ? dynamicFields : undefined
     };
   }
 

@@ -8,9 +8,11 @@ export struct CollapsibleCard {
   @Param @Require title: string = '';
   // 卡片内容（必需参数，支持字符串或字符串数组）
   @Param @Require content: string | Array<string>; 
+  // 默认展开状态（可选参数）
+  @Param defaultExpanded: boolean = false;
   
-  // 卡片展开状态，默认只有"项目描述"是展开的
-  @Local private isExpanded: boolean = this.title == '项目描述' ? true : false;
+  // 卡片展开状态，优先使用defaultExpanded参数，否则默认只有"项目描述"是展开的
+  @Local private isExpanded: boolean = this.defaultExpanded !== undefined ? this.defaultExpanded : (this.title == '项目描述' ? true : false);
 
   // 展开/折叠按钮图标
   private arrowIcon: Resource = $r('app.media.ic_arrow_down');
