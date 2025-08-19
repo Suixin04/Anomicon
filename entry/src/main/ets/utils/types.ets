@@ -210,10 +210,10 @@ export struct ImageWithLoading {
 
       // 当图片加载失败时显示一个占位符
       if (!this.isLoading && this.isError) {
-        Image($r('app.media.image_off')) // 假设你有一个错误占位图
+        Image($r('app.media.image_off'))
           .width(60)
           .height(60)
-          .borderRadius(this.imgRadius)
+          .borderRadius({topLeft: this.imgRadius, topRight: this.imgRadius})
           .objectFit(this.objectFit)
           .backgroundColor(Color.Gray);
       }
@@ -222,7 +222,7 @@ export struct ImageWithLoading {
       Image(this.src)
         .width(this.imgWidth)
         .height(this.imgHeight)
-        .borderRadius(this.imgRadius)
+        .borderRadius({topLeft: this.imgRadius, topRight: this.imgRadius})
         .objectFit(this.objectFit)
         .onComplete(() => {
           this.isLoading = false;

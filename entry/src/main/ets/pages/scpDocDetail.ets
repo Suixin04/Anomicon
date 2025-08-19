@@ -260,7 +260,7 @@ struct scpDocDetail {
       },
       {
         value: this.isFavorited ? '取消收藏' : '收藏',
-        icon: this.isFavorited ? $r('app.media.heart_em') : $r('app.media.heart'),
+        icon: this.isFavorited ? $r('app.media.heart') : $r('app.media.heart_em'),
         action: () => {
           this.toggleFavorite();
         }

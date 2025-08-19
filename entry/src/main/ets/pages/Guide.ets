@@ -533,7 +533,7 @@ export struct Guide {
           ListItem() {
             Column({space: 10}) {
               Stack({alignContent: Alignment.TopEnd}) {
-                ImageWithLoading({src: item.image, imgWidth: '100%', imgHeight: 128, imgRadius: 0})
+                ImageWithLoading({src: item.image, imgWidth: '100%', imgHeight: 128, imgRadius: 10})
                 Text(item.objectClass)
                   .margin({top: 10, right: 10})
                   .border({radius: 5, width: 0.8, color: '#ee717182'})
@@ -542,6 +542,7 @@ export struct Guide {
                   .fontSize(12)
                   .padding({top: 3, bottom: 3, left: 6, right: 6})
               }
+              .borderRadius(10)
               .width('100%')
               Column({space: 15}) {
                 Row({space: 5}) {
