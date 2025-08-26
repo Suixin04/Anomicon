@@ -160,6 +160,7 @@ struct scpDocDetail {
               .fontSize(14)
               .fontColor('#fff')
               .lineHeight(24)
+              .textAlign(TextAlign.JUSTIFY)
           }
           .border({width: 0.5, color: '#ee717182', radius: 10})
           .width('100%')

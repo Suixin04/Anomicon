@@ -64,6 +64,7 @@ export struct CollapsibleCard {
                 .fontSize(16)
                 .fontColor('#fff')
                 .lineHeight(24)
+                .textAlign(TextAlign.JUSTIFY)
                 .margin({ bottom: 10 })
             })
           } else {
@@ -72,6 +73,7 @@ export struct CollapsibleCard {
               .fontSize(16)
               .fontColor('#fff')
               .lineHeight(24)
+              .textAlign(TextAlign.JUSTIFY)
               .margin({ bottom: 10 })
           }
         }

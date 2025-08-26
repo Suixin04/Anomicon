@@ -26,39 +26,59 @@ const TAG: string = 'RDBStoreUtil';
  */
 export class RDBStoreUtil {
   favoriteRDB?: relationalStore.RdbStore;
+  private isInitialized: boolean = false;
 
   /**
    * The method of creating an RDBStore Instance.
    */
-  createFavoriteRDB(context: Context) {
+  async createFavoriteRDB(context: Context): Promise<void> {
+    if (this.isInitialized && this.favoriteRDB) {
+      return;
+    }
+
     const STORE_CONFIG: relationalStore.StoreConfig = {
       name: 'SCPFavorite.db',
       securityLevel: relationalStore.SecurityLevel.S1
     };
 
-    relationalStore.getRdbStore(context, STORE_CONFIG, (err: BusinessError, rdbStore: relationalStore.RdbStore) => {
-      this.favoriteRDB = rdbStore;
-      if (err) {
-        hilog.error(0x0000, TAG, `Get RdbStore failed, code is ${err.code},message is ${err.message}`);
-        return;
-      }
-      hilog.info(0x0000, TAG, 'Get RdbStore successfully.');
-      // 创建表
-      this.createFavoriteTable();
-    })
+    return new Promise<void>((resolve, reject) => {
+      relationalStore.getRdbStore(context, STORE_CONFIG, (err: BusinessError, rdbStore: relationalStore.RdbStore) => {
+        if (err) {
+          hilog.error(0x0000, TAG, `Get RdbStore failed, code is ${err.code},message is ${err.message}`);
+          reject(err);
+          return;
+        }
+        
+        this.favoriteRDB = rdbStore;
+        hilog.info(0x0000, TAG, 'Get RdbStore successfully.');
+        
+        // 创建表
+        this.createFavoriteTable().then(() => {
+          this.isInitialized = true;
+          resolve();
+        }).catch((error: Error) => {
+          reject(error);
+        });
+      });
+    });
   }
 
   /**
    * The method of creating a favorite table.
    */
-  createFavoriteTable() {
-    this.favoriteRDB?.execute(CommonConstants.CREATE_FAVORITES_TABLE_SQL)
-      .then(() => {
-        hilog.info(0x0000, TAG, `execute create favorite table sql success`);
-      })
-      .catch((err: BusinessError) => {
-        hilog.error(0x0000, TAG, `execute sql failed, code is ${err.code},message is ${err.message}`);
-      });
+  async createFavoriteTable(): Promise<void> {
+    if (!this.favoriteRDB) {
+      throw new Error('RdbStore is not initialized');
+    }
+    
+    try {
+      await this.favoriteRDB.execute(CommonConstants.CREATE_FAVORITES_TABLE_SQL);
+      hilog.info(0x0000, TAG, `execute create favorite table sql success`);
+    } catch (err) {
+      const error = err as BusinessError;
+      hilog.error(0x0000, TAG, `execute sql failed, code is ${error.code},message is ${error.message}`);
+      throw new Error(`execute sql failed, code is ${error.code},message is ${error.message}`);
+    }
   }
 
   /**

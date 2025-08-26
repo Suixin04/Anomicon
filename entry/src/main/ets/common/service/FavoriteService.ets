@@ -73,8 +73,8 @@ export class FavoriteService {
     try {
       hilog.info(0x0000, TAG, 'Initializing FavoriteService...');
       
-      // Initialize database and preferences
-      RDBStoreUtil.createFavoriteRDB(context);
+      // Initialize database and preferences (wait for database to be fully initialized)
+      await RDBStoreUtil.createFavoriteRDB(context);
       PreferencesUtil.getFavoritePreferences(context);
       
       FavoriteService.isInitialized = true;

@@ -19,8 +19,11 @@ export struct Favourite {
   // 取消收藏变更订阅的函数
   private unsubscribeFavoriteChange?: () => void;
 
-  // 页面即将显示：刷新数据并订阅收藏变更
+  // 页面即将显示：初始化服务并订阅收藏变更
   async aboutToAppear(): Promise<void> {
+    // 确保服务已初始化
+    await FavoriteService.initialize(getContext(this));
+    // 初始化完成后加载数据
     await this.loadFavorites();
     // 防止重复订阅
     this.unsubscribeFavoriteChange?.();
@@ -224,6 +227,15 @@ export struct Favourite {
     })
   }
 
+  // 页面显示时的生命周期方法
+  async onPageShow(): Promise<void> {
+    console.info('Favourite页面显示，刷新收藏数据');
+    // 确保服务已初始化（应对应用冷启动情况）
+    await FavoriteService.initialize(getContext(this));
+    // 页面每次显示时都刷新数据，包括应用重新进入前台
+    await this.loadFavorites();
+  }
+
   build() {
     Scroll() {
       Column({ space: 20 }) {
@@ -323,10 +335,11 @@ export struct Favourite {
     .scrollBar(BarState.Off)
     .height('100%')
     .width('100%')
-    .onAppear(() => {
-      // 页面出现时初始化服务并加载数据
-      FavoriteService.initialize(getContext(this));
-      this.loadFavorites();
+    .onAppear(async () => {
+      // 页面出现时确保服务已初始化
+      await FavoriteService.initialize(getContext(this));
+      // 加载数据
+      await this.loadFavorites();
     })
   }
 }
