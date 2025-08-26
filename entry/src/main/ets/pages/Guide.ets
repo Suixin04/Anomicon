@@ -1,7 +1,7 @@
 import { ImageWithLoading, RandomNum, SCP, SCPSource } from "../utils/types"
 import { AppStorageV2 } from "@kit.ArkUI"
 import { scpApi } from "../utils/ScpApi"
-import { SkeletonScreen } from "../components/SkeletonScreen"
+import { SkeletonScreen, RecommendationSkeleton } from "../components/SkeletonScreen"
 
 // 系列状态类
 @ObservedV2
@@ -311,18 +311,17 @@ export struct Guide {
 
   build() {
     Refresh({ refreshing: this.isRefreshing }) {
-      // 初始加载时显示骨架屏或错误状态
-      if ((this.isLoading || this.loadError) && this.scpList.length === 0 && !this.isSearchMode) {
-        Column({ space: 20 }) {
-          // 标题
+      List({space: 20}) {
+        ListItem() {
           Text('SCP 基金会')
             .fontSize(25)
             .fontWeight(FontWeight.Medium)
             .fontColor('#fff')
-            .width('100%')
-            .padding({ left: 25, right: 25 })
-          
-          // 搜索框
+        }
+        .width('100%')
+
+        // 搜索框
+        ListItem() {
           Search({ placeholder: '搜索SCP编号、名称或描述…' })
             .searchIcon({ src: $r('app.media.search') })
             .placeholderColor(Color.Gray)
@@ -334,17 +333,21 @@ export struct Guide {
             .width('95%')
             .height(35)
             .borderRadius(8)
-            .margin({ left: 25, right: 25 })
             .onChange((v: string) => {
               this.keyword = v
+              // 使用防抖搜索
               this.debouncedSearch(v)
             })
             .onSubmit(() => {
+              // 提交时立即执行搜索
               this.performSearch(this.keyword)
             })
-          
-          if (this.loadError) {
-            // 错误状态
+        }
+        .width('100%')
+
+        // 初始加载错误状态
+        if (this.loadError && this.scpList.length === 0 && !this.isSearchMode) {
+          ListItem() {
             Column({ space: 15 }) {
               Text('加载失败')
                 .fontSize(18)
@@ -370,113 +373,79 @@ export struct Guide {
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
-            .padding({ top: 100 })
-          } else {
-            // 骨架屏
-            SkeletonScreen({ visible: true, itemCount: 5 })
+            .padding({ top: 50 })
           }
         }
-        .width('100%')
-        .height('100%')
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
-      } else {
-        List({space: 20}) {
-          ListItem() {
-            Text('SCP 基金会')
-              .fontSize(25)
-              .fontWeight(FontWeight.Medium)
-              .fontColor('#fff')
-          }
-          .width('100%')
-
-          // 搜索框
-          ListItem() {
-            Search({ placeholder: '搜索SCP编号、名称或描述…' })
-              .searchIcon({ src: $r('app.media.search') })
-              .placeholderColor(Color.Gray)
-              .placeholderFont({ size: 16, weight: FontWeight.Normal })
-              .textFont({ size: 16, weight: FontWeight.Normal })
-              .fontColor('#fff')
-              .backgroundColor('#10717182')
-              .border({ color: '#ee717182', width: 0.5 })
-              .width('95%')
-              .height(35)
-              .borderRadius(8)
-              .onChange((v: string) => {
-                this.keyword = v
-                // 使用防抖搜索
-                this.debouncedSearch(v)
-              })
-              .onSubmit(() => {
-                // 提交时立即执行搜索
-                this.performSearch(this.keyword)
-              })
-          }
-          .width('100%')
 
         // 今日推荐区域
-        if (this.scpList.length > 0 && !this.isSearchMode) {
+        if (!this.isSearchMode) {
           ListItem() {
-            Column({ space: 15 }) {
-              Row({ space: 10 }) {
-                Image($r('app.media.star'))
-                  .fillColor('#ffddb333')
-                  .width(20)
-                Text('今日推荐 SCP')
-                  .fontSize(18)
-                  .fontColor('#fff')
-                  .fontWeight(FontWeight.Medium)
-              }
-              .width('100%')
-              .justifyContent(FlexAlign.Start)
-              .padding({ bottom: 15, top: 10 })
-
-              Row({ space: 15 }) {
-                ImageWithLoading({src: this.recommendedScp?.image, imgWidth: 80, imgHeight: 80, imgRadius: {topLeft: 8, topRight: 8, bottomLeft: 8, bottomRight: 8}})
-                Column({ space: 10 }) {
-                  Row({ space: 8 }) {
-                    Text(this.recommendedScp?.number ?? '')
-                      .fontColor('#ff4444')
-                      .fontSize(14)
-                      .fontWeight(FontWeight.Bold)
-                    Text(this.recommendedScp?.objectClass ?? '')
-                    .border({ radius: 5, width: 0.8, color: '#ee717182' })
-                    .fontWeight(FontWeight.Bold)
-                    .fontColor('#fff')
-                    .fontSize(12)
-                    .padding({
-                      top: 3,
-                      bottom: 3,
-                      left: 6,
-                      right: 6
-                    })
-                  }
-                  Text(this.recommendedScp?.title ?? '')
-                    .fontColor('#fff')
+            if (this.isLoading && !this.recommendedScp) {
+              // 显示推荐区域骨架屏
+              RecommendationSkeleton({ visible: true })
+            } else {
+              // 显示实际推荐内容
+              Column({ space: 15 }) {
+                Row({ space: 10 }) {
+                  Image($r('app.media.star'))
+                    .fillColor('#ffddb333')
+                    .width(20)
+                  Text('今日推荐 SCP')
                     .fontSize(18)
-                    .fontWeight(FontWeight.Bold)
-                  Text(this.recommendedScp?.description ?? '')
-                    .fontColor('#a0a0a0')
-                    .fontSize(14)
-                    .maxLines(2)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .fontColor('#fff')
+                    .fontWeight(FontWeight.Medium)
                 }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
+                .width('100%')
+                .justifyContent(FlexAlign.Start)
+                .padding({ bottom: 15, top: 10 })
+
+                Row({ space: 15 }) {
+                  ImageWithLoading({src: this.recommendedScp?.image, imgWidth: 80, imgHeight: 80, imgRadius: {topLeft: 8, topRight: 8, bottomLeft: 8, bottomRight: 8}})
+                  Column({ space: 10 }) {
+                    Row({ space: 8 }) {
+                      Text(this.recommendedScp?.number ?? '')
+                        .fontColor('#ff4444')
+                        .fontSize(14)
+                        .fontWeight(FontWeight.Bold)
+                      Text(this.recommendedScp?.objectClass ?? '')
+                      .border({ radius: 5, width: 0.8, color: '#ee717182' })
+                      .fontWeight(FontWeight.Bold)
+                      .fontColor('#fff')
+                      .fontSize(12)
+                      .padding({
+                        top: 3,
+                        bottom: 3,
+                        left: 6,
+                        right: 6
+                      })
+                    }
+                    Text(this.recommendedScp?.title ?? '')
+                      .fontColor('#fff')
+                      .fontSize(18)
+                      .fontWeight(FontWeight.Bold)
+                    Text(this.recommendedScp?.description ?? '')
+                      .fontColor('#a0a0a0')
+                      .fontSize(14)
+                      .maxLines(2)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  }
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
+                }
+                .alignItems(VerticalAlign.Top)
+                .width('100%')
+                .padding({ bottom: 10, left: 10, right: 10 })
+                .onClick(() => {
+                  const rec = this.recommendedScp;
+                  if (rec) this.pathStack.pushPathByName('scpObjDetail', rec, false)
+                })
               }
-              .alignItems(VerticalAlign.Top)
+              .margin({ top: 10 })
+              .padding(15)
               .width('100%')
-              .padding({ bottom: 10, left: 10, right: 10 })
-              .onClick(() => {
-                const rec = this.recommendedScp;
-                if (rec) this.pathStack.pushPathByName('scpObjDetail', rec, false)
-              })
+              .backgroundColor('#22ff4444')
+              .border({ radius: 10, width: 0.5, color: '#ee717182' })
             }
-            .margin({ top: 10 })
-            .padding(15)
-            .width('100%')
-            .backgroundColor('#22ff4444')
-            .border({ radius: 10, width: 0.5, color: '#ee717182' })
           }
         }
 
@@ -539,6 +508,13 @@ export struct Guide {
 
         ListItem() {
           title_cus({fixText: 'SCP档案', varText: `已加载 ${this.data.totalCount()} 个项目`})
+        }
+
+        // 初始加载时显示骨架屏
+        if (this.isLoading && this.scpList.length === 0 && !this.isSearchMode && !this.loadError) {
+          ListItem() {
+            SkeletonScreen({ visible: true, itemCount: 5 })
+          }
         }
 
         LazyForEach(this.data, (item: SCP) => {
@@ -662,17 +638,16 @@ export struct Guide {
               .padding(20)
           }
         }
-        }
-        .scrollBar(BarState.Off)
-        .height('100%')
-        .width('100%')
-        .padding({left: 25, right: 25})
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
-        .width('100%')
-        .onScrollIndex((first: number, last: number, center: number) => {
-          this.onScrollIndex(first, last, center)
-        })
       }
+      .scrollBar(BarState.Off)
+      .height('100%')
+      .width('100%')
+      .padding({left: 25, right: 25})
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
+      .width('100%')
+      .onScrollIndex((first: number, last: number, center: number) => {
+        this.onScrollIndex(first, last, center)
+      })
     }
     .onRefreshing(() => {
       this.onRefresh()

@@ -34,8 +34,9 @@ interface HttpResponseData {
  */
 export class ScpApi {
   private static instance: ScpApi;
-  private readonly baseUrl = 'http://10.0.2.2:3000';
-  // private readonly baseUrl = 'http://192.168.43.4:3000';
+  // private readonly baseUrl = 'http://10.0.2.2:3000';
+  // private readonly baseUrl = 'http://192.168.1.8:3000';
+  private readonly baseUrl = '0.tcp.jp.ngrok.io:19815';
   private httpRequest: http.HttpRequest;
 
   private constructor() {
