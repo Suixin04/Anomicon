@@ -1,0 +1,124 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#000000"
+    },
+    {
+      "name": "primary_color",
+      "value": "#ff4444"
+    },
+    {
+      "name": "background_primary",
+      "value": "#121212"
+    },
+    {
+      "name": "background_secondary",
+      "value": "#1e1e1e"
+    },
+    {
+      "name": "background_card",
+      "value": "#282525"
+    },
+    {
+      "name": "background_tertiary",
+      "value": "#ff282525"
+    },
+    {
+      "name": "text_primary",
+      "value": "#ffffff"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#a0a0a0"
+    },
+    {
+      "name": "text_tertiary",
+      "value": "#666666"
+    },
+    {
+      "name": "text_accent",
+      "value": "#ff4444"
+    },
+    {
+      "name": "border_primary",
+      "value": "#717182"
+    },
+    {
+      "name": "border_secondary",
+      "value": "#333333"
+    },
+    {
+      "name": "tag_orange_bg",
+      "value": "#ff6b3520"
+    },
+    {
+      "name": "tag_orange_text",
+      "value": "#ff6b35"
+    },
+    {
+      "name": "tag_bg",
+      "value": "#ff282525"
+    },
+    {
+      "name": "background_tag",
+      "value": "#ff282525"
+    },
+    {
+      "name": "skeleton_bg_light",
+      "value": "#1AFFFFFF"
+    },
+    {
+      "name": "skeleton_bg_medium",
+      "value": "#1FFFFFFF"
+    },
+    {
+      "name": "skeleton_bg_dark",
+      "value": "#14FFFFFF"
+    },
+    {
+      "name": "skeleton_bg_darker",
+      "value": "#0FFFFFFF"
+    },
+    {
+      "name": "shimmer_light",
+      "value": "#33FFFFFF"
+    },
+    {
+      "name": "shimmer_medium",
+      "value": "#4DFFFFFF"
+    },
+    {
+      "name": "shadow_light",
+      "value": "#1A000000"
+    },
+    {
+      "name": "icon_warning",
+      "value": "#ffddb333"
+    },
+    {
+      "name": "overlay_light",
+      "value": "#14FFFFFF"
+    },
+    {
+      "name": "overlay_medium",
+      "value": "#1AFFFFFF"
+    },
+    {
+      "name": "overlay_strong",
+      "value": "#4DFFFFFF"
+    },
+    {
+      "name": "gradient_start",
+      "value": "#1fff4444"
+    },
+    {
+      "name": "gradient_mid",
+      "value": "#01ff4444"
+    },
+    {
+      "name": "gradient_end",
+      "value": "#121212"
+    }
+  ]
+}

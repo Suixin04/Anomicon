@@ -1,0 +1,112 @@
+{
+  "float": [
+    {
+      "name": "page_text_font_size",
+      "value": "50fp"
+    },
+    {
+      "name": "font_size_large_title",
+      "value": "25fp"
+    },
+    {
+      "name": "font_size_title",
+      "value": "18fp"
+    },
+    {
+      "name": "font_size_body",
+      "value": "16fp"
+    },
+    {
+      "name": "font_size_subtitle",
+      "value": "14fp"
+    },
+    {
+      "name": "font_size_caption",
+      "value": "12fp"
+    },
+    {
+      "name": "font_size_small",
+      "value": "10fp"
+    },
+    {
+      "name": "spacing_xs",
+      "value": "4vp"
+    },
+    {
+      "name": "spacing_sm",
+      "value": "8vp"
+    },
+    {
+      "name": "spacing_md",
+      "value": "12vp"
+    },
+    {
+      "name": "spacing_lg",
+      "value": "16vp"
+    },
+    {
+      "name": "spacing_xl",
+      "value": "20vp"
+    },
+    {
+      "name": "spacing_xxl",
+      "value": "24vp"
+    },
+    {
+      "name": "padding_xs",
+      "value": "6vp"
+    },
+    {
+      "name": "padding_sm",
+      "value": "10vp"
+    },
+    {
+      "name": "padding_md",
+      "value": "15vp"
+    },
+    {
+      "name": "padding_lg",
+      "value": "20vp"
+    },
+    {
+      "name": "padding_xl",
+      "value": "25vp"
+    },
+    {
+      "name": "border_radius_sm",
+      "value": "4vp"
+    },
+    {
+      "name": "border_radius_md",
+      "value": "8vp"
+    },
+    {
+      "name": "border_radius_lg",
+      "value": "10vp"
+    },
+    {
+      "name": "border_width_thin",
+      "value": "0.5vp"
+    },
+    {
+      "name": "border_width_normal",
+      "value": "0.8vp"
+    },
+    {
+      "name": "icon_size_sm",
+      "value": "16vp"
+    },
+    {
+      "name": "icon_size_md",
+      "value": "20vp"
+    },
+    {
+      "name": "icon_size_lg",
+      "value": "24vp"
+    },
+    {
+      "name": "icon_size_xl",
+      "value": "28vp"
+    }
+  ]
+}

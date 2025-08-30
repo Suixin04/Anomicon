@@ -7,11 +7,11 @@
         "material": {
           "certpath": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.cer",
           "keyAlias": "debugKey",
-          "keyPassword": "0000001ABA944070801D7CBF535A6C110C1711F263713460FB4078CC1BC14C7E6ED68513CBCFB80009F3",
+          "keyPassword": "000000192E29F013D8CFF07548A10ABDCC5A437BC2FF63EC790AE9C09F22F4CE7EE1FF3298AEAD8C2F",
           "profile": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.p7b",
           "signAlg": "SHA256withECDSA",
           "storeFile": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.p12",
-          "storePassword": "0000001A5616B1299726B7F9C531FA21671252F5613DE779E6068F45F66E5E4AE2325D8E85ADE298A76A"
+          "storePassword": "000000195748C7BA49D3776F7077DB0156DC7E8BFD5C6E5EE1F3F8A2609B8E6D6265B41F8A51AD2F8D"
         }
       }
     ],
@@ -19,7 +19,7 @@
       {
         "name": "default",
         "signingConfig": "default",
-        "targetSdkVersion": "5.0.5(17)",
+        "targetSdkVersion": "5.1.0(18)",
         "compatibleSdkVersion": "5.0.5(17)",
         "runtimeOS": "HarmonyOS",
         "buildOption": {
@@ -41,8 +41,8 @@
   },
   "modules": [
     {
-      "name": "entry",
-      "srcPath": "./entry",
+      "name": "default",
+      "srcPath": "./products/default",
       "targets": [
         {
           "name": "default",
@@ -51,6 +51,30 @@
           ]
         }
       ]
+    },
+    {
+      "name": "utils",
+      "srcPath": "./commons/utils",
+    },
+    {
+      "name": "uicomponents",
+      "srcPath": "./commons/uicomponents",
+    },
+    {
+      "name": "object",
+      "srcPath": "./features/object",
+    },
+    {
+      "name": "tale",
+      "srcPath": "./features/tale",
+    },
+    {
+      "name": "favourite",
+      "srcPath": "./features/favourite",
+    },
+    {
+      "name": "setting",
+      "srcPath": "./features/setting",
     }
   ]
 }
