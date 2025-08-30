@@ -18,6 +18,7 @@ export struct Title {
         .fontColor($r('app.color.text_primary'))
       Blank()
     }
+    .width('100%')
     .margin({ bottom: 20 })
     .gesture(
       TapGesture({ count: 2 })

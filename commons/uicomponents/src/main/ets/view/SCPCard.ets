@@ -42,6 +42,11 @@ export struct ScpCardView {
             .fontWeight(FontWeight.Bold)
             .fontColor(getColorsByClass(this.item.objectClass).textColor)
             .backgroundColor(getColorsByClass(this.item.objectClass).backgroundColor)
+            .backgroundBlurStyle(BlurStyle.Regular, {
+              colorMode: ThemeColorMode.LIGHT,
+              adaptiveColor: AdaptiveColor.DEFAULT,
+              scale: 0.1
+            })
             .fontSize(FontSizeManager.getScaledFontSize(12))
             .padding({
               top: 3,
