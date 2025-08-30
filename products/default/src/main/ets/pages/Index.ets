@@ -102,6 +102,7 @@ struct HomePage {
             .tabBar(this.tabBuilder(item, index))
           })
         }
+        .scrollable(false)
         .divider({
           strokeWidth: 1,
           color: $r('app.color.border_secondary'),
