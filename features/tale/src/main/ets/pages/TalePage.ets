@@ -3,6 +3,7 @@ import { SCP, Tale } from "utils"
 import { mockTales } from "../data/Data"
 import { ObjDetailPage } from "./ObjDetailPage"
 import { TaleDetailPage } from "./TaleDetailPage"
+import { PromptAction } from "@kit.ArkUI"
 
 @ComponentV2
 export struct TalePage {
@@ -12,6 +13,15 @@ export struct TalePage {
   private scroller: Scroller = new Scroller()
   /** 当前搜索关键词 */
   @Local private keyword: string = ''
+
+  private promptAction: PromptAction | undefined;
+  aboutToAppear() {
+    // 获取当前 UI 上下文的 PromptAction 实例
+    this.promptAction = this.getUIContext().getPromptAction();
+    this.promptAction.showToast({
+      message: '开发中，敬请期待…'
+    })
+  }
 
   build() {
     Column() {
