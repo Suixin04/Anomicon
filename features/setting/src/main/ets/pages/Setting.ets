@@ -42,12 +42,16 @@ export struct Settings {
         Column({ space: 20 }) {
 
           Column({ space: 15 }) {
-            Text('字体大小设置')
-              .fontSize(FontSizeManager.getScaledFontSize(16))
-              .fontWeight(FontWeight.Medium)
-              .fontColor($r('app.color.text_primary'))
-              .width('100%')
-              .textAlign(TextAlign.Start)
+            Row({ space: 10 }) {
+              Image($r("app.media.type"))
+                .width(18)
+              Text('字体大小设置')
+                .fontSize(FontSizeManager.getScaledFontSize(16))
+                .fontWeight(FontWeight.Bold)
+                .fontColor($r('app.color.text_primary'))
+                .width('100%')
+                .textAlign(TextAlign.Start)
+            }
 
             Column({ space: 10 }) {
               Text('预览文本')

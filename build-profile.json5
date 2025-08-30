@@ -75,6 +75,10 @@
     {
       "name": "setting",
       "srcPath": "./features/setting",
+    },
+    {
+      "name": "welcome",
+      "srcPath": "./features/welcome",
     }
   ]
 }
