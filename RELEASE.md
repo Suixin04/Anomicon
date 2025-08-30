@@ -10,7 +10,7 @@ git init
 git add .
 git commit -m "Initial commit: SCP图鉴应用"
 git branch -M main
-git remote add origin https://github.com/suixin/anomicon.git
+git remote add origin https://github.com/Suixin04/anomicon.git
 git push -u origin main
 ```
 
@@ -77,8 +77,8 @@ git push origin v1.0.0
 - 分享功能
 
 ### 📱 下载
-- [App下载](https://github.com/suixin/anomicon/releases/download/v1.0.0/anomicon-v1.0.0.hap)
-- [使用指南](https://github.com/suixin/anomicon#readme)
+- [App下载](https://github.com/Suixin04/anomicon/releases/download/v1.0.0/anomicon-v1.0.0.hap)
+- [使用指南](https://github.com/Suixin04/anomicon#readme)
 
 ### 🙏 致谢
 感谢SCP基金会和所有贡献者！

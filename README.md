@@ -31,7 +31,7 @@ git clone https://github.com/suixin/anomicon.git
 - **多语言支持**：国际化支持
 
 ## 📱 下载
-- [GitHub Releases](https://github.com/[your-username]/anomicon/releases)
+- [GitHub Releases](https://github.com/Suixin04/anomicon/releases)
 - [华为应用市场](https://appgallery.huawei.com/) (即将上线)
 
 ## 🤝 贡献
