@@ -5,13 +5,13 @@
         "name": "default",
         "type": "HarmonyOS",
         "material": {
-          "certpath": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.cer",
+          "certpath": "",
           "keyAlias": "debugKey",
-          "keyPassword": "000000192E29F013D8CFF07548A10ABDCC5A437BC2FF63EC790AE9C09F22F4CE7EE1FF3298AEAD8C2F",
-          "profile": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.p7b",
+          "keyPassword": "",
+          "profile": "",
           "signAlg": "SHA256withECDSA",
-          "storeFile": "C:\\Users\\wuren\\.ohos\\config\\default_Anomicon_jrlqR-DwT0_Xgg-GxOkGCx-jHvkiuXK1khw1twg5Awc=.p12",
-          "storePassword": "000000195748C7BA49D3776F7077DB0156DC7E8BFD5C6E5EE1F3F8A2609B8E6D6265B41F8A51AD2F8D"
+          "storeFile": "",
+          "storePassword": ""
         }
       }
     ],
