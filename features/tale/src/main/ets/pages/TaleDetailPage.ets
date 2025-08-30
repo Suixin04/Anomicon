@@ -167,7 +167,8 @@ export struct TaleDetailPage {
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)
       .width('100%')
-      .height('100%')
+      .edgeEffect(EdgeEffect.Spring)
+      // .height('100%')
     }
     .title(cusTitle(this.tale))
     .backgroundColor($r('app.color.background_primary'))
