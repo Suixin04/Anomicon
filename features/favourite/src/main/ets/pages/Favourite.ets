@@ -1,11 +1,13 @@
 import { AppStorageV2, PromptAction, promptAction } from "@kit.ArkUI"
-import { FavoriteItem, FavoriteService, FontSizeManager, getColorsByClass, SCP, Tale, VibrationUtils } from "utils"
+import { FavoriteItem, FavoriteService, FontSizeManager, getColorsByClass, SCP,
+  scpApi,
+  Tale, VibrationUtils } from "utils"
 import { CustomButtonView, Title } from "uicomponents"
 
 @ComponentV2
 export struct Favourite {
   /** 导航路径栈，用于页面间的导航管理 */
-  @Local pathStack: NavPathStack = AppStorageV2.connect(NavPathStack, 'navStack', () => new NavPathStack())!
+  @Consumer('pageStack')pageStack?: NavPathStack
   /** 收藏项目列表，包含SCP项目和故事 */
   @Local favoriteItems: FavoriteItem[] = []
   /** 数据加载状态 */
@@ -141,8 +143,9 @@ export struct Favourite {
         }
         .padding({ left: 25, right: 25, bottom: 25 })
         .width('100%')
-        .height('100%')
+        // .height('100%')
       }
+      .align(Alignment.Top)
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)
       .layoutWeight(1)
@@ -154,7 +157,7 @@ export struct Favourite {
         await this.loadFavorites();
       })
     }
-    .height('100%')
+    // .height('100%')
     .width('100%')
   }
 
@@ -216,25 +219,11 @@ export struct Favourite {
    * 根据项目类型跳转到相应的详情页
    * @param item 要查看详情的收藏项目
    */
-  private navigateToDetail(item: FavoriteItem): void {
+  private async navigateToDetail(item: FavoriteItem): Promise<void> {
     if (item.type === 'SCP') {
       // 构造SCP对象
-      const scpItem: SCP = {
-        id: item.scpId,
-        number: item.scpId,
-        title: item.title,
-        objectClass: item.objectClass || '',
-        description: item.description,
-        containmentProcedures: '',
-        series: 1,
-        dateAdded: new Date().toISOString(),
-        image: item.imageUrl,
-        tags: [],
-        isFavorited: true
-      };
-      this.pathStack.pushPathByName('scpObjDetail', scpItem, (_popInfo) => {
-        this.loadFavorites();
-      });
+      const instance = await scpApi.getScpDetail(item.scpId)
+      this.pageStack!.pushPathByName('objDetailPage', instance, false);
     } else if (item.type === 'TALE') {
       // 构造Tale对象
       const taleItem: Tale = {
@@ -246,9 +235,7 @@ export struct Favourite {
         tags: [],
         relatedSCPs: []
       };
-      this.pathStack.pushPathByName('scpDocDetail', taleItem, (_popInfo) => {
-        this.loadFavorites();
-      });
+      this.pageStack!.pushPathByName('taleDetailPage', taleItem, false);
     }
   }
 
@@ -381,7 +368,6 @@ export struct Favourite {
     .borderRadius(10)
     .border({ width: 0.5, color: $r('app.color.border_primary') })
     .onClick(() => {
-      // 添加轻触振动反馈
       VibrationUtils.lightTap()
       this.navigateToDetail(item);
     })
