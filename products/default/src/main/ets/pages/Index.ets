@@ -3,7 +3,7 @@ import { Favourite } from 'favourite'
 import { ObjDetailPage, ObjectPage } from 'object'
 import { Settings } from 'setting'
 import { TaleDetailPage, TalePage } from 'tale'
-import { FontSizeManager, RandomNum, SCP, TabClass, Tale, VibrationUtils } from 'utils'
+import { FontSizeManager, PreferencesUtil, RandomNum, SCP, TabClass, Tale, VibrationUtils } from 'utils'
 
 @Entry
 @ComponentV2
@@ -21,15 +21,25 @@ struct Index {
     }
   }
 
-    build() {
-      Navigation(this.pageStack) {}
-      .navDestination(this.Router)
-      .hideNavBar(true)
-      .onAppear(() => {
-        this.pageStack.replacePathByName('homePage', null, false)
-      })
-    }
+  async aboutToAppear(): Promise<void> {
+    await FontSizeManager.initialize(getContext(this));
+    PreferencesUtil.getFavoritePreferences(getContext(this));
   }
+
+  async onPageShow(): Promise<void> {
+    const status = await PreferencesUtil.getApproveStatusAsync();
+    console.log('Approve status: ' + status);
+  }
+
+  build() {
+    Navigation(this.pageStack) {}
+    .navDestination(this.Router)
+    .hideNavBar(true)
+    .onAppear(async () => {
+      this.pageStack.replacePathByName('homePage', null, false)
+    })
+  }
+}
 
 @ComponentV2
 struct HomePage {

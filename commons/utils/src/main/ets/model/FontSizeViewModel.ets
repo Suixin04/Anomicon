@@ -30,7 +30,7 @@ export class FontSizeViewModel {
   /**
    * Get current font size.
    */
-  getCurrentFontSize(): number {
+  async getCurrentFontSize(): Promise<number> {
     return PreferencesUtil.getFontSize();
   }
 

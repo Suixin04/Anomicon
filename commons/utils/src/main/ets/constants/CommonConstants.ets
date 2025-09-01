@@ -51,6 +51,7 @@ export default class CommonConstants {
   static readonly KEY_FAVORITE_COUNT: string = 'favoriteCount';
   static readonly KEY_LAST_FAVORITE_DATE: string = 'lastFavoriteDate';
   static readonly KEY_APP_FONT_SIZE: string = 'appFontSize';
+  static readonly KEY_APPROVE_STATUS: string = 'isApproved';
   /**
    * Font size constants.
    */
@@ -65,4 +66,6 @@ export default class CommonConstants {
   static readonly SET_SLIDER_MIN: number = 14;
   static readonly SET_SLIDER_MAX: number = 24;
   static readonly SET_SLIDER_STEP: number = 2;
+
+  static readonly APPROVE_STATUS: boolean = false;
 }

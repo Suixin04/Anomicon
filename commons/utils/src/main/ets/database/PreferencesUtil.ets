@@ -114,10 +114,41 @@ export class PreferencesUtil {
   /**
    * The method of getting font size.
    */
-  getFontSize(): number {
+  async getFontSize(): Promise<number> {
     let fontSize: number = CommonConstants.SET_SIZE_NORMAL;
     fontSize = this.preference?.getSync(CommonConstants.KEY_APP_FONT_SIZE, CommonConstants.SET_SIZE_NORMAL) as number;
     return fontSize;
+  }
+
+  saveApproveStatus(status: boolean) {
+    this.preference?.putSync(CommonConstants.KEY_APPROVE_STATUS, status);
+    this.preference?.flush(
+      (err: BusinessError) => {
+        if (err) {
+          hilog.error(0x0000, TAG, 'Failed to flush approve status. code =' + err.code + ', message =' + err.message);
+          return;
+        }
+        hilog.info(0x0000, TAG, 'Succeeded in flushing approve status.');
+      });
+  }
+
+  getApproveStatus(): boolean {
+    if (!this.preference) {
+      hilog.warn(0x0000, TAG, 'PreferencesUtil not initialized, using default approve status');
+      return CommonConstants.APPROVE_STATUS;
+    }
+    const status = this.preference.getSync(CommonConstants.KEY_APPROVE_STATUS, CommonConstants.APPROVE_STATUS);
+    return status !== undefined ? Boolean(status) : CommonConstants.APPROVE_STATUS;
+  }
+
+  async getApproveStatusAsync(): Promise<boolean> {
+    try {
+      const status = await this.preference?.get(CommonConstants.KEY_APPROVE_STATUS, CommonConstants.APPROVE_STATUS);
+      return status !== undefined ? Boolean(status) : CommonConstants.APPROVE_STATUS;
+    } catch (error) {
+      hilog.error(0x0000, TAG, 'Failed to get approve status: ' + error);
+      return CommonConstants.APPROVE_STATUS;
+    }
   }
 }
 

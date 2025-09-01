@@ -82,10 +82,10 @@ export struct Favourite {
                 this.selectedType = 'SCP';
                 this.loadFavorites();
               })
-            CustomButtonView({ text: '故事文档', isSelected: this.selectedType === '故事文档' ? true : false })
+            CustomButtonView({ text: '故事文档', isSelected: this.selectedType === 'TALE' ? true : false })
               .onClick(() => {
                 VibrationUtils.lightTap()
-                this.selectedType = '故事文档';
+                this.selectedType = 'TALE';
                 this.loadFavorites();
               })
           }
