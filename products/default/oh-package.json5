@@ -11,6 +11,7 @@
     "favourite": "file:../../features/favourite",
     "object": "file:../../features/object",
     "setting": "file:../../features/setting",
-    "tale": "file:../../features/tale"
+    "tale": "file:../../features/tale",
+    "welcome": "file:../../features/welcome"
   }
 }

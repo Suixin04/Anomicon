@@ -4,11 +4,13 @@ import { ObjDetailPage, ObjectPage } from 'object'
 import { Settings } from 'setting'
 import { TaleDetailPage, TalePage } from 'tale'
 import { FontSizeManager, PreferencesUtil, RandomNum, SCP, TabClass, Tale, VibrationUtils } from 'utils'
+import { WelcomePage } from 'welcome'
 
 @Entry
 @ComponentV2
 struct Index {
   @Provider('pageStack')pageStack: NavPathStack = new NavPathStack()
+  @Provider('ac')isApproved: boolean = false
 
   @Builder
   Router(name: string, param?: SCP | Tale) {
@@ -24,11 +26,8 @@ struct Index {
   async aboutToAppear(): Promise<void> {
     await FontSizeManager.initialize(getContext(this));
     PreferencesUtil.getFavoritePreferences(getContext(this));
-  }
-
-  async onPageShow(): Promise<void> {
-    const status = await PreferencesUtil.getApproveStatusAsync();
-    console.log('Approve status: ' + status);
+    this.isApproved = await PreferencesUtil.getApproveStatusAsync();
+    console.log('Approve status: ' + this.isApproved);
   }
 
   build() {
@@ -43,6 +42,7 @@ struct Index {
 
 @ComponentV2
 struct HomePage {
+  @Consumer('ac')isApproved: boolean = false
   @Local iconSize: number = 24
   @Local currentIdx: number = 0
   @Local randomIdx: RandomNum = AppStorageV2.connect(RandomNum, 'dailyRand', () => new RandomNum())!
@@ -84,51 +84,70 @@ struct HomePage {
 
   build() {
     NavDestination() {
-      RelativeContainer() {
-        Tabs({ barPosition: BarPosition.End }) {
-          ForEach(this.tabInfo, (item: TabClass, index: number) => {
-            TabContent() {
-              if (index == 0) {
-                ObjectPage()
-              } else if (index == 1) {
-                TalePage()
-              } else if (index == 2) {
-                Favourite()
-              } else if (index == 3) {
-                Settings()
+      Stack() {
+        RelativeContainer() {
+          Tabs({ barPosition: BarPosition.End }) {
+            ForEach(this.tabInfo, (item: TabClass, index: number) => {
+              TabContent() {
+                if (index == 0) {
+                  ObjectPage()
+                } else if (index == 1) {
+                  TalePage()
+                } else if (index == 2) {
+                  Favourite()
+                } else if (index == 3) {
+                  Settings()
+                }
               }
-            }
-            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP])
-            .height('100%')
-            .backgroundColor($r('app.color.background_primary'))
-            .linearGradient({
-              direction: GradientDirection.Bottom,
-              colors: [
-                [$r('app.color.gradient_start'), 0.0],
-                [$r('app.color.gradient_mid'), 0.3],
-                [$r('app.color.gradient_end'), 0.3]
-              ]
+              .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+              .height('100%')
+              .backgroundColor($r('app.color.background_primary'))
+              .linearGradient({
+                direction: GradientDirection.Bottom,
+                colors: [
+                  [$r('app.color.gradient_start'), 0.0],
+                  [$r('app.color.gradient_mid'), 0.3],
+                  [$r('app.color.gradient_end'), 0.3]
+                ]
+              })
+              .tabBar(this.tabBuilder(item, index))
             })
-            .tabBar(this.tabBuilder(item, index))
+          }
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+          .scrollable(false)
+          .divider({
+            strokeWidth: 1,
+            color: $r('app.color.border_secondary'),
           })
+          .height('100%')
+          .backgroundColor($r('app.color.background_secondary'))
+          .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+          .onChange((index: number) => {
+            VibrationUtils.lightTap()
+            this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
+              this.currentIdx = index
+            })
+          })
+          .animationMode(AnimationMode.NO_ANIMATION)
         }
-        .scrollable(false)
-        .divider({
-          strokeWidth: 1,
-          color: $r('app.color.border_secondary'),
-        })
-        .height('100%')
-        .backgroundColor($r('app.color.background_secondary'))
-        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.BOTTOM, SafeAreaEdge.TOP])
-        .onChange((index: number) => {
-          VibrationUtils.lightTap()
-          this.getUIContext()?.animateTo({ curve: curves.springMotion() }, () => {
-            this.currentIdx = index
-          })
-        })
-        .animationMode(AnimationMode.NO_ANIMATION)
+        .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        if(!this.isApproved)
+          WelcomePage()
+            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+            .backgroundBlurStyle(BlurStyle.Thick, {
+              colorMode: ThemeColorMode.SYSTEM,
+              adaptiveColor: AdaptiveColor.DEFAULT,
+              scale: 0.1
+            })
+            .width('100%')
+            .height('100%')
       }
+      .width('100%')
+      .height('100%')
+      .alignContent(Alignment.Center)
+      .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     }
+    .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
     .hideTitleBar(true)
     // .onReady((context: NavDestinationContext) => {
     //   this.pathStack = context.pathStack;
