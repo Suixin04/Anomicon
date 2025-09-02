@@ -9,6 +9,7 @@ export struct Guide {
       Text(title)
         .fontSize(20)
         .fontColor($r('app.color.primary_color'))
+        .fontWeight(FontWeight.Bold)
       Text(subtitle)
         .fontSize(12)
         .fontColor($r('app.color.text_tertiary'))
@@ -25,7 +26,14 @@ export struct Guide {
       }
       .width(60)
       .height(60)
-      .backgroundColor($r('app.color.primary_color'))
+      // .backgroundColor($r('app.color.primary_color'))
+      .linearGradient({
+        angle: 135,
+        colors: [
+          ['#F23A16', 0.135],
+          ['#fffa905a', 1.0],
+        ]
+      })
       .borderRadius(30)
       .padding(13)
       .translate({ x: 0, y: this.offsetY })
@@ -35,7 +43,7 @@ export struct Guide {
         iterations: -1,
         playMode: PlayMode.Alternate
       })
-      this.titleBuilder('欢迎来到《格异录》', '准入考试系统')
+      this.titleBuilder('欢迎来到「格异录」', '准入考试系统')
       Row({ space: 10 }) {
         Column() {
           Image($r('app.media.triangle_alert'))
@@ -83,6 +91,7 @@ export struct Guide {
           }.alignItems(VerticalAlign.Top)
         }
       }
+      .layoutWeight(1)
       .padding({left: 10, right: 10, top: 10, bottom: 10})
       .width('100%')
       .backgroundColor('#101e1e1e')
@@ -101,6 +110,8 @@ export struct Guide {
         .borderRadius(8)
         .width('100%')
         .padding({ top: 10, bottom: 10 })
+      Divider()
+        .margin({left: -20, right: -20, bottom: 10})
     }
     .onAppear(() => {
       this.offsetY = -10

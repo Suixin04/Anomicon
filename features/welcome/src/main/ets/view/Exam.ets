@@ -14,14 +14,15 @@ export struct Exam {
   @Consumer('examScore') examScore: number = 0
   @Consumer('examAnswers') examAnswers: number[] = []
   @Consumer('examCompleted') examCompleted: boolean = false
-  
-  @Local currentQuestion: number = 0
-  @Local timeLeft: number = 300 // 5分钟 = 300秒
-  @Local examStarted: boolean = false
-  @Local timer?: number
-  
+  @Consumer('examStart') examStart: boolean = false
+
+  @Consumer('currentQuestion') currentQuestion: number = 0
+  @Consumer('timeLeft') timeLeft: number = 300 // 5分钟 = 300秒
+  @Consumer('timer') timer?: number
+  @Consumer('navScroller') navScroller: Scroller = new Scroller()
+
   // 考试题目
-  @Local questions: Question[] = [
+  @Consumer('questions') questions: Question[] = [
     {
       id: 1,
       question: "SCP基金会的三大核心使命是什么？",
@@ -94,21 +95,6 @@ export struct Exam {
     }
   ]
 
-  startExam() {
-    this.examStarted = true
-    this.examAnswers = new Array(this.questions.length).fill(-1)
-    this.startTimer()
-  }
-
-  startTimer() {
-    this.timer = setInterval(() => {
-      this.timeLeft--
-      if (this.timeLeft <= 0) {
-        this.submitExam()
-      }
-    }, 1000)
-  }
-
   stopTimer() {
     if (this.timer) {
       clearInterval(this.timer)
@@ -146,17 +132,20 @@ export struct Exam {
   nextQuestion() {
     if (this.currentQuestion < this.questions.length - 1) {
       this.currentQuestion++
+      this.navScroller.scrollToIndex(this.currentQuestion, true, ScrollAlign.CENTER)
     }
   }
 
   prevQuestion() {
     if (this.currentQuestion > 0) {
       this.currentQuestion--
+      this.navScroller.scrollToIndex(this.currentQuestion, true, ScrollAlign.CENTER)
     }
   }
 
   goToQuestion(index: number) {
     this.currentQuestion = index
+    this.navScroller.scrollToIndex(index, true, ScrollAlign.CENTER)
   }
 
   aboutToDisappear() {
@@ -165,200 +154,157 @@ export struct Exam {
 
   build() {
     Column({ space: 20 }) {
-      if (!this.examStarted) {
-        // 考试开始前的准备界面
-        Stack() {
-          Image($r('app.media.file_check'))
-            .width(34)
-            .height(34)
-        }
-        .width(60)
-        .height(60)
-        .backgroundColor('#3698d9')
-        .borderRadius(30)
-        .padding(13)
-
-        Column({ space: 10 }) {
-          Text('准入考试')
-            .fontSize(20)
+      Row() {
+        Column({ space: 5 }) {
+          Text(`题目 ${this.currentQuestion + 1}/${this.questions.length}`)
+            .fontSize(14)
+            .fontWeight(FontWeight.Bold)
             .fontColor('#3698d9')
-          Text('请确认您已准备好开始考试')
+          Text(`剩余时间: ${this.formatTime(this.timeLeft)}`)
             .fontSize(12)
-            .fontColor($r('app.color.text_tertiary'))
-        }
+            .fontColor(this.timeLeft <= 60 ? '#ef4444' : $r('app.color.text_tertiary'))
+        }.alignItems(HorizontalAlign.Start)
 
-        Column({ space: 15 }) {
-          Row({ space: 10 }) {
-            Image($r('app.media.clock'))
-              .width(16)
-              .fillColor('#3698d9')
-            Text('考试时间：5分钟')
-              .fontSize(14)
-              .fontColor($r('app.color.text_primary'))
-          }
-          Row({ space: 10 }) {
-            Image($r('app.media.file_text'))
-              .width(16)
-              .fillColor('#3698d9')
-            Text('题目数量：10道选择题')
-              .fontSize(14)
-              .fontColor($r('app.color.text_primary'))
-          }
-          Row({ space: 10 }) {
-            Image($r('app.media.target'))
-              .width(16)
-              .fillColor('#3698d9')
-            Text('及格分数：80分')
-              .fontSize(14)
-              .fontColor($r('app.color.text_primary'))
-          }
-        }
-        .padding(20)
-        .width('100%')
-        .backgroundColor('#101e1e1e')
-        .border({ width: 1, color: '#3698d9', radius: 8 })
+        Blank()
 
-        Button('开始考试', { type: ButtonType.Normal })
-          .fontSize(FontSizeManager.getScaledFontSize(15))
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('app.color.background_primary'))
-          .backgroundColor('#3698d9')
-          .onClick(() => this.startExam())
-          .borderRadius(8)
-          .width('100%')
-          .padding({ top: 12, bottom: 12 })
-      } else {
-        // 考试进行中的界面
-        // 顶部状态栏
-        Row() {
-          Column({ space: 5 }) {
-            Text(`题目 ${this.currentQuestion + 1}/${this.questions.length}`)
-              .fontSize(14)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#3698d9')
-            Text(`剩余时间: ${this.formatTime(this.timeLeft)}`)
-              .fontSize(12)
-              .fontColor(this.timeLeft <= 60 ? '#ef4444' : $r('app.color.text_tertiary'))
-          }.alignItems(HorizontalAlign.Start)
-          
-          Blank()
-          
-          Text(`${this.examAnswers.filter(a => a !== -1).length}/${this.questions.length} 已答`)
-            .fontSize(12)
-            .fontColor($r('app.color.text_tertiary'))
-        }
+        Text(`${this.examAnswers.filter(a => a !== -1).length}/${this.questions.length} 已答`)
+          .fontSize(12)
+          .fontColor($r('app.color.text_tertiary'))
+      }
         .width('100%')
         .padding({ bottom: 10 })
 
-        // 进度条
-        Progress({
-          value: this.currentQuestion + 1,
-          total: this.questions.length,
-          type: ProgressType.Linear
-        })
+      // 进度条
+      Progress({
+        value: this.currentQuestion + 1,
+        total: this.questions.length,
+        type: ProgressType.Linear
+      })
         .width('100%')
         .color('#3698d9')
         .backgroundColor('#20ffffff')
 
-        // 当前题目
-        Column({ space: 15 }) {
-          Text(this.questions[this.currentQuestion].question)
-            .fontSize(16)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('app.color.text_primary'))
-            .textAlign(TextAlign.Start)
-            .width('100%')
+      // 当前题目
+      Column({ space: 15 }) {
+        Text(this.questions[this.currentQuestion].question)
+          .fontSize(16)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('app.color.text_primary'))
+          .textAlign(TextAlign.Start)
+          .width('100%')
 
-          Column({ space: 10 }) {
-            ForEach(this.questions[this.currentQuestion].options, (option: string, index: number) => {
-              Row({ space: 12 }) {
-                Radio({ value: `option_${index}`, group: `question_${this.currentQuestion}` })
-                  .checked(this.examAnswers[this.currentQuestion] === index)
-                  .onChange(() => this.selectAnswer(this.currentQuestion, index))
-                  .radioStyle({
-                    checkedBackgroundColor: '#3698d9',
-                    uncheckedBorderColor: '#3698d9'
-                  })
-                
-                Text(option)
-                  .fontSize(14)
-                  .fontColor($r('app.color.text_primary'))
-                  .layoutWeight(1)
-                  .textAlign(TextAlign.Start)
-              }
-              .width('100%')
-              .padding(12)
-              .backgroundColor(this.examAnswers[this.currentQuestion] === index ? '#103698d9' : '#101e1e1e')
-              .border({ 
-                width: 1, 
-                color: this.examAnswers[this.currentQuestion] === index ? '#3698d9' : '#20ffffff', 
-                radius: 8 
-              })
-              .onClick(() => this.selectAnswer(this.currentQuestion, index))
+        Column({ space: 10 }) {
+          ForEach(this.questions[this.currentQuestion].options, (option: string, index: number) => {
+            Row({ space: 12 }) {
+              Radio({ value: `option_${index}`, group: `question_${this.currentQuestion}` })
+                .checked(this.examAnswers[this.currentQuestion] === index)
+                .onChange(() => this.selectAnswer(this.currentQuestion, index))
+                .radioStyle({
+                  checkedBackgroundColor: '#3698d9',
+                  uncheckedBorderColor: '#3698d9'
+                })
+
+              Text(option)
+                .fontSize(14)
+                .fontColor($r('app.color.text_primary'))
+                .layoutWeight(1)
+                .textAlign(TextAlign.Start)
+            }
+            .width('100%')
+            .padding(12)
+            .backgroundColor(this.examAnswers[this.currentQuestion] === index ? '#103698d9' : '#101e1e1e')
+            .border({
+              width: 1,
+              color: this.examAnswers[this.currentQuestion] === index ? '#3698d9' : '#20ffffff',
+              radius: 8
             })
-          }
+            .onClick(() => this.selectAnswer(this.currentQuestion, index))
+          })
         }
+      }
         .layoutWeight(1)
         .width('100%')
 
-        // 题目导航
-        Row({ space: 8 }) {
+      // 题目导航
+      Row({ space: 8 }) {
+        List({ scroller: this.navScroller }) {
           ForEach(this.questions, (question: Question, index: number) => {
-            Text((index + 1).toString())
-              .fontSize(12)
-              .fontColor(this.currentQuestion === index ? $r('app.color.background_primary') : 
-                       this.examAnswers[index] !== -1 ? '#3698d9' : $r('app.color.text_tertiary'))
-              .width(32)
-              .height(32)
-              .textAlign(TextAlign.Center)
-              .backgroundColor(this.currentQuestion === index ? '#3698d9' : 
-                             this.examAnswers[index] !== -1 ? '#103698d9' : '#101e1e1e')
-              .border({ 
-                width: 1, 
-                color: this.currentQuestion === index ? '#3698d9' : 
-                       this.examAnswers[index] !== -1 ? '#3698d9' : '#20ffffff', 
-                radius: 16 
-              })
-              .onClick(() => this.goToQuestion(index))
+            ListItem() {
+              Text((index + 1).toString())
+                .fontSize(12)
+                .fontColor(this.currentQuestion === index ? $r('app.color.background_primary') :
+                         this.examAnswers[index] !== -1 ? '#3698d9' : $r('app.color.text_tertiary'))
+                .width(32)
+                .height(32)
+                .textAlign(TextAlign.Center)
+                .backgroundColor(this.currentQuestion === index ? '#3698d9' :
+                               this.examAnswers[index] !== -1 ? '#103698d9' : '#101e1e1e')
+                .border({
+                  width: 1,
+                  color: this.currentQuestion === index ? '#3698d9' :
+                         this.examAnswers[index] !== -1 ? '#3698d9' : '#20ffffff',
+                  radius: 16
+                })
+                .onClick(() => this.goToQuestion(index))
+            }
+            .width(40)
+            .height(40)
           })
         }
         .width('100%')
+        .height(40)
+        .listDirection(Axis.Horizontal)
+        .scrollBar(BarState.Off)
+      }
+        .width('100%')
         .justifyContent(FlexAlign.Center)
 
-        // 底部按钮
-        Row({ space: 10 }) {
-          if (this.currentQuestion > 0) {
-            Button('上一题', { type: ButtonType.Normal })
-              .fontSize(14)
-              .fontColor('#3698d9')
-              .backgroundColor('transparent')
-              .border({ width: 1, color: '#3698d9', radius: 6 })
-              .onClick(() => this.prevQuestion())
-              .layoutWeight(1)
-          }
-          
-          if (this.currentQuestion < this.questions.length - 1) {
-            Button('下一题', { type: ButtonType.Normal })
-              .fontSize(14)
-              .fontColor($r('app.color.background_primary'))
-              .backgroundColor('#3698d9')
-              .onClick(() => this.nextQuestion())
-              .layoutWeight(1)
-          } else {
-            Button('提交考试', { type: ButtonType.Normal })
-              .fontSize(14)
-              .fontWeight(FontWeight.Bold)
-              .fontColor($r('app.color.background_primary'))
-              .backgroundColor('#22c55e')
-              .onClick(() => this.submitExam())
-              .layoutWeight(1)
-          }
+      // 底部按钮
+      Row({ space: 10 }) {
+        if (this.currentQuestion > 0) {
+          Button('上一题', { type: ButtonType.Normal })
+            .fontSize(FontSizeManager.getScaledFontSize(15))
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.background_primary'))
+            .backgroundColor('#16B0F2')
+            .border({ radius: 8, width: 0, color: $r('app.color.border_primary') })
+            .borderRadius(8)
+            .onClick(() => this.prevQuestion())
+            .layoutWeight(1)
+            .padding({ top: 10, bottom: 10 })
         }
-        .width('100%')
+
+        if (this.currentQuestion < this.questions.length - 1) {
+          Button('下一题', { type: ButtonType.Normal })
+            .fontSize(FontSizeManager.getScaledFontSize(15))
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.background_primary'))
+            .backgroundColor('#16B0F2')
+            .border({ radius: 8, width: 0, color: $r('app.color.border_primary') })
+            .borderRadius(8)
+            .onClick(() => this.nextQuestion())
+            .layoutWeight(1)
+            .padding({ top: 10, bottom: 10 })
+        } else {
+          Button('提交考试', { type: ButtonType.Normal })
+            .fontSize(FontSizeManager.getScaledFontSize(15))
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('app.color.background_primary'))
+            .backgroundColor('#16B0F2')
+            .border({ radius: 8, width: 0, color: $r('app.color.border_primary') })
+            .borderRadius(8)
+            .onClick(() => this.submitExam())
+            .layoutWeight(1)
+            .padding({ top: 10, bottom: 10 })
+        }
       }
+        .width('100%')
+
+      Divider()
+        .margin({left: -20, right: -20, bottom: 10})
     }
-    .padding({ top: 20, bottom: 20, left: 20, right: 20 })
-    .width('80%')
-    .height('95%')
+      .padding({ top: 20, bottom: 20, left: 20, right: 20 })
+      .width('80%')
+      .height('95%')
   }
 }

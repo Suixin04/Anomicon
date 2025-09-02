@@ -15,11 +15,7 @@ export struct Result {
   @Consumer('examAnswers') examAnswers: number[] = []
   @Consumer('examCompleted') examCompleted: boolean = false
   @Consumer('ac')isApproved: boolean = false
-
-  @Local showDetails: boolean = false
-  
-  // 考试题目（与Exam组件保持一致）
-  @Local questions: Question[] = [
+  @Consumer('questions') questions: Question[] = [
     {
       id: 1,
       question: "SCP基金会的三大核心使命是什么？",
@@ -91,6 +87,11 @@ export struct Result {
       explanation: "异常是指违反已知科学定律和人类理解的现象、实体或物品。"
     }
   ]
+  @Consumer('currentQuestion') currentQuestion: number = 0
+  @Consumer('timeLeft') timeLeft: number = 300 // 5分钟 = 300秒
+  @Consumer('navScroller') navScroller: Scroller = new Scroller()
+
+  @Local showDetails: boolean = false
 
   get isPassed(): boolean {
     return this.examScore >= 80
@@ -104,17 +105,17 @@ export struct Result {
     return this.examAnswers.filter(answer => answer !== -1).length
   }
 
-  restartExam() {
+  async restartExam() {
     // 重置考试状态
     this.examScore = 0
     this.examAnswers = []
     this.examCompleted = false
     this.isApproved = false
-    // 跳转到第一个页面（Guide）
-    this.swiperController?.showPrevious()
-    this.swiperController?.showPrevious()
-    this.swiperController?.showPrevious()
-    this.swiperController?.showPrevious()
+    this.currentQuestion = 0
+    this.navScroller.scrollToIndex(0, true, ScrollAlign.CENTER)
+    this.timeLeft = 300// 跳转到第一个页面（Guide）
+    // 这里必须最后执行，所有指令完毕后回到首页
+    await this.swiperController?.changeIndex(0, true)
   }
 
   enterApp() {
@@ -139,7 +140,7 @@ export struct Result {
           Image(this.isPassed ? $r('app.media.circle_check') : $r('app.media.ban'))
             .width(34)
             .height(34)
-            .fillColor(this.isPassed ? '#22c55e' : '#ef4444')
+            // .fillColor(this.isPassed ? '#22c55e' : '#ef4444')
         }
         .width(60)
         .height(60)
@@ -151,7 +152,7 @@ export struct Result {
           Text('考试结果')
             .fontSize(20)
             .fontColor(this.isPassed ? '#22c55e' : '#ef4444')
-          Text(this.isPassed ? '恭喜通过准入考试！' : '很遗憾，未能通过考试')
+          Text(this.isPassed ? '恭喜您通过准入考试！' : '很遗憾，您未能通过考试')
             .fontSize(12)
             .fontColor($r('app.color.text_tertiary'))
         }
