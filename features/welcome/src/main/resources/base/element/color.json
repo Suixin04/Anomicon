@@ -1,0 +1,208 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#ffffff"
+    },
+    {
+      "name": "primary_color",
+      "value": "#ff4444"
+    },
+    {
+      "name": "background_primary",
+      "value": "#ffffff"
+    },
+    {
+      "name": "background_secondary",
+      "value": "#f5f5f5"
+    },
+    {
+      "name": "background_card",
+      "value": "#fafafa"
+    },
+    {
+      "name": "background_tertiary",
+      "value": "#f0f0f0"
+    },
+    {
+      "name": "text_primary",
+      "value": "#212121"
+    },
+    {
+      "name": "text_secondary",
+      "value": "#757575"
+    },
+    {
+      "name": "text_tertiary",
+      "value": "#9e9e9e"
+    },
+    {
+      "name": "text_accent",
+      "value": "#ff4444"
+    },
+    {
+      "name": "border_primary",
+      "value": "#e0e0e0"
+    },
+    {
+      "name": "border_secondary",
+      "value": "#eeeeee"
+    },
+    {
+      "name": "tag_orange_bg",
+      "value": "#fff3e0"
+    },
+    {
+      "name": "tag_orange_text",
+      "value": "#e65100"
+    },
+    {
+      "name": "tag_bg",
+      "value": "#f0f0f0"
+    },
+    {
+      "name": "background_tag",
+      "value": "#f0f0f0"
+    },
+    {
+      "name": "skeleton_bg_light",
+      "value": "#1A000000"
+    },
+    {
+      "name": "skeleton_bg_medium",
+      "value": "#1F000000"
+    },
+    {
+      "name": "skeleton_bg_dark",
+      "value": "#14000000"
+    },
+    {
+      "name": "skeleton_bg_darker",
+      "value": "#0F000000"
+    },
+    {
+      "name": "shimmer_light",
+      "value": "#33000000"
+    },
+    {
+      "name": "shimmer_medium",
+      "value": "#4D000000"
+    },
+    {
+      "name": "shadow_light",
+      "value": "#1A000000"
+    },
+    {
+      "name": "icon_warning",
+      "value": "#ffddb333"
+    },
+    {
+      "name": "overlay_light",
+      "value": "#0A000000"
+    },
+    {
+      "name": "overlay_medium",
+      "value": "#14000000"
+    },
+    {
+      "name": "overlay_strong",
+      "value": "#4D000000"
+    },
+    {
+      "name": "gradient_start",
+      "value": "#1fff4444"
+    },
+    {
+      "name": "gradient_mid",
+      "value": "#01ff4444"
+    },
+    {
+      "name": "gradient_end",
+      "value": "#ffffff"
+    },
+    {
+      "name": "scp_safe_text",
+      "value": "#28a745"
+    },
+    {
+      "name": "scp_safe_bg",
+      "value": "#1a28a745"
+    },
+    {
+      "name": "scp_safe_border",
+      "value": "#3328a745"
+    },
+    {
+      "name": "scp_euclid_text",
+      "value": "#ffc107"
+    },
+    {
+      "name": "scp_euclid_bg",
+      "value": "#1affc107"
+    },
+    {
+      "name": "scp_euclid_border",
+      "value": "#33ffc107"
+    },
+    {
+      "name": "scp_keter_text",
+      "value": "#dc3545"
+    },
+    {
+      "name": "scp_keter_bg",
+      "value": "#1adc3545"
+    },
+    {
+      "name": "scp_keter_border",
+      "value": "#33dc3545"
+    },
+    {
+      "name": "scp_thaumiel_text",
+      "value": "#007bff"
+    },
+    {
+      "name": "scp_thaumiel_bg",
+      "value": "#1a007bff"
+    },
+    {
+      "name": "scp_thaumiel_border",
+      "value": "#33007bff"
+    },
+    {
+      "name": "scp_apollyon_text",
+      "value": "#6f42c1"
+    },
+    {
+      "name": "scp_apollyon_bg",
+      "value": "#1a6f42c1"
+    },
+    {
+      "name": "scp_apollyon_border",
+      "value": "#336f42c1"
+    },
+    {
+      "name": "scp_explained_text",
+      "value": "#6c757d"
+    },
+    {
+      "name": "scp_explained_bg",
+      "value": "#1a6c757d"
+    },
+    {
+      "name": "scp_explained_border",
+      "value": "#336c757d"
+    },
+    {
+      "name": "scp_default_text",
+      "value": "#757575"
+    },
+    {
+      "name": "scp_default_bg",
+      "value": "#1a757575"
+    },
+    {
+      "name": "scp_default_border",
+      "value": "#33757575"
+    }
+  ]
+}
