@@ -113,6 +113,8 @@ struct HomePage {
               .tabBar(this.tabBuilder(item, index))
             })
           }
+          .barBackgroundBlurStyle(BlurStyle.COMPONENT_THICK)
+          .barOverlap(true)
           .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
           .scrollable(false)
           .divider({

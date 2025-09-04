@@ -1,0 +1,72 @@
+[
+  {
+    "id": 1,
+    "question": "SCP社区的三大核心使命是什么？",
+    "options": ["Secure、Contain、Protect", "Safety、Control、Procedure", "Secret、Contain、Protect", "Safety、Contain、Procedure"],
+    "correctAnswer": 0,
+    "explanation": "官方设定中，SCP代表 Secure（控制）、Contain（收容）、Protect（保护）。"
+  },
+  {
+    "id": 2,
+    "question": "SCP社区是一个真实存在的组织吗？",
+    "options": ["是，隶属联合国秘密机构", "否，仅为网络共笔创作项目", "是，由多国政府联合组建", "否，但原型来自现实中的科研机构"],
+    "correctAnswer": 1,
+    "explanation": "SCP社区完全是虚构的网络协作写作平台，所有文档均为爱好者共同创作。"
+  },
+  {
+    "id": 3,
+    "question": "以下哪一项最能准确描述SCP社区的本质？",
+    "options": ["恐怖小说合集", "科学报告档案库", "全球超自然管理机构", "协作式科幻/怪谈创作社区"],
+    "correctAnswer": 3,
+    "explanation": "官方中文站把SCP定位为“网络共笔作品”，鼓励全球作者持续补充设定与故事。"
+  },
+  {
+    "id": 4,
+    "question": "SCP文档中常见的“D级人员”主要作用是什么？",
+    "options": ["高级决策层", "实验消耗品与测试对象", "异常项目的安保人员", "数据库管理员"],
+    "correctAnswer": 1,
+    "explanation": "D级人员通常被设定为可消耗资源，用于高风险实验和直接接触异常。"
+  },
+  {
+    "id": 5,
+    "question": "下列哪个项目分级表示“异常已被充分理解且易于收容”？",
+    "options": ["Keter", "Euclid", "Safe", "Thaumiel"],
+    "correctAnswer": 2,
+    "explanation": "Safe级意味着异常在标准程序下可被安全收容，不代表异常本身无害。"
+  },
+  {
+    "id": 6,
+    "question": "SCP社区的“O5议会”主要负责什么？",
+    "options": ["伦理审查", "最高决策与长期战略", "日常行政事务", "信息技术维护"],
+    "correctAnswer": 1,
+    "explanation": "O5议会由13名匿名成员组成，拥有最高权限，负责制定整体战略与重大决策。"
+  },
+  {
+    "id": 7,
+    "question": "“一无二随”在SCP社区中的含义是？",
+    "options": ["一个设定，两种解读", "一个项目，两个作者", "一个世界观，多种可能", "一个文档，两种结局"],
+    "correctAnswer": 2,
+    "explanation": "“一无二随”即“一个世界观，多种可能”，允许不同作品存在设定冲突，鼓励自由创作。"
+  },
+  {
+    "id": 8,
+    "question": "下列哪一项不属于官方设定中的敌对组织？",
+    "options": ["混沌分裂者", "全球超自然联盟", "蛇之手", "复仇者联盟"],
+    "correctAnswer": 3,
+    "explanation": "“复仇者联盟”为漫威作品设定，其余三项均在SCP官方设定中有对应档案。"
+  },
+  {
+    "id": 9,
+    "question": "官方中文主站点的域名是？",
+    "options": ["scp-wiki-cn.wikidot.com", "www.scpcommunity.net", "scp-wiki.wikidot.com", "scpcommunity.org"],
+    "correctAnswer": 0,
+    "explanation": "官方中文站点域名为 scp-wiki-cn.wikidot.com，英文主站为 scp-wiki.wikidot.com。"
+  },
+  {
+    "id": 10,
+    "question": "SCP社区将“异常”定义为：",
+    "options": ["无法被科学解释的事物或现象", "对人类有敌意的实体", "所有超自然生物", "被政府通缉的个体"],
+    "correctAnswer": 0,
+    "explanation": "官方设定中，异常指当前科学无法解释或违反已知自然法则的物体、生物或现象。"
+  }
+]
