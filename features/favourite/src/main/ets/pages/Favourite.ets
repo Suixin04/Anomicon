@@ -140,7 +140,7 @@ export struct Favourite {
             })
           }
         }
-        .padding({ left: 25, right: 25, bottom: 35 })
+        .padding({ left: 25, right: 25, bottom: 65 })
         .width('100%')
         // .height('100%')
       }
