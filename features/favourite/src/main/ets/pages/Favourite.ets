@@ -67,7 +67,6 @@ export struct Favourite {
 
       Scroll(this.scroller) {
         Column({ space: 20 }) {
-
           // 类型过滤器
           Row({ space: 10 }) {
             CustomButtonView({ text: '全部', isSelected: this.selectedType === 'ALL' ? true : false })
@@ -141,10 +140,11 @@ export struct Favourite {
             })
           }
         }
-        .padding({ left: 25, right: 25, bottom: 25 })
+        .padding({ left: 25, right: 25, bottom: 35 })
         .width('100%')
         // .height('100%')
       }
+      .edgeEffect(EdgeEffect.Spring)
       .align(Alignment.Top)
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)

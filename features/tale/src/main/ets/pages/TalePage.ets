@@ -56,9 +56,10 @@ export struct TalePage {
             })
           })
         }
-        .padding({ left: 25, right: 25, bottom: 25 })
+        .padding({ left: 25, right: 25, bottom: 65 })
         .width('100%')
       }
+      .edgeEffect(EdgeEffect.Spring)
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)
       .layoutWeight(1)

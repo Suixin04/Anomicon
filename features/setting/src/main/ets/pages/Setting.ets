@@ -4,6 +4,7 @@ import { FontSizeData, FontSizeManager, FontSizeViewModel, VibrationUtils } from
 import CommonConstants from 'utils/src/main/ets/constants/CommonConstants';
 import { bundleManager } from '@kit.AbilityKit';
 import { BusinessError } from '@kit.BasicServicesKit';
+import { common } from '@kit.AbilityKit';
 
 /**
  * 设置页面组件 - 显示应用信息和版权声明
@@ -173,7 +174,29 @@ export struct Settings {
             .padding({ bottom: 10 })
 
             Row() {
-              Text('本应用所有SCP内容均来自SCP基金会官方Wiki， 遵循创作共用协议 (CC BY-SA 3.0)。 SCP基金会是一个创作共同体项目。')
+              Text() {
+                Span('本应用所有SCP内容均来自')
+                Span('SCP基金会官方Wiki')
+                  .fontColor('#007AFF')
+                  .decoration({ type: TextDecorationType.Underline })
+                  .onClick(() => {
+                    const context = getContext(this) as common.UIAbilityContext;
+                    context.openLink('https://scp-wiki-cn.wikidot.com').catch((error: BusinessError) => {
+                      console.error('Failed to open link:', error.message);
+                    });
+                  })
+                Span('， 遵循创作共用协议 (')
+                Span('CC BY-SA 3.0')
+                  .fontColor('#007AFF')
+                  .decoration({ type: TextDecorationType.Underline })
+                  .onClick(() => {
+                    const context = getContext(this) as common.UIAbilityContext;
+                    context.openLink('https://creativecommons.org/licenses/by-sa/3.0/deed.en#ref-appropriate-credit').catch((error: BusinessError) => {
+                      console.error('Failed to open link:', error.message);
+                    });
+                  })
+                Span(')。 SCP基金会是一个创作共同体项目。（将来为符合应用市场审核要求，部分内容可能会被修改。如若修改将给出明确说明)')
+              }
                 .fontSize(FontSizeManager.getScaledFontSize(12))
                 .fontColor($r('app.color.text_secondary'))
                 .textAlign(TextAlign.JUSTIFY)
@@ -186,9 +209,10 @@ export struct Settings {
           .justifyContent(FlexAlign.Start)
           .padding(25)
         }
-        .padding({ left: 25, right: 25, bottom: 25 })
+        .padding({ left: 25, right: 25, bottom: 35 })
         .width('100%')
       }
+      .edgeEffect(EdgeEffect.Spring)
       .scrollable(ScrollDirection.Vertical)
       .scrollBar(BarState.Off)
       .layoutWeight(1)
