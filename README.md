@@ -10,7 +10,7 @@ Anomicon 是一个基于 ArkTS 开发的开源SCP图鉴应用，旨在为 SCP �
 ### 安装步骤
 1. 克隆项目
 ```bash
-git clone https://github.com/suixin/anomicon.git
+git clone https://github.com/Suixin04/Anomicon.git
 ```
 2. 打开DevEco Studio，导入项目
 3. 同步依赖并运行
