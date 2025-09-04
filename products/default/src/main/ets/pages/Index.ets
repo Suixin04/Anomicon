@@ -133,16 +133,18 @@ struct HomePage {
           .animationMode(AnimationMode.NO_ANIMATION)
         }
         .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-        if(!this.isApproved)
-          WelcomePage()
-            .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
-            .backgroundBlurStyle(BlurStyle.Thick, {
-              colorMode: ThemeColorMode.SYSTEM,
-              adaptiveColor: AdaptiveColor.DEFAULT,
-              scale: 0.1
-            })
-            .width('100%')
-            .height('100%')
+
+        // 准入界面显示
+        // if(!this.isApproved)
+        //   WelcomePage()
+        //     .expandSafeArea([SafeAreaType.SYSTEM], [SafeAreaEdge.TOP, SafeAreaEdge.BOTTOM])
+        //     .backgroundBlurStyle(BlurStyle.Thick, {
+        //       colorMode: ThemeColorMode.SYSTEM,
+        //       adaptiveColor: AdaptiveColor.DEFAULT,
+        //       scale: 0.1
+        //     })
+        //     .width('100%')
+        //     .height('100%')
       }
       .width('100%')
       .height('100%')
