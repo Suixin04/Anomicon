@@ -13,6 +13,8 @@ export interface ReadingHistoryRepository {
   list(): Promise<ReadingHistoryEntry[]>;
   recordOpened(content: LibraryContentRef): Promise<ReadingHistoryEntry>;
   updateProgress(content: LibraryContentRef, offset: number): Promise<ReadingHistoryEntry>;
+  /** Toggle the reader's explicit completed annotation. */
+  setCompleted?(content: LibraryContentRef, completed: boolean): Promise<ReadingHistoryEntry>;
   /** 只补全标题/类型，不改变最近阅读时间、排序或滚动位置。 */
   updateMetadata(content: LibraryContentRef): Promise<ReadingHistoryEntry | undefined>;
 }

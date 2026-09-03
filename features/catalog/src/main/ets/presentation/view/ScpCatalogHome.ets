@@ -29,6 +29,8 @@ export struct ScpCatalogHome {
    * the catalog feature depend on the archive3d renderer or manifest. */
   @Require @Param has3DModel: (itemId: string) => boolean;
   @Param active: boolean = true;
+  @Param isReadCompleted: (itemId: string) => boolean = (_itemId: string): boolean => false;
+  @Param completionRevision: number = 0;
 
   @Local private searchState: ScpCatalogSearchState = sharedCatalogSearchState();
   @Local private entries: ScpCatalogEntry[] = [];
@@ -77,6 +79,12 @@ export struct ScpCatalogHome {
   @SyncMonitor('viewModel.visibleEntries')
   onVisibleEntriesChanged(): void {
     this.syncEntries();
+  }
+
+  @Monitor('completionRevision')
+  onCompletionRevisionChanged(): void {
+    // The revision is deliberately consumed by the view so product-owned
+    // history updates also refresh recycled WaterFlow cards.
   }
 
   private syncEntries(): void {
@@ -269,6 +277,7 @@ export struct ScpCatalogHome {
                         resolveLocalPreviewSource: this.resolveLocalPreviewSource,
                         refreshToken: this.previewReloadToken,
                         show3DModel: this.has3DModel(row.item.itemId),
+                        readCompleted: this.isReadCompleted(row.item.itemId),
                         onOpen: (itemId: string, name: string) => this.onOpenArticle(itemId, name),
                         onPreviewLoaded: (loaded: ScpCatalogEntry, info: CatalogPreview) =>
                           this.onPreviewLoaded(loaded, info)

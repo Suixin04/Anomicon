@@ -106,6 +106,25 @@ export class ReadingHistoryViewModel {
     });
   }
 
+  async setCompleted(content: LibraryContentRef, completed: boolean = true): Promise<void> {
+    await this.initialize();
+    if (this.repository.setCompleted === undefined) {
+      throw new Error('当前阅读历史存储不支持完成标记');
+    }
+    await this.enqueue(async (): Promise<void> => {
+      try {
+        const updated = await this.repository.setCompleted!(content, completed === true);
+        this.publishUpdated(updated);
+        this.error = '';
+        this.notifyListeners();
+      } catch (error) {
+        this.error = this.errorMessage(error);
+        this.notifyListeners();
+        throw new Error(this.error);
+      }
+    });
+  }
+
   /** 发布名称补全快照，但保持最近浏览时间与进度完全不变。 */
   async updateMetadata(content: LibraryContentRef): Promise<void> {
     await this.initialize();

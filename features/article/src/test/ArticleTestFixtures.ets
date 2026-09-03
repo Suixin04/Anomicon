@@ -14,7 +14,7 @@ export const CURRENT_PAYLOAD: string = `{
   "title": "SCP-173 - 雕像",
   "rating": "+321",
   "pageVersion": "页面版本：4",
-  "tags": ["scp", "safe"],
+  "tags": ["scp", "safe", "人形生物"],
   "images": [{"src": "https://example.com/archive.png", "caption": "档案图片"}],
   "blocks": [
     {

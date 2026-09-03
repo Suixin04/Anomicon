@@ -14,17 +14,21 @@ export class ReadingHistoryEntry {
   readonly openedAt: number;
   readonly lastReadAt: number;
   readonly scrollOffset: number;
+  /** Explicit user annotation; independent from scroll progress. */
+  readonly completed: boolean;
 
   constructor(
     content: LibraryContentRef,
     openedAt: number,
     lastReadAt: number,
-    scrollOffset: number
+    scrollOffset: number,
+    completed: boolean = false
   ) {
     this.content = content;
     this.openedAt = openedAt;
     this.lastReadAt = lastReadAt;
     this.scrollOffset = normalizeReadingScrollOffset(scrollOffset);
+    this.completed = completed === true;
   }
 }
 

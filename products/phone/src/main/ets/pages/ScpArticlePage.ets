@@ -125,6 +125,7 @@ struct ScpArticlePage {
   @Local private fontSize: number = ReadingSettingsRange.FONT_SIZE_DEFAULT;
   @Local private lineHeightMultiple: number = ReadingSettingsRange.LINE_HEIGHT_DEFAULT;
   @Local private readingPercent: number = 0;
+  @Local private completed: boolean = false;
 
   aboutToAppear(): void {
     this.viewModelUnsubscribe?.();
@@ -187,6 +188,7 @@ struct ScpArticlePage {
     this.errorMessage = this.routeErrorMessage.length > 0 ? this.routeErrorMessage :
       (partial ? '' : vm.error?.message ?? '');
     this.readingPercent = vm.readingPercent;
+    this.completed = vm.completed;
     // Article owns title enrichment and related-tale lookup.  The product
     // page only projects the serializable VM snapshot into the established
     // renderer types, preserving the existing visual layout.
@@ -450,6 +452,17 @@ struct ScpArticlePage {
     }
   }
 
+  private async toggleCompleted(): Promise<void> {
+    try {
+      const next = !this.completed;
+      await this.viewModel.setCompleted(next);
+      this.completed = next;
+      this.showToast(next ? '已标记为已读完' : '已取消已读标记');
+    } catch (error) {
+      this.showToast(error instanceof Error ? error.message : '保存完成标记失败');
+    }
+  }
+
   /** Product navigation effect emitted by the feature-owned related-tale list. */
   private openTale(tale: ArticleRelatedTale): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
@@ -484,10 +497,9 @@ struct ScpArticlePage {
    * for More and keep only the primary actions outside it.
    */
   private articleMenuMaxCount(): number {
-    // Every article keeps 收藏 as its first-level action.  A reviewed SCP
-    // model gets one additional slot; browser and reading settings remain in
-    // HDS' generated More menu for both SCP and tale pages.
-    return this.canOpenArchive3D() ? 3 : 2;
+    // Every article keeps 收藏 and the explicit completion annotation as
+    // first-level actions. Browser and reading settings remain in More.
+    return this.canOpenArchive3D() ? 4 : 3;
   }
 
   private articleMenuItems(): HdsNavigationMenuItemOptions[] {
@@ -503,6 +515,16 @@ struct ScpArticlePage {
         }
       }
     }];
+    items.push({
+      content: {
+        icon: this.completed ? $r('sys.symbol.checkmark_circle_fill') :
+          $r('sys.symbol.checkmark_circle'),
+        label: this.completed ? '取消已读标记' : '标记为已读完',
+        action: () => {
+          this.toggleCompleted();
+        }
+      }
+    });
     if (this.canOpenArchive3D()) {
       items.push({
         content: {
@@ -726,8 +748,8 @@ struct ScpArticlePage {
         },
         backIcon: { label: '返回', componentId: 'articleBackButton' },
         menu: {
-          // HDS 当前实现会把“更多”本身计入 maxCount；因此无模型为 2
-          // （收藏 + 更多），有模型为 3（收藏 + 三维档案 + 更多）。
+          // HDS 当前实现会把“更多”本身计入 maxCount；因此无模型为 3
+          // （收藏 + 已读完 + 更多），有模型为 4（再加三维档案）。
           value: this.articleMenuItems(),
           maxCount: this.articleMenuMaxCount()
         }

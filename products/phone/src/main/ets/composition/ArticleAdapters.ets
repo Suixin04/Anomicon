@@ -73,7 +73,8 @@ export class ArticleHistoryAdapter implements ArticleHistoryPort {
       return undefined;
     }
     return {
-      scrollOffset: this.normalizeOffset(entry.scrollOffset)
+      scrollOffset: this.normalizeOffset(entry.scrollOffset),
+      completed: entry.completed
     };
   }
 
@@ -83,6 +84,10 @@ export class ArticleHistoryAdapter implements ArticleHistoryPort {
 
   updateMetadata(content: LibraryContentRef): Promise<void> {
     return this.state.updateMetadata(content);
+  }
+
+  setCompleted(content: LibraryContentRef, completed: boolean): Promise<void> {
+    return this.state.setCompleted(content, completed);
   }
 
   private normalizeOffset(offset: number): number {

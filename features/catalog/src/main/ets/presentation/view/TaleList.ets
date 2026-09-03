@@ -18,6 +18,8 @@ export struct TaleList {
   @Require @Param onOpenTale: (id: string, name: string) => void;
   @Require @Param viewModel: TaleListViewModel;
   @Param active: boolean = true;
+  @Param isReadCompleted: (id: string) => boolean = (_id: string): boolean => false;
+  @Param completionRevision: number = 0;
 
   aboutToAppear(): void {
     if (this.active) {
@@ -53,6 +55,12 @@ export struct TaleList {
   onTaleLetterChange(): void {
     this.viewModel.setLetter(this.filterState.letter);
     this.scroller.scrollTo({ xOffset: 0, yOffset: 0, animation: false });
+  }
+
+  @Monitor('completionRevision')
+  onCompletionRevisionChanged(): void {
+    // Consume the product-owned revision so a completed story is reflected in
+    // a recycled row without coupling Catalog to Library.
   }
 
   private retryCurrent(): void {
@@ -173,6 +181,12 @@ export struct TaleList {
           .fontColor($r('sys.color.font_tertiary'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
+        if (this.isReadCompleted(row.item.id)) {
+          Text('✓ 已读完')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor('#3C7A57')
+            .maxLines(1)
+        }
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)

@@ -63,7 +63,8 @@ export default function articleDocumentMapperTest(): void {
       expect(document.rating).assertEqual('+321');
       expect(document.pageVersion).assertEqual('页面版本：4');
       expect(document.fetchedAt).assertEqual(fetchedAt);
-      expect(document.tags.length).assertEqual(2);
+      expect(document.tags.length).assertEqual(1);
+      expect(document.tags[0]).assertEqual('人形生物');
       expect(document.images.length).assertEqual(1);
       expect(document.images[0].type).assertEqual(ScpBlockType.IMAGE);
       expect(document.blocks.length).assertEqual(4);
@@ -136,6 +137,22 @@ export default function articleDocumentMapperTest(): void {
         rejected = true;
       }
       expect(rejected).assertTrue();
+    });
+
+    it('normalizes Traditional prose and removes empty footnote rows', 0, () => {
+      const parser = createArticleDocumentParser();
+      const document = parser.parse(
+        '{"parserVersion":4,"ok":true,"error":"","title":"測試項目","rating":"","pageVersion":"","tags":["scp","containment-class-safe","異常"],"images":[],"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"特別收容措施"}]}],"footnotes":[{"id":"empty","index":1,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"   "}]},{"k":"divider"}]},{"id":"readable","index":2,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"腳註內容"}]}]}],"warnings":[]}',
+        'https://scp-wiki-cn.wikidot.com/scp-999',
+        1_700_000_000_000
+      );
+
+      expect(document.title).assertEqual('测试项目');
+      expect(document.blocks[0].spans[0].text).assertEqual('特别收容措施');
+      expect(document.tags.length).assertEqual(1);
+      expect(document.tags[0]).assertEqual('异常');
+      expect(document.footnotes.length).assertEqual(1);
+      expect(document.footnotes[0].blocks[0].spans[0].text).assertEqual('脚注内容');
     });
   });
 }

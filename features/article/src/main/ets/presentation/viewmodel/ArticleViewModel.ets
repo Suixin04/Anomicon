@@ -39,6 +39,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
   @Trace parsing: boolean = false;
   @Trace expandedKeys: string[] = [];
   @Trace readingPercent: number = 0;
+  @Trace completed: boolean = false;
   /** Scroll position selected from reading history (or current reading history). */
   @Trace restoredScrollOffset: number = 0;
   /**
@@ -295,6 +296,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
     this.relatedTales = [];
     this.restoredScrollOffset = 0;
     this.readingPercent = 0;
+    this.completed = false;
     this.readingRestoreReady = false;
     this.readingScrollInteracted = false;
     this.historyReady = false;
@@ -478,6 +480,32 @@ export class ArticleViewModel implements ViewModelLifecycle {
         this.notifyListeners();
       }
       throw new Error(error instanceof Error ? error.message : '更新阅读元数据失败');
+    }
+  }
+
+  async setCompleted(completed: boolean = true,
+    content: LibraryContentRef | undefined = this.content): Promise<void> {
+    const history = this.history;
+    if (history?.setCompleted === undefined || content === undefined || this.disposed ||
+      !this.isContentCurrent(content)) {
+      return;
+    }
+    const epoch = this.historyEpoch;
+    const task = this.enqueueHistory(() => history.setCompleted!(content, completed === true));
+    try {
+      await task;
+      if (this.isHistoryCurrent(epoch, content)) {
+        this.completed = completed === true;
+        this.historyReady = true;
+        this.historyError = undefined;
+        this.notifyListeners();
+      }
+    } catch (error) {
+      if (this.isHistoryCurrent(epoch, content)) {
+        this.historyError = ViewModelErrorInfo.from(error, '保存完成标记失败');
+        this.notifyListeners();
+      }
+      throw new Error(error instanceof Error ? error.message : '保存完成标记失败');
     }
   }
 
@@ -994,6 +1022,9 @@ export class ArticleViewModel implements ViewModelLifecycle {
     let offset: number = 0;
     if (snapshot !== undefined) {
       offset = this.normalizeReadingOffset(snapshot.scrollOffset);
+      this.completed = snapshot.completed === true;
+    } else {
+      this.completed = false;
     }
     if (!this.isHistoryCurrent(epoch, content)) {
       return 0;

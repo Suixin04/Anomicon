@@ -6,7 +6,7 @@ export interface ScpCatalogRawEntry {
 }
 
 /** 系列目录静态解析器的输出版本；变更时使旧派生缓存失效。 */
-export const SCP_CATALOG_PARSER_VERSION: number = 3;
+export const SCP_CATALOG_PARSER_VERSION: number = 4;
 
 export interface ScpCatalogPayload {
   parserVersion: number;
@@ -22,7 +22,7 @@ export interface TaleRawEntry {
 }
 
 /** 故事列表静态解析器的输出版本；变更时使旧派生缓存失效。 */
-export const TALE_LIST_PARSER_VERSION: number = 2;
+export const TALE_LIST_PARSER_VERSION: number = 3;
 
 export interface TalePayload {
   parserVersion: number;

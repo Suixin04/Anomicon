@@ -20,7 +20,10 @@ const CREATE_TABLE: string =
   'CREATE TABLE IF NOT EXISTS library_reading_history (' +
   'content_key TEXT PRIMARY KEY, content_id TEXT NOT NULL, title TEXT NOT NULL, ' +
   'content_kind TEXT NOT NULL, opened_at INTEGER NOT NULL, ' +
-  'last_read_at INTEGER NOT NULL, scroll_offset INTEGER NOT NULL)';
+  'last_read_at INTEGER NOT NULL, scroll_offset INTEGER NOT NULL, ' +
+  'completed INTEGER NOT NULL DEFAULT 0)';
+const ADD_COMPLETED_COLUMN: string =
+  'ALTER TABLE library_reading_history ADD COLUMN completed INTEGER NOT NULL DEFAULT 0';
 const CREATE_TIME_INDEX: string =
   'CREATE INDEX IF NOT EXISTS idx_library_reading_history_time ' +
   'ON library_reading_history(last_read_at DESC, content_key ASC)';
@@ -85,7 +88,9 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
       const openedAt = existing === undefined ? now : existing.openedAt;
       const scrollOffset = existing === undefined ? 0 : existing.scrollOffset;
       const resolvedContent = preferLibraryContentMetadata(content, existing?.content);
-      const entry = new ReadingHistoryEntry(resolvedContent, openedAt, now, scrollOffset);
+      const entry = new ReadingHistoryEntry(
+        resolvedContent, openedAt, now, scrollOffset, existing?.completed ?? false
+      );
       await this.putNow(entry);
       if (existing === undefined) {
         await this.pruneNow();
@@ -107,7 +112,31 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         resolvedContent,
         openedAt,
         now,
-        normalizeReadingScrollOffset(offset)
+        normalizeReadingScrollOffset(offset),
+        existing?.completed ?? false
+      );
+      await this.putNow(entry);
+      if (existing === undefined) {
+        await this.pruneNow();
+      }
+      updated = entry;
+    });
+    return updated!;
+  }
+
+  async setCompleted(content: LibraryContentRef, completed: boolean): Promise<ReadingHistoryEntry> {
+    let updated: ReadingHistoryEntry | undefined = undefined;
+    await this.enqueueMutation(async (): Promise<void> => {
+      const existing = await this.findNow(content.key);
+      const now = Date.now();
+      const openedAt = existing === undefined ? now : existing.openedAt;
+      const resolvedContent = preferLibraryContentMetadata(content, existing?.content);
+      const entry = new ReadingHistoryEntry(
+        resolvedContent,
+        openedAt,
+        now,
+        existing?.scrollOffset ?? 0,
+        completed === true
       );
       await this.putNow(entry);
       if (existing === undefined) {
@@ -136,7 +165,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         resolvedContent,
         existing.openedAt,
         existing.lastReadAt,
-        existing.scrollOffset
+        existing.scrollOffset,
+        existing.completed
       );
       await this.putNow(entry);
       updated = entry;
@@ -159,7 +189,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         'content_kind',
         'opened_at',
         'last_read_at',
-        'scroll_offset'
+        'scroll_offset',
+        'completed'
       ]);
       while (resultSet.goToNextRow()) {
         const entry = this.entryFromResultSet(resultSet);
@@ -188,7 +219,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         'content_kind',
         'opened_at',
         'last_read_at',
-        'scroll_offset'
+        'scroll_offset',
+        'completed'
       ]);
       if (!resultSet.goToFirstRow()) {
         return undefined;
@@ -217,7 +249,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         content,
         resultSet.getLong(resultSet.getColumnIndex('opened_at')),
         resultSet.getLong(resultSet.getColumnIndex('last_read_at')),
-        resultSet.getLong(resultSet.getColumnIndex('scroll_offset'))
+        resultSet.getLong(resultSet.getColumnIndex('scroll_offset')),
+        resultSet.getLong(resultSet.getColumnIndex('completed')) > 0
       );
     } catch (error) {
       // 单条历史脏数据不应阻断其他记录展示；再次打开时会重建该条记录。
@@ -234,7 +267,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
       'content_kind': entry.content.kind,
       'opened_at': entry.openedAt,
       'last_read_at': entry.lastReadAt,
-      'scroll_offset': entry.scrollOffset
+      'scroll_offset': entry.scrollOffset,
+      'completed': entry.completed ? 1 : 0
     };
     try {
       const rowId = await store.insert(
@@ -278,6 +312,16 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         encrypt: false
       });
       await store.executeSql(CREATE_TABLE);
+      // Existing installs predate the completion annotation.  Duplicate
+      // column errors mean the migration already ran and are safe to ignore.
+      try {
+        await store.executeSql(ADD_COMPLETED_COLUMN);
+      } catch (error) {
+        const message = error instanceof Error ? error.message.toLowerCase() : '';
+        if (message.indexOf('duplicate') < 0 && message.indexOf('exists') < 0) {
+          console.warn(`Reading history completion migration skipped: ${message}`);
+        }
+      }
       await store.executeSql(CREATE_TIME_INDEX);
       // Complete the canonical-key migration before the repository becomes
       // visible to ViewModels.  Callers therefore never observe a mixed key
@@ -349,7 +393,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         'content_kind',
         'opened_at',
         'last_read_at',
-        'scroll_offset'
+        'scroll_offset',
+        'completed'
       ]);
       while (resultSet.goToNextRow()) {
         const kindValue = resultSet.getString(resultSet.getColumnIndex('content_kind'));
@@ -369,7 +414,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
               content,
               resultSet.getLong(resultSet.getColumnIndex('opened_at')),
               resultSet.getLong(resultSet.getColumnIndex('last_read_at')),
-              resultSet.getLong(resultSet.getColumnIndex('scroll_offset'))
+              resultSet.getLong(resultSet.getColumnIndex('scroll_offset')),
+              resultSet.getLong(resultSet.getColumnIndex('completed')) > 0
             )
           ));
         } catch (error) {
@@ -400,7 +446,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         mergedContent,
         Math.min(current.entry.openedAt, candidate.entry.openedAt),
         Math.max(current.entry.lastReadAt, candidate.entry.lastReadAt),
-        latest.entry.scrollOffset
+        latest.entry.scrollOffset,
+        latest.entry.completed || fallback.entry.completed
       )
     );
   }
@@ -431,7 +478,8 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
       'content_kind': entry.content.kind,
       'opened_at': entry.openedAt,
       'last_read_at': entry.lastReadAt,
-      'scroll_offset': entry.scrollOffset
+      'scroll_offset': entry.scrollOffset,
+      'completed': entry.completed ? 1 : 0
     };
     try {
       const rowId = await store.insert(

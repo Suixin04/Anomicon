@@ -7,6 +7,49 @@ import {
   TaleRawEntry
 } from '../domain/StaticCatalogContracts';
 
+// Wikidot pages are published by several mirrors, so the catalog can mix
+// Traditional and Simplified Chinese even when the app language is Simplified
+// Chinese. Keep this small, dependency-free projection at the HTML boundary so
+// titles are normalized before search, sorting, and rendering consume them.
+const TRADITIONAL_TO_SIMPLIFIED: Map<string, string> = new Map<string, string>([
+  ['萬', '万'], ['與', '与'], ['為', '为'], ['這', '这'], ['個', '个'], ['來', '来'],
+  ['後', '后'], ['從', '从'], ['發', '发'], ['國', '国'], ['學', '学'], ['會', '会'],
+  ['開', '开'], ['關', '关'], ['聯', '联'], ['類', '类'], ['級', '级'], ['號', '号'],
+  ['標', '标'], ['題', '题'], ['體', '体'], ['長', '长'], ['無', '无'], ['時', '时'],
+  ['間', '间'], ['現', '现'], ['實', '实'], ['見', '见'], ['對', '对'], ['應', '应'],
+  ['該', '该'], ['點', '点'], ['當', '当'], ['動', '动'], ['過', '过'], ['進', '进'],
+  ['還', '还'], ['將', '将'], ['專', '专'], ['業', '业'], ['兩', '两'], ['誰', '谁'],
+  ['說', '说'], ['語', '语'], ['讀', '读'], ['頁', '页'], ['網', '网'], ['處', '处'],
+  ['備', '备'], ['註', '注'], ['腳', '脚'], ['錄', '录'], ['擴', '扩'], ['張', '张'],
+  ['簡', '简'], ['轉', '转'], ['換', '换'], ['訊', '讯'], ['測', '测'], ['試', '试'],
+  ['際', '际'], ['繼', '继'], ['續', '续'], ['經', '经'], ['驗', '验'], ['錯', '错'],
+  ['誤', '误'], ['檔', '档'], ['別', '别'], ['項', '项'], ['編', '编'], ['輯', '辑'],
+  ['資', '资'], ['詳', '详'], ['細', '细'], ['預', '预'], ['覽', '览'], ['圖', '图'],
+  ['鑑', '鉴'], ['顯', '显'], ['狀', '状'], ['態', '态'], ['擊', '击'], ['選', '选'],
+  ['擇', '择'], ['復', '复'], ['歸', '归'], ['閉', '闭'], ['閱', '阅'], ['記', '记'],
+  ['內', '内'], ['瀏', '浏'], ['絡', '络'], ['參', '参'], ['連', '连'], ['頭', '头'],
+  ['務', '务'], ['門', '门'], ['間', '间'], ['隊', '队'], ['號', '号'], ['線', '线'],
+  ['從', '从'], ['種', '种'], ['這', '这'], ['麼', '么'], ['樣', '样'], ['還', '还'],
+  ['處', '处'], ['應', '应'], ['極', '极'], ['標', '标'], ['準', '准'], ['廣', '广'],
+  ['義', '义'], ['則', '则'], ['單', '单'], ['據', '据'], ['無', '无'], ['論', '论'],
+  ['論', '论'], ['邊', '边'], ['導', '导'], ['覽', '览'], ['製', '制'], ['術', '术'],
+  ['術', '术'], ['異', '异'], ['常', '常'], ['種', '种'], ['變', '变'], ['化', '化'],
+  ['現', '现'], ['場', '场'], ['圖', '图'], ['說', '说'], ['明', '明'], ['問', '问'],
+  ['題', '题'], ['標', '标'], ['識', '识'], ['類', '类'], ['別', '别'], ['體', '体'],
+  ['驗', '验'], ['證', '证'], ['實', '实'], ['際', '际'], ['狀', '状'], ['態', '态'],
+  ['輔', '辅'], ['創', '创'], ['藝', '艺'], ['攝', '摄'], ['權', '权'], ['產', '产'],
+  ['護', '护'], ['敵', '敌'], ['殺', '杀'], ['傷', '伤'], ['釋', '释'], ['針', '针']
+]);
+
+function toSimplifiedChinese(value: string): string {
+  let result: string = '';
+  for (let index: number = 0; index < value.length; index++) {
+    const character = value.charAt(index);
+    result += TRADITIONAL_TO_SIMPLIFIED.get(character) ?? character;
+  }
+  return result;
+}
+
 /**
  * 目录类页面的原生静态 HTML 解析器。
  *
@@ -282,9 +325,9 @@ export class StaticCatalogHtmlParser {
       .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
       .replace(/<!--[\s\S]*?-->/g, ' ')
       .replace(/<[^>]+>/g, ' ');
-    return StaticCatalogHtmlParser.collapseSpace(
+    return toSimplifiedChinese(StaticCatalogHtmlParser.collapseSpace(
       StaticCatalogHtmlParser.decodeEntities(withoutMarkup)
-    ).trim();
+    )).trim();
   }
 
   private static decodeEntities(value: string): string {

@@ -25,6 +25,7 @@ export struct ScpCatalogCard {
   /** Product composition owns platform-specific sandbox path conversion. */
   @Require @Param resolveLocalPreviewSource: (path: string) => string;
   @Require @Param show3DModel: boolean;
+  @Param readCompleted: boolean = false;
   @Param refreshToken: number = 0;
 
   private mounted: boolean = false;
@@ -215,6 +216,23 @@ export struct ScpCatalogCard {
             .borderRadius(6)
             .hitTestBehavior(HitTestMode.None)
             .accessibilityText('含三维档案');
+          }
+          if (this.readCompleted) {
+            Row({ space: 3 }) {
+              SymbolGlyph($r('sys.symbol.checkmark'))
+                .fontSize(11)
+                .fontColor(['#FFFFFF']);
+              Text('已读完')
+                .fontSize(10)
+                .fontWeight(FontWeight.Medium)
+                .fontColor('#FFFFFF');
+            }
+            .height(20)
+            .padding({ left: 6, right: 6 })
+            .backgroundColor('#3C7A57')
+            .borderRadius(6)
+            .hitTestBehavior(HitTestMode.None)
+            .accessibilityText('已读完');
           }
         }
         .width('100%')

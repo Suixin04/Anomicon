@@ -5,6 +5,7 @@ import { HapticFeedbackPort } from 'anomiconbasic';
 import { ExploreHeroAnchor, ExploreHomeViewModel } from 'explore';
 import { CatalogViewModel, TaleListViewModel } from 'catalog';
 import { TerminalViewModel } from 'terminal';
+import { ReadingHistoryViewModel } from 'library';
 import { SettingsViewModel } from 'settings';
 import { StartupCoordinator } from '../startup/StartupCoordinator';
 import { StartupOverlay } from '../startup/StartupOverlay';
@@ -25,6 +26,8 @@ struct PhoneIndex {
     AppContainer.getInstance().createTaleListViewModel();
   @Local private terminalViewModel: TerminalViewModel =
     AppContainer.getInstance().createTerminalViewModel();
+  @Local private readingHistory: ReadingHistoryViewModel =
+    AppContainer.getInstance().readingHistory();
   @Local private startupCoordinator: StartupCoordinator = new StartupCoordinator();
 
   aboutToDisappear(): void {
@@ -40,6 +43,7 @@ struct PhoneIndex {
         catalogViewModel: this.catalogViewModel,
         taleListViewModel: this.taleListViewModel,
         terminalViewModel: this.terminalViewModel,
+        readingHistory: this.readingHistory,
         exploreSkeletonAnimated: this.startupCoordinator.homeSkeletonAnimated,
         onExploreHeroAnchorChange: (anchor: ExploreHeroAnchor): void =>
           this.startupCoordinator.updateHeroAnchor(anchor)

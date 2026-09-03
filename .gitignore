@@ -15,6 +15,7 @@
 **/linter-cache/
 /.appanalyzer/
 .preview/
+.dsh-hdc/
 
 .DS_Store
 Thumbs.db

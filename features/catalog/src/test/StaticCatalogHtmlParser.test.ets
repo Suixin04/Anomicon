@@ -9,13 +9,26 @@ export default function staticCatalogHtmlParserTest(): void {
   describe('StaticCatalogHtmlParserContract', () => {
     it('returns a validated catalog payload for the series panel', 0, () => {
       const html = '<div id="page-content"><div class="content-panel series">' +
-        '<a href="/scp-173">SCP-173 - 雕像</a></div></div>';
+        '<a href="/scp-173">SCP-173 - 雕像</a>' +
+        '<a href="/scp-174">SCP-174 - 項目測試</a></div></div>';
       const result = StaticCatalogHtmlParser.parseCatalog(html);
 
       expect(result.ok).assertTrue();
       expect(result.parserVersion).assertEqual(SCP_CATALOG_PARSER_VERSION);
-      expect(result.entries.length).assertEqual(1);
+      expect(result.entries.length).assertEqual(2);
       expect(result.entries[0].itemId).assertEqual('SCP-173');
+      expect(result.entries[1].title).assertEqual('项目测试');
+    });
+
+    it('normalizes Traditional Chinese tale titles before rendering', 0, () => {
+      const html = '<div id="page-content">' +
+        '<a href="/1-mr-headless">1. 無頭先生</a>' +
+        '<a href="/10-mr-mission">10. 任務先生</a></div>';
+      const result = StaticCatalogHtmlParser.parseTales(html);
+
+      expect(result.ok).assertTrue();
+      expect(result.tales[0].title).assertEqual('1. 无头先生');
+      expect(result.tales[1].title).assertEqual('10. 任务先生');
     });
 
     it('rejects malformed pages with a typed failure payload', 0, () => {

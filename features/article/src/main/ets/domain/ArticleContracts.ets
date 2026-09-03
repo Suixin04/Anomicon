@@ -156,6 +156,7 @@ export interface ArticleMetadataPort {
  */
 export interface ArticleHistorySnapshot {
   readonly scrollOffset: number;
+  readonly completed?: boolean;
 }
 
 /**
@@ -170,6 +171,8 @@ export interface ArticleHistoryPort {
   find(contentKey: string): Promise<ArticleHistorySnapshot | undefined>;
   updateProgress(content: LibraryContentRef, offset: number): Promise<void>;
   updateMetadata(content: LibraryContentRef): Promise<void>;
+  /** Persist an explicit user annotation independent of scroll progress. */
+  setCompleted?(content: LibraryContentRef, completed: boolean): Promise<void>;
 }
 
 export interface ArticleContentGateway {

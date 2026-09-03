@@ -6,6 +6,40 @@ import {
   ScpTextSpan,
   ScpTextStyle
 } from '../domain/ScpDocument';
+const TRADITIONAL_TO_SIMPLIFIED: Map<string, string> = new Map<string, string>([
+  ['萬', '万'], ['與', '与'], ['為', '为'], ['這', '这'], ['個', '个'], ['來', '来'],
+  ['後', '后'], ['從', '从'], ['發', '发'], ['國', '国'], ['學', '学'], ['會', '会'],
+  ['開', '开'], ['關', '关'], ['聯', '联'], ['類', '类'], ['級', '级'], ['號', '号'],
+  ['標', '标'], ['題', '题'], ['體', '体'], ['長', '长'], ['無', '无'], ['時', '时'],
+  ['間', '间'], ['現', '现'], ['實', '实'], ['見', '见'], ['對', '对'], ['應', '应'],
+  ['該', '该'], ['點', '点'], ['當', '当'], ['動', '动'], ['過', '过'], ['進', '进'],
+  ['還', '还'], ['將', '将'], ['專', '专'], ['業', '业'], ['兩', '两'], ['誰', '谁'],
+  ['說', '说'], ['語', '语'], ['讀', '读'], ['頁', '页'], ['網', '网'], ['處', '处'],
+  ['備', '备'], ['註', '注'], ['腳', '脚'], ['錄', '录'], ['擴', '扩'], ['張', '张'],
+  ['簡', '简'], ['轉', '转'], ['換', '换'], ['訊', '讯'], ['測', '测'], ['試', '试'],
+  ['際', '际'], ['繼', '继'], ['續', '续'], ['經', '经'], ['驗', '验'], ['錯', '错'],
+  ['誤', '误'], ['檔', '档'], ['別', '别'], ['項', '项'], ['編', '编'], ['輯', '辑'],
+  ['資', '资'], ['詳', '详'], ['細', '细'], ['預', '预'], ['覽', '览'], ['圖', '图'],
+  ['鑑', '鉴'], ['顯', '显'], ['狀', '状'], ['態', '态'], ['擊', '击'], ['選', '选'],
+  ['擇', '择'], ['復', '复'], ['歸', '归'], ['閉', '闭'], ['閱', '阅'], ['記', '记'],
+  ['內', '内'], ['瀏', '浏'], ['絡', '络'], ['參', '参'], ['連', '连'], ['頭', '头'],
+  ['務', '务'], ['門', '门'], ['隊', '队'], ['線', '线'], ['種', '种'], ['麼', '么'],
+  ['樣', '样'], ['極', '极'], ['準', '准'], ['廣', '广'], ['義', '义'], ['則', '则'],
+  ['單', '单'], ['據', '据'], ['論', '论'], ['邊', '边'], ['導', '导'], ['製', '制'],
+  ['術', '术'], ['異', '异'], ['變', '变'], ['場', '场'], ['識', '识'], ['證', '证'],
+  ['輔', '辅'], ['創', '创'], ['藝', '艺'], ['攝', '摄'], ['權', '权'], ['圖', '图'],
+  ['產', '产'], ['專', '专'], ['護', '护'], ['敵', '敌'], ['殺', '杀'], ['傷', '伤'],
+  ['與', '与'], ['聯', '联'], ['訊', '讯'], ['釋', '释'], ['針', '针'], ['錄', '录']
+]);
+
+function toSimplifiedChinese(value: string): string {
+  let result: string = '';
+  for (let index: number = 0; index < value.length; index++) {
+    const character = value.charAt(index);
+    result += TRADITIONAL_TO_SIMPLIFIED.get(character) ?? character;
+  }
+  return result;
+}
 
 interface RawSpan {
   s: string;
@@ -48,6 +82,11 @@ const MAX_PAYLOAD_WARNINGS: number = 512;
 const MAX_PAYLOAD_BLOCKS: number = 8192;
 const MAX_PAYLOAD_SPANS: number = 32768;
 const MAX_PAYLOAD_DEPTH: number = 32;
+const NOISE_TAGS: string[] = [
+  'scp', 'safe', 'euclid', 'keter', 'thaumiel', 'apollyon', 'neutralized',
+  'pending', 'explained', 'esoteric-class', 'decommissioned', 'archived',
+  'uncontained', 'unknown'
+];
 
 export interface ScpExtractPayload {
   parserVersion: number;
@@ -83,7 +122,7 @@ export class ScpDocumentMapper {
         ScpBlockType.IMAGE,
         [],
         image.src,
-        image.caption
+        this.displayText(image.caption)
       ));
     }
 
@@ -91,18 +130,23 @@ export class ScpDocumentMapper {
     const footnotes: ScpFootnote[] = [];
     for (let index: number = 0; index < payload.footnotes.length; index++) {
       const footnote = payload.footnotes[index];
-      footnotes.push(new ScpFootnote(
-        footnote.id,
-        footnote.index,
-        this.mapBlocksWithPrefix(itemId, footnote.blocks, `${itemId}:fn:${footnote.index}`)
-      ));
+      const blocks = this.mapFootnoteBlocks(
+        itemId,
+        footnote.blocks,
+        `${itemId}:fn:${footnote.index}`
+      );
+      // A Wikidot footnote may contain only indentation, anchors or a trailing
+      // <br>.  Do not create an empty visual row for that payload.
+      if (blocks.length > 0) {
+        footnotes.push(new ScpFootnote(footnote.id, footnote.index, blocks));
+      }
     }
 
     const objectClass = this.objectClassOf(blocks);
 
     return new ScpArticleDocument(
       itemId,
-      payload.title,
+      this.displayText(payload.title).trim(),
       objectClass,
       sourceUrl,
       fetchedAt,
@@ -110,9 +154,9 @@ export class ScpDocumentMapper {
       footnotes,
       '',
       this.parserWarningsOf(payload),
-      payload.rating,
-      payload.tags,
-      payload.pageVersion,
+      this.displayText(payload.rating).trim(),
+      this.filteredTags(payload.tags),
+      this.displayText(payload.pageVersion).trim(),
       images
     );
   }
@@ -325,8 +369,9 @@ export class ScpDocumentMapper {
     const warnings = payload.warnings;
     for (let index: number = 0; index < warnings.length; index++) {
       const warning = warnings[index];
-      if (warning.length > 0 && result.indexOf(warning) < 0) {
-        result.push(warning);
+      const normalized = this.displayText(warning).trim();
+      if (normalized.length > 0 && result.indexOf(normalized) < 0) {
+        result.push(normalized);
       }
     }
     return result;
@@ -336,11 +381,31 @@ export class ScpDocumentMapper {
     return this.mapBlocksWithPrefix(itemId, raw, `${itemId}:0`);
   }
 
+  /**
+   * Footnotes are extracted from inline DOM fragments and commonly contain
+   * indentation-only paragraphs or separator nodes. Those nodes have no
+   * reader-facing meaning and would otherwise render as blank lines above the
+   * “返回正文” action. Keep only blocks with actual text/media content.
+   */
+  private mapFootnoteBlocks(itemId: string, raw: RawBlock[], prefix: string): ScpContentBlock[] {
+    const mapped = this.mapBlocksWithPrefix(itemId, raw, prefix);
+    const result: ScpContentBlock[] = [];
+    for (let index: number = 0; index < mapped.length; index++) {
+      if (this.hasReadableFootnoteBlock(mapped[index])) {
+        result.push(mapped[index]);
+      }
+    }
+    return result;
+  }
+
   /** 嵌套层级各自携带父级前缀，保证块 key 全局唯一（ForEach key / 展开状态都依赖它）。 */
   private mapBlocksWithPrefix(itemId: string, raw: RawBlock[], prefix: string): ScpContentBlock[] {
     const result: ScpContentBlock[] = [];
     for (let index: number = 0; index < raw.length; index++) {
-      result.push(this.mapBlock(itemId, `${prefix}:${index}`, raw[index]));
+      const block = this.mapBlock(itemId, `${prefix}:${index}`, raw[index]);
+      if (this.isMeaningfulBlock(block)) {
+        result.push(block);
+      }
     }
     return result;
   }
@@ -356,7 +421,7 @@ export class ScpDocumentMapper {
         return new ScpContentBlock(key, ScpBlockType.QUOTE, spans, '', '', 0,
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
       case 'collapsible':
-        return new ScpContentBlock(key, ScpBlockType.COLLAPSIBLE, [], '', raw.title ?? '', 0,
+        return new ScpContentBlock(key, ScpBlockType.COLLAPSIBLE, [], '', this.displayText(raw.title ?? ''), 0,
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
       case 'table':
         return new ScpContentBlock(key, ScpBlockType.TABLE, [], '', '', 0,
@@ -371,7 +436,8 @@ export class ScpDocumentMapper {
       case 'embed':
         return new ScpContentBlock(key, ScpBlockType.EMBED, [], raw.src ?? '');
       case 'image':
-        return new ScpContentBlock(key, ScpBlockType.IMAGE, [], raw.src ?? '', raw.caption ?? '');
+        return new ScpContentBlock(key, ScpBlockType.IMAGE, [], raw.src ?? '',
+          this.displayText(raw.caption ?? ''));
       default:
         return new ScpContentBlock(key, ScpBlockType.UNSUPPORTED, spans);
     }
@@ -384,31 +450,34 @@ export class ScpDocumentMapper {
     }
     for (let index: number = 0; index < raw.length; index++) {
       const span = raw[index];
+      // Keep code snippets byte-for-byte stable; every other span is reader
+      // prose and can safely use the Traditional -> Simplified projection.
+      const text = span.s === 'code' ? span.t : this.displayText(span.t);
       switch (span.s) {
         case 'strong':
-          result.push(new ScpTextSpan(ScpTextStyle.STRONG, span.t));
+          result.push(new ScpTextSpan(ScpTextStyle.STRONG, text));
           break;
         case 'em':
-          result.push(new ScpTextSpan(ScpTextStyle.EMPHASIS, span.t));
+          result.push(new ScpTextSpan(ScpTextStyle.EMPHASIS, text));
           break;
         case 'del':
-          result.push(new ScpTextSpan(ScpTextStyle.DELETED, span.t));
+          result.push(new ScpTextSpan(ScpTextStyle.DELETED, text));
           break;
         case 'code':
-          result.push(new ScpTextSpan(ScpTextStyle.CODE, span.t));
+          result.push(new ScpTextSpan(ScpTextStyle.CODE, text));
           break;
         case 'link':
-          result.push(new ScpTextSpan(ScpTextStyle.LINK, span.t, span.u ?? ''));
+          result.push(new ScpTextSpan(ScpTextStyle.LINK, text, span.u ?? ''));
           break;
         case 'footnote':
-          result.push(new ScpTextSpan(ScpTextStyle.FOOTNOTE_REFERENCE, span.t, '', span.r ?? ''));
+          result.push(new ScpTextSpan(ScpTextStyle.FOOTNOTE_REFERENCE, text.trim(), '', span.r ?? ''));
           break;
         default:
-          result.push(new ScpTextSpan(ScpTextStyle.PLAIN, span.t));
+          result.push(new ScpTextSpan(ScpTextStyle.PLAIN, text));
           break;
       }
     }
-    return result;
+    return this.trimSpanEdges(result);
   }
 
   private itemIdOf(sourceUrl: string): string {
@@ -419,7 +488,7 @@ export class ScpDocumentMapper {
   private objectClassOf(blocks: ScpContentBlock[]): string {
     for (let index: number = 0; index < blocks.length; index++) {
       const text = this.plainText(blocks[index]);
-      const match = /项目等级：?\s*([A-Za-z\u4e00-\u9fa5]+)/.exec(text);
+      const match = /项目等级：?\s*([A-Za-z\u4e00-\u9fa5]+)/.exec(toSimplifiedChinese(text));
       if (match !== null) {
         return match[1];
       }
@@ -436,5 +505,92 @@ export class ScpDocumentMapper {
       text += this.plainText(block.children[index]);
     }
     return text;
+  }
+
+  private displayText(value: string): string {
+    // The DOM extractor represents <br> as newlines.  A pretty-printed
+    // footnote can contain several adjacent breaks; keep a single intentional
+    // line break while removing indentation around it.
+    return toSimplifiedChinese(value)
+      .replace(/\r\n?/g, '\n')
+      .replace(/[ \t]*\n[ \t]*/g, '\n')
+      .replace(/\n{2,}/g, '\n');
+  }
+
+  private trimSpanEdges(spans: ScpTextSpan[]): ScpTextSpan[] {
+    const result: ScpTextSpan[] = [];
+    for (let index: number = 0; index < spans.length; index++) {
+      const span = spans[index];
+      let text = span.text;
+      if (index === 0) {
+        text = text.replace(/^\s+/, '');
+      }
+      if (index === spans.length - 1) {
+        text = text.replace(/\s+$/, '');
+      }
+      if (text.length === 0) {
+        continue;
+      }
+      result.push(new ScpTextSpan(span.style, text, span.target, span.referenceId));
+    }
+    return result;
+  }
+
+  private isMeaningfulBlock(block: ScpContentBlock): boolean {
+    if (block.type === ScpBlockType.DIVIDER) {
+      return true;
+    }
+    if (block.source.trim().length > 0) {
+      return true;
+    }
+    if (this.plainText(block).trim().length > 0) {
+      return true;
+    }
+    return block.children.length > 0;
+  }
+
+  private hasReadableFootnoteBlock(block: ScpContentBlock): boolean {
+    if (block.type === ScpBlockType.DIVIDER) {
+      return false;
+    }
+    if (block.source.trim().length > 0 || this.plainText(block).trim().length > 0) {
+      return true;
+    }
+    for (let index: number = 0; index < block.children.length; index++) {
+      if (this.hasReadableFootnoteBlock(block.children[index])) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private filteredTags(tags: string[]): string[] {
+    const result: string[] = [];
+    for (let index: number = 0; index < tags.length; index++) {
+      const tag = this.displayText(tags[index]).trim();
+      if (tag.length === 0 || this.isNoiseTag(tag)) {
+        continue;
+      }
+      if (result.indexOf(tag) < 0) {
+        result.push(tag);
+      }
+    }
+    return result;
+  }
+
+  private isNoiseTag(tag: string): boolean {
+    const normalized = tag.toLowerCase().replace(/[ _]/g, '-');
+    if (NOISE_TAGS.indexOf(normalized) >= 0) {
+      return true;
+    }
+    if (normalized.indexOf('containment-class') >= 0 ||
+      normalized.indexOf('object-class') >= 0 ||
+      normalized.indexOf('收容等级') >= 0 || normalized.indexOf('项目等级') >= 0) {
+      return true;
+    }
+    return normalized.indexOf('containment-class-') === 0 ||
+      normalized.indexOf('object-class-') === 0 ||
+      normalized.indexOf('rating-') === 0 ||
+      /^class-[a-z-]+$/.test(normalized);
   }
 }
