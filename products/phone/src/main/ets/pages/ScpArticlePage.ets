@@ -412,6 +412,72 @@ struct ScpArticlePage {
     }
   }
 
+  /**
+   * Keep links to other readable main-site pages inside the app. Wikidot also
+   * emits links to tag/system pages and media assets; those remain external so
+   * a decorative image or a management page can never become a fake article.
+   */
+  private openArticleLink(rawUrl: string, linkTitle: string): void {
+    if (rawUrl.trim().startsWith('#')) {
+      // Same-page anchors are intentionally left to the reader document; do
+      // not bounce them out to an external browser.
+      return;
+    }
+    if (linkTitle.trim().startsWith('[图片')) {
+      this.openUrl(rawUrl);
+      return;
+    }
+    const content = this.resolveInternalArticle(rawUrl, linkTitle);
+    if (content === undefined) {
+      this.openUrl(rawUrl);
+      return;
+    }
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    const params: ScpArticleRouteParams = { content: content };
+    AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
+  }
+
+  private resolveInternalArticle(rawUrl: string, linkTitle: string): LibraryContentRef | undefined {
+    let safeUrl: string;
+    try {
+      safeUrl = ExternalUrlPolicy.resolveHttps(rawUrl, this.sourceUrl);
+    } catch (_error) {
+      return undefined;
+    }
+    const origin = `${WIKI_BASE_URL}/`;
+    if (safeUrl.toLowerCase().indexOf(origin.toLowerCase()) !== 0) {
+      return undefined;
+    }
+    let path = safeUrl.substring(origin.length);
+    const queryIndex = path.indexOf('?');
+    if (queryIndex >= 0) {
+      path = path.substring(0, queryIndex);
+    }
+    const hashIndex = path.indexOf('#');
+    if (hashIndex >= 0) {
+      path = path.substring(0, hashIndex);
+    }
+    path = path.replace(/^\/+|\/+$/g, '').trim();
+    if (path.length === 0 || path.indexOf('/') >= 0 || path.indexOf(':') >= 0) {
+      return undefined;
+    }
+    const normalized = path.toLowerCase();
+    // A same-page anchor is a document-local interaction, not a new route.
+    if (normalized === this.itemId.toLowerCase()) {
+      return undefined;
+    }
+    // SCP pages use a numeric object number (optionally with a language/site
+    // prefix such as `cn`); this avoids misclassifying a story slug beginning
+    // with the letters "scp" as an object page.
+    const isScp = /^scp-(?:\d+|[a-z]{2,4}-\d+)(?:-[a-z0-9]+)*$/.test(normalized);
+    const title = linkTitle.trim().length > 0 ? linkTitle.trim() : path;
+    return createLibraryContentRef(
+      isScp ? LibraryContentKind.SCP : LibraryContentKind.TALE,
+      path,
+      title
+    );
+  }
+
   private showToast(message: string): void {
     promptAction.openToast({ message: message })
       .catch((error: BusinessError) => {
@@ -641,6 +707,7 @@ struct ScpArticlePage {
                   galleryReturnIndex: this.previewIndex,
                   galleryReturnEpoch: this.galleryReturnEpoch,
                   onOpenUrl: (url: string) => this.openUrl(url),
+                  onOpenArticleLink: (url: string, title: string) => this.openArticleLink(url, title),
                   onOpenImage: (index: number) => this.openPreview(index),
                   onToggleExpanded: (block: ScpContentBlock) => this.toggleRendererBlock(block),
                   onOpenRelatedTale: (tale: ArticleRelatedTale) => this.openTale(tale),

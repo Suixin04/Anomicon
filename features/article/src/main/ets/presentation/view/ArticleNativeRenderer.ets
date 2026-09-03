@@ -280,6 +280,8 @@ export struct ArticleNativeRenderer {
   @Param galleryReturnEpoch: number = 0;
 
   @Event onOpenUrl: (url: string) => void;
+  /** Open a readable same-site article through the product route. */
+  @Event onOpenArticleLink: (url: string, title: string) => void;
   @Event onOpenImage: (index: number) => void;
   @Event onToggleExpanded: (block: ScpContentBlock) => void;
   @Event onOpenRelatedTale: (tale: ArticleRelatedTale) => void;
@@ -392,13 +394,15 @@ export struct ArticleNativeRenderer {
             .fontStyle(spanRow.span.style === ScpTextStyle.EMPHASIS ? FontStyle.Italic : FontStyle.Normal)
             .decoration({
               type: spanRow.span.style === ScpTextStyle.DELETED ?
-                TextDecorationType.LineThrough : TextDecorationType.None,
+                TextDecorationType.LineThrough :
+                (spanRow.span.style === ScpTextStyle.LINK ?
+                  TextDecorationType.Underline : TextDecorationType.None),
               color: $r('sys.color.font_secondary')
             })
-            .fontColor(spanRow.span.style === ScpTextStyle.CODE ?
+            .fontColor(spanRow.span.style === ScpTextStyle.CODE || spanRow.span.style === ScpTextStyle.LINK ?
               $r('sys.color.font_emphasize') : $r('sys.color.font'))
             .onClick(spanRow.span.style === ScpTextStyle.LINK ?
-              () => this.onOpenUrl(spanRow.span.target) : () => {
+              () => this.onOpenArticleLink(spanRow.span.target, spanRow.span.text) : () => {
               })
         }
       }, (spanRow: ArticleSpanRowState) => spanRow.key)
