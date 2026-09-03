@@ -263,8 +263,8 @@ function syncArticleRelatedTaleRows(
 /**
  * Device-independent native article body.
  *
- * The product route owns navigation, ArkWeb extraction, system effects and
- * the surrounding Scroll.  This component owns only native body rendering
+ * The product route owns navigation, compatibility extraction, system effects
+ * and the surrounding Scroll. This component owns only native body rendering
  * and ephemeral renderer state (gallery position and footnote anchors).
  */
 @ComponentV2

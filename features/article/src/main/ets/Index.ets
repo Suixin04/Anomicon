@@ -38,14 +38,14 @@ export {
 } from './presentation/viewmodel/ArticleViewModel';
 export { ArticleNativeRenderer } from './presentation/view/ArticleNativeRenderer';
 export { ArticleScrollRestore } from './presentation/view/ArticleScrollRestore';
-// Public presentation pieces used by the product route adapter.  They accept
-// only serializable content/preview callbacks; ArkWeb itself remains confined
-// to ScpHtmlExtractor below.
+// Public presentation pieces used by the product route adapter. They accept
+// only serializable content/preview callbacks; the native parser is the normal
+// path and ScpHtmlExtractor is kept as a compatibility adapter below.
 export {
   ARTICLE_READING_STATUS_HEIGHT,
   ArticleReadingStatusBar
 } from './presentation/view/ArticleReadingStatusBar';
 export { ScpImagePreviewer } from './presentation/view/ScpImagePreviewer';
-// ArkWeb is intentionally isolated behind a presentation adapter.  The
+// Legacy ArkWeb is intentionally isolated behind a presentation adapter. The
 // adapter exchanges strings/request ids only; no WebView reaches the VM.
 export { ScpHtmlExtractor } from './presentation/adapter/ScpHtmlExtractor';

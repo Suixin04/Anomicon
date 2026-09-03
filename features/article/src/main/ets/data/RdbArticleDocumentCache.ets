@@ -17,7 +17,7 @@ const CREATE_DOC_TABLE: string =
 const ADD_JSON_PATH_COLUMN: string =
   'ALTER TABLE scp_article_document ADD COLUMN json_path TEXT NOT NULL DEFAULT \'\'';
 
-/** ArkWeb 解析结果的持久化缓存：新鲜期内零 WebView 开销，过期后由页面后台重验。 */
+/** 解析结果的持久化缓存：新鲜期内零 HTML 解析开销，过期后由页面后台重验。 */
 export class RdbArticleDocumentCache implements ArticleDocumentCachePort {
   private readonly context: common.UIAbilityContext;
   private store: relationalStore.RdbStore | undefined = undefined;

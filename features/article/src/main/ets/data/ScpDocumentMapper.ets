@@ -102,7 +102,7 @@ export interface ScpExtractPayload {
   warnings: string[];
 }
 
-/** 把 ArkWeb 提取脚本的输出投影为正式文档模型。 */
+/** 把统一 HTML 提取协议的输出投影为正式文档模型。 */
 export class ScpDocumentMapper {
   toDocument(
     payload: ScpExtractPayload,

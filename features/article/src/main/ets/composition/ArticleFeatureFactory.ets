@@ -13,6 +13,7 @@ import {
   ScpDocumentMapper,
   ScpExtractPayload
 } from '../data/ScpDocumentMapper';
+import { parseNativeArticleHtml } from '../data/ScpNativeHtmlParseTask';
 import { ScpArticleDocument } from '../domain/ScpDocument';
 import { ContentGateway } from '../data/ContentGateway';
 import { RdbArticleDocumentCache } from '../data/RdbArticleDocumentCache';
@@ -86,10 +87,10 @@ class ArticleDocumentParserAdapter implements ArticleDocumentParserPort {
     sourceUrl: string,
     fetchedAt: number
   ): ScpArticleDocument {
-    // ArkWeb transports a JavaScript string as JSON.  The extractor itself
-    // returns JSON.stringify(out), so runJavaScript may deliver one additional
-    // JSON string layer.  Unwrap at most that one layer and keep the mapper's
-    // strict schema validation as the final gate.
+    // The compatibility extractor transports a JavaScript string as JSON. The
+    // extractor itself returns JSON.stringify(out), so runJavaScript may
+    // deliver one additional JSON string layer. Unwrap at most that one layer
+    // and keep the mapper's strict schema validation as the final gate.
     let decoded: Object | string = JSON.parse(payloadText) as Object | string;
     if (typeof decoded === 'string') {
       decoded = JSON.parse(decoded) as Object | string;
@@ -99,6 +100,10 @@ class ArticleDocumentParserAdapter implements ArticleDocumentParserPort {
     }
     const payload = decoded as ScpExtractPayload;
     return this.mapper.toDocument(payload, sourceUrl, fetchedAt);
+  }
+
+  parseHtmlPayload(html: string): Promise<string> {
+    return parseNativeArticleHtml(html);
   }
 
   currentSchemaVersion(): number {

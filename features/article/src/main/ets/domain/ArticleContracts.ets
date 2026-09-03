@@ -37,7 +37,7 @@ export enum ArticleContentSource {
   STALE_HTML_CACHE = 'stale_html_cache'
 }
 
-/** HTML handed to the View for ArkWeb extraction.  No WebView object crosses this boundary. */
+/** HTML handed to the compatibility extractor only when native parsing declines it. */
 export class PendingExtraction {
   readonly requestId: number;
   readonly contentKey: string;
@@ -126,6 +126,8 @@ export interface ArticleDocumentParserPort {
     sourceUrl: string,
     fetchedAt: number
   ): ScpArticleDocument;
+  /** Serialize native HTML extraction for the same derived-document cache. */
+  parseHtmlPayload?(html: string): Promise<string>;
   currentSchemaVersion(): number;
 }
 

@@ -25,7 +25,7 @@ export enum ScpTextStyle {
   FOOTNOTE_REFERENCE = 'footnote_reference'
 }
 
-/** 行内结构：链接、强调与脚注引用均由 ArkWeb 提取脚本真实填充。 */
+/** 行内结构：链接、强调与脚注引用由统一 HTML 提取协议填充。 */
 export class ScpTextSpan {
   readonly style: ScpTextStyle;
   readonly text: string;

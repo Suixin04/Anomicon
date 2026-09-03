@@ -67,6 +67,33 @@ export class ContentGateway implements ArticleContentGateway {
     try {
       const html = await this.htmlPort.load(sourceUrl, forceNetwork);
       const source = this.toSource(html.source);
+      // Native-first: normal SCP pages are parsed in ArkTS and do not create
+      // an off-screen ArkWeb instance. Keep the old handshake as a compatibility
+      // fallback for unusual widgets not covered by the native parser yet.
+      if (this.parser.parseHtmlPayload !== undefined) {
+        try {
+          const payload = await this.parser.parseHtmlPayload(html.html);
+          const document = this.parser.parse(payload, sourceUrl, html.fetchedAt);
+          const record: ArticleDocumentCacheRecord = {
+            itemId: content.id,
+            json: payload,
+            schemaVersion: this.parser.currentSchemaVersion(),
+            parsedAt: html.fetchedAt
+          };
+          this.documentCache.put(record).catch((): void => {
+            // Cache persistence is best effort after a valid document is published.
+          });
+          return new ArticleLoadResult(
+            document,
+            undefined,
+            source,
+            html.fetchedAt,
+            html.source === ArticleHtmlSource.STALE_CACHE
+          );
+        } catch (_error) {
+          // Fall through to the legacy extraction handshake.
+        }
+      }
       return new ArticleLoadResult(
         undefined,
         new PendingExtraction(

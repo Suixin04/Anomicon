@@ -8,7 +8,7 @@ import {
 } from '../domain/ArticleContracts';
 import { ScpArticleDocument } from '../domain/ScpDocument';
 
-/** Coordinates cache hit, HTML retrieval and the explicit ArkWeb extraction handshake. */
+/** Coordinates cache hit, HTML retrieval and native-first document projection. */
 export class ArticleContentUseCase {
   private readonly gateway: ArticleContentGateway;
   private readonly metadata: ArticleMetadataPort | undefined;

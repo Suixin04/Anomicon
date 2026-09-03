@@ -5,11 +5,13 @@ import {
   ArticleDocumentCachePort,
   ArticleDocumentCacheRecord,
   ArticleHtmlPort,
-  ArticleHtmlSnapshot
+  ArticleHtmlSnapshot,
+  ArticleHtmlSource
 } from '../main/ets/domain/ArticleContracts';
 import { ScpArticleDocument, ScpBlockType, ScpTextStyle } from '../main/ets/domain/ScpDocument';
 import { createArticleDocumentParser } from '../main/ets/composition/ArticleFeatureFactory';
 import { ContentGateway } from '../main/ets/data/ContentGateway';
+import { ScpNativeHtmlParser } from '../main/ets/data/ScpNativeHtmlParser';
 import {
   CURRENT_PAYLOAD,
   UNSUPPORTED_PARSER_PAYLOAD
@@ -21,6 +23,32 @@ class FailingHtmlPort implements ArticleHtmlPort {
   load(_sourceUrl: string, _forceNetwork: boolean = false): Promise<ArticleHtmlSnapshot> {
     this.loadCount += 1;
     return Promise.reject(new Error('source unavailable'));
+  }
+}
+
+class SingleHtmlPort implements ArticleHtmlPort {
+  readonly html: string;
+
+  constructor(html: string) {
+    this.html = html;
+  }
+
+  load(_sourceUrl: string, _forceNetwork: boolean = false): Promise<ArticleHtmlSnapshot> {
+    return Promise.resolve(new ArticleHtmlSnapshot(this.html, ArticleHtmlSource.NETWORK, 1_700_000_000_000));
+  }
+}
+
+class EmptyDocumentCache implements ArticleDocumentCachePort {
+  get(_itemId: string): Promise<ArticleDocumentCacheRecord | undefined> {
+    return Promise.resolve(undefined);
+  }
+
+  put(_record: ArticleDocumentCacheRecord): Promise<void> {
+    return Promise.resolve();
+  }
+
+  isFresh(_record: ArticleDocumentCacheRecord): boolean {
+    return true;
   }
 }
 
@@ -153,6 +181,48 @@ export default function articleDocumentMapperTest(): void {
       expect(document.tags[0]).assertEqual('异常');
       expect(document.footnotes.length).assertEqual(1);
       expect(document.footnotes[0].blocks[0].spans[0].text).assertEqual('脚注内容');
+    });
+
+    it('parses common Wikidot article HTML without ArkWeb', 0, () => {
+      const html = '<div id="page-title">SCP-999 - 測試</div>' +
+        '<span id="prw123">+42</span>' +
+        '<div class="page-tags"><a href="/system:page-tags/tag/scp">scp</a>' +
+        '<a href="/system:page-tags/tag/異常">異常</a></div>' +
+        '<div id="page-content"><div class="scp-image-block"><img src="/x.jpg" alt="圖" />' +
+        '<div class="scp-image-caption">測試圖</div></div>' +
+        '<p><strong>項目編號：</strong>SCP-999</p>' +
+        '<p><a href="/scp-173">連結</a><sup class="footnoteref"><a id="footnoteref-1">[1]</a></sup></p>' +
+        '<hr /><p>正文</p><div class="footer-wikiwalk-nav">噪音</div></div>' +
+        '<div id="page-info">頁面版本：8</div>';
+      const payload = ScpNativeHtmlParser.parse(html);
+      expect(payload.ok).assertTrue();
+      const document = createArticleDocumentParser().parse(
+        JSON.stringify(payload),
+        'https://scp-wiki-cn.wikidot.com/scp-999',
+        1_700_000_000_000
+      );
+      expect(document.title).assertEqual('SCP-999 - 测试');
+      expect(document.rating).assertEqual('+42');
+      expect(document.tags.length).assertEqual(1);
+      expect(document.tags[0]).assertEqual('异常');
+      expect(document.images.length).assertEqual(1);
+      expect(document.footnotes.length).assertEqual(0);
+      expect(document.blocks.length > 0).assertTrue();
+    });
+
+    it('publishes the native result directly from ContentGateway', 0, async () => {
+      const html = '<div id="page-title">SCP-1000</div>' +
+        '<div id="page-content"><p>原生解析正文</p></div>';
+      const content = createLibraryContentRef(LibraryContentKind.SCP, 'scp-1000', 'SCP-1000');
+      const result = await new ContentGateway(
+        new SingleHtmlPort(html),
+        new EmptyDocumentCache(),
+        createArticleDocumentParser()
+      ).load(content, 9, false);
+      expect(result.document === undefined).assertFalse();
+      expect(result.pendingExtraction === undefined).assertTrue();
+      expect(result.document?.title).assertEqual('SCP-1000');
+      expect(result.document?.blocks[0].spans[0].text).assertEqual('原生解析正文');
     });
   });
 }
