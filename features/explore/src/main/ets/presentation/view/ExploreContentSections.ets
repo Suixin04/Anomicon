@@ -2,7 +2,8 @@ import { ExploreContentItem, ExploreEntry } from '../../domain/ExploreContracts'
 import {
   LibraryContentKind,
   LibraryContentRef,
-  createLibraryContentRef
+  createLibraryContentRef,
+  isLibraryScpId
 } from 'library';
 import { ExploreCollectionMode } from '../../domain/ExploreContracts';
 import { AppTypography, SkeletonBlock } from 'anomiconbasic';
@@ -127,7 +128,11 @@ export struct ExploreTopRatedSection {
   @Event onRetry: () => void;
 
   private openEntry(entry: ExploreEntry): void {
-    this.onOpenContent(createLibraryContentRef(LibraryContentKind.WIKI, entry.id, entry.title));
+    this.onOpenContent(createLibraryContentRef(
+      isLibraryScpId(entry.id) ? LibraryContentKind.SCP : LibraryContentKind.WIKI,
+      entry.id,
+      entry.title
+    ));
   }
 
   @Builder

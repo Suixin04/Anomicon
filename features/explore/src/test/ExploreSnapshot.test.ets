@@ -48,6 +48,28 @@ class PartialExploreRepository implements ExploreListRepository {
   }
 }
 
+class PlaceholderExploreRepository implements ExploreListRepository {
+  read(_source: ExploreSource): Promise<ExploreStoredSnapshot | undefined> {
+    return Promise.resolve(undefined);
+  }
+
+  isFresh(_snapshot: ExploreStoredSnapshot, _now?: number): boolean {
+    return false;
+  }
+
+  load(_source: ExploreSource, _forceNetwork?: boolean): Promise<ExploreLoadedPayload> {
+    return Promise.resolve(new ExploreLoadedPayload({
+      ok: true,
+      error: '',
+      entries: [{ url: '/scp-cn-963-j', title: 'SCP-CN-963-J', score: '+4508' }]
+    }, ExploreDataOrigin.NETWORK, 456));
+  }
+
+  put(_source: ExploreSource, _payload: ExplorePayload, _fetchedAt?: number): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 export default function exploreCollectionSnapshotTest(): void {
   describe('ExploreCollectionSnapshotContract', () => {
     it('publishes revisioned partial and route-error snapshots', 0, async () => {
@@ -80,6 +102,18 @@ export default function exploreCollectionSnapshotTest(): void {
       expect(routeErrorSnapshot.error?.recoverable).assertFalse();
       expect(routeErrorSnapshot.error?.message).assertEqual('探索列表参数无效');
       viewModel.dispose();
+    });
+
+    it('enriches id-only original SCP index rows through the shared title port', 0, async () => {
+      const useCase = new ExploreContentUseCase(
+        new PlaceholderExploreRepository(),
+        (itemId: string): Promise<string> => Promise.resolve(
+          itemId.toLowerCase() === 'scp-cn-963-j' ? '神烦代码' : ''
+        )
+      );
+      const snapshot = await useCase.loadTopRated();
+      expect(snapshot.entries.length).assertEqual(1);
+      expect(snapshot.entries[0].title).assertEqual('神烦代码');
     });
   });
 }

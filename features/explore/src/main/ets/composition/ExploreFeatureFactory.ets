@@ -41,10 +41,14 @@ export function createExploreFeatureGraph(
   const previewRepository = dependencies.previewRepository;
   const recommendationService = new RecommendationService(
     dependencies.recommendationPageGateway,
-    previewRepository
+    previewRepository,
+    dependencies.titleResolver
   );
   const recommendationRepository = new RecommendationRepo(recommendationService);
-  const contentUseCase = new ExploreContentUseCase(listRepository);
+  const contentUseCase = new ExploreContentUseCase(
+    listRepository,
+    dependencies.titleResolver
+  );
   const recommendationUseCase = new RecommendationUseCase(recommendationRepository);
   const initialization = new RetryableInitialization();
   const initialize = (): Promise<void> => {

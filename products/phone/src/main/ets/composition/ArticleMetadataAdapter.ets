@@ -9,7 +9,8 @@ import {
 } from 'catalog';
 import {
   LibraryContentKind,
-  LibraryContentRef
+  LibraryContentRef,
+  isLibraryScpId
 } from 'library';
 
 /**
@@ -27,7 +28,7 @@ export class ArticleMetadataAdapter implements ArticleMetadataPort {
   }
 
   resolveTitle(content: LibraryContentRef): Promise<string> {
-    if (content.kind !== LibraryContentKind.SCP) {
+    if (content.kind !== LibraryContentKind.SCP && !isLibraryScpId(content.id)) {
       return Promise.resolve('');
     }
     return this.titleResolver.resolve(content.id).catch((): string => '');
@@ -37,7 +38,7 @@ export class ArticleMetadataAdapter implements ArticleMetadataPort {
     content: LibraryContentRef,
     limit: number
   ): Promise<ArticleRelatedTale[]> {
-    if (content.kind !== LibraryContentKind.SCP || limit <= 0) {
+    if ((content.kind !== LibraryContentKind.SCP && !isLibraryScpId(content.id)) || limit <= 0) {
       return [];
     }
     // A cold article must not depend on another screen having populated the

@@ -23,6 +23,7 @@ export {
   ExploreHtmlSource,
   ExploreFetchedPage,
   ExploreRecommendationPageGateway,
+  ExploreTitleResolver,
   PreviewRepository,
   RecommendationRepository,
   ExploreContentUseCase,

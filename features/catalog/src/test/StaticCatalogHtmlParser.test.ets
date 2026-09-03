@@ -20,6 +20,30 @@ export default function staticCatalogHtmlParserTest(): void {
       expect(result.entries[1].title).assertEqual('项目测试');
     });
 
+    it('keeps original CN SCP entries and their parent titles', 0, () => {
+      const html = '<div id="page-content"><div class="content-panel series"><ul>' +
+        '<li><a href="/scp-cn-2000">SCP-CN-2000</a> - 混沌理论</li>' +
+        '<li><a href="/scp-cn-963-j">SCP-CN-963-J</a> - 这不是演习</li>' +
+        '</ul></div></div>';
+      const result = StaticCatalogHtmlParser.parseCatalog(html);
+      expect(result.ok).assertTrue();
+      expect(result.entries.length).assertEqual(2);
+      expect(result.entries[0].itemId).assertEqual('SCP-CN-2000');
+      expect(result.entries[0].title).assertEqual('混沌理论');
+      expect(result.entries[1].itemId).assertEqual('SCP-CN-963-J');
+      expect(result.entries[1].title).assertEqual('这不是演习');
+    });
+
+    it('keeps entertainment SCP-J entries from a joke index', 0, () => {
+      const html = '<div id="page-content"><p><a href="/scp-700-j">SCP-700-J</a> - ' +
+        '会唱歌的计算器</p><p><a href="/scp-cn-963-j">SCP-CN-963-J</a> - 神烦代码</p></div>';
+      const result = StaticCatalogHtmlParser.parseCatalog(html);
+      expect(result.ok).assertTrue();
+      expect(result.entries.length).assertEqual(2);
+      expect(result.entries[0].title).assertEqual('会唱歌的计算器');
+      expect(result.entries[1].title).assertEqual('神烦代码');
+    });
+
     it('normalizes Traditional Chinese tale titles before rendering', 0, () => {
       const html = '<div id="page-content">' +
         '<a href="/1-mr-headless">1. 無頭先生</a>' +

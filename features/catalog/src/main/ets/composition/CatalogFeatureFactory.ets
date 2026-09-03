@@ -9,6 +9,9 @@ import {
   SearchHistoryRepository,
   TaleRepository
 } from '../domain/CatalogRepositories';
+import { ScpHtmlRequestPriority } from '../domain/ArticleHtmlRepository';
+import { SCP_SERIES, ScpSeriesDescriptor } from '../domain/ScpSeriesItem';
+import { ScpCatalogRawEntry } from '../domain/StaticCatalogContracts';
 import { CachedArticleRepo } from '../data/CachedArticleRepo';
 import { PreviewRepositoryAdapter } from '../data/PreviewRepositoryAdapter';
 import { CatalogRepoAdapter } from '../data/CatalogRepoAdapter';
@@ -27,6 +30,44 @@ import { TaleListService } from '../data/TaleListService';
 import { TaleRepositoryAdapter } from '../data/TaleRepositoryAdapter';
 import { SearchHistoryAdapter } from '../data/SearchHistoryAdapter';
 import { TitleResolverAdapter } from '../data/TitleResolverAdapter';
+
+const WIKI_BASE_URL: string = 'https://scp-wiki-cn.wikidot.com/';
+
+/** Resolve both public numeric and original CN series without exposing the
+ * internal CN-only descriptors to the catalog tab's selector UI. */
+function titleSeriesDescriptor(seriesId: string): ScpSeriesDescriptor | undefined {
+  if (seriesId.toLowerCase() === 'scp-joke-cn') {
+    return new ScpSeriesDescriptor(
+      'scp-joke-cn',
+      '原创笑话 SCP',
+      `${WIKI_BASE_URL}joke-scps-cn`
+    );
+  }
+  if (seriesId.toLowerCase() === 'scp-joke') {
+    return new ScpSeriesDescriptor(
+      'scp-joke',
+      '笑话 SCP',
+      `${WIKI_BASE_URL}joke-scps`
+    );
+  }
+  for (let index = 0; index < SCP_SERIES.length; index++) {
+    if (SCP_SERIES[index].id === seriesId) {
+      return SCP_SERIES[index];
+    }
+  }
+  const normalized = seriesId.toLowerCase();
+  const cnMatch = /^scp-series-cn-([2-9][0-9]*)$/i.exec(normalized);
+  if (normalized !== 'scp-series-cn' && cnMatch === null) {
+    return undefined;
+  }
+  const number = cnMatch === null ? 1 : Number(cnMatch[1]);
+  const descriptorId = number === 1 ? 'scp-series-cn' : `scp-series-cn-${number}`;
+  return new ScpSeriesDescriptor(
+    descriptorId,
+    `CN ${number}`,
+    `${WIKI_BASE_URL}${descriptorId}`
+  );
+}
 
 /** Explicit ArkTS object type for the graph returned to the product layer. */
 class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
@@ -108,7 +149,25 @@ export function createCatalogFeatureGraph(context: common.UIAbilityContext): Cat
   const previewRepository = new PreviewRepositoryAdapter(previewService);
   const searchHistoryRepository = new SearchHistoryAdapter(searchHistoryService);
   const titleResolver = new TitleResolverAdapter(
-    new ScpCatalogTitleResolver(catalogCacheService)
+    new ScpCatalogTitleResolver(
+      catalogCacheService,
+      async (seriesId: string): Promise<ScpCatalogRawEntry[]> => {
+        const descriptor = titleSeriesDescriptor(seriesId);
+        if (descriptor === undefined) {
+          return [];
+        }
+        const snapshot = await catalogRepository.load(
+          descriptor,
+          ScpHtmlRequestPriority.BACKGROUND
+        );
+        const entries: ScpCatalogRawEntry[] = [];
+        for (let index = 0; index < snapshot.entries.length; index++) {
+          const entry = snapshot.entries[index];
+          entries.push({ itemId: entry.itemId, title: entry.title, description: entry.description });
+        }
+        return entries;
+      }
+    )
   );
   const imagePreviewActions = new PreviewActionsAdapter(context, imageCacheService);
   let initialization: Promise<void> | undefined = undefined;

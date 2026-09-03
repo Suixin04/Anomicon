@@ -13,6 +13,7 @@ import {
   ExploreHtmlSource,
   ExplorePreview,
   ExploreRecommendationPageGateway,
+  ExploreTitleResolver,
   PreviewRepository as ExplorePreviewRepository
 } from 'explore';
 
@@ -111,17 +112,20 @@ export class CatalogExploreDependenciesAdapter implements ExploreFeatureDependen
   readonly htmlRepository: ExploreHtmlRepository;
   readonly recommendationPageGateway: ExploreRecommendationPageGateway;
   readonly previewRepository: ExplorePreviewRepository;
+  readonly titleResolver: ExploreTitleResolver;
   private readonly initializer: () => Promise<void>;
 
   constructor(
     articleHtmlRepository: ArticleHtmlRepository,
     previewRepository: CatalogPreviewRepository,
-    initializer: () => Promise<void>
+    initializer: () => Promise<void>,
+    titleResolver: ExploreTitleResolver
   ) {
     const htmlAdapter = new CatalogExploreHtmlAdapter(articleHtmlRepository);
     this.htmlRepository = htmlAdapter;
     this.recommendationPageGateway = htmlAdapter;
     this.previewRepository = new CatalogExplorePreviewAdapter(previewRepository);
+    this.titleResolver = titleResolver;
     this.initializer = initializer;
   }
 

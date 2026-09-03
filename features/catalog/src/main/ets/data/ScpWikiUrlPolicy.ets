@@ -3,6 +3,11 @@ import { url } from '@kit.ArkTS';
 /** 当前产品只接入 SCP 中文站主站内容。 */
 const SCP_WIKI_ORIGIN: string = 'https://scp-wiki-cn.wikidot.com';
 const SCP_WIKI_HOST: string = 'scp-wiki-cn.wikidot.com';
+// Wikidot serves generated html-block-iframe documents from this static host.
+// It is intentionally not treated as a general page host: only the generated
+// `/local--html/` endpoint used by the CN site is accepted below.
+const SCP_WIKI_STATIC_HOST: string = 'scp-wiki-cn.wdfiles.com';
+const SCP_WIKI_STATIC_PATH_PREFIX: string = '/local--html/';
 
 /**
  * 主站页面 URL 的唯一入口。
@@ -23,8 +28,11 @@ export class ScpWikiUrlPolicy {
     if (parsed.protocol.toLowerCase() !== 'https:') {
       throw new Error('SCP 页面只允许使用 HTTPS');
     }
-    if (parsed.hostname.toLowerCase() !== SCP_WIKI_HOST) {
-      throw new Error('SCP 页面地址不属于当前主站');
+    const hostname = parsed.hostname.toLowerCase();
+    if (hostname !== SCP_WIKI_HOST &&
+      !(hostname === SCP_WIKI_STATIC_HOST &&
+        parsed.pathname.toLowerCase().startsWith(SCP_WIKI_STATIC_PATH_PREFIX))) {
+      throw new Error(`SCP 页面地址不属于当前主站：${hostname}${parsed.pathname}`);
     }
     if (parsed.username.length > 0 || parsed.password.length > 0) {
       throw new Error('SCP 页面地址不能包含身份凭据');

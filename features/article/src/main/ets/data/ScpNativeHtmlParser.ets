@@ -73,6 +73,11 @@ const NOISE_CLASSES: string[] = [
   'footer-wikiwalk-nav'
 ];
 
+// Wikidot injects these nodes into otherwise valid article content. They are
+// presentation chrome, not document semantics, so they are filtered while
+// traversing the parsed tree (including unquoted HTML attributes).
+const NOISE_IDS: string[] = ['ads', 'adend'];
+
 export class ScpNativeHtmlParser {
   static parse(html: string): ScpExtractPayload {
     const out: NativePayload = {
@@ -261,6 +266,11 @@ export class ScpNativeHtmlParser {
     return ScpNativeHtmlParser.classes(node).indexOf(` ${name.toLowerCase()} `) >= 0;
   }
 
+  private static hasNoiseId(node: HtmlNode): boolean {
+    const id = ScpNativeHtmlParser.attr(node, 'id').trim().toLowerCase();
+    return id.length > 0 && NOISE_IDS.indexOf(id) >= 0;
+  }
+
   private static firstById(root: HtmlNode, id: string): HtmlNode | undefined {
     if (ScpNativeHtmlParser.attr(root, 'id') === id) {
       return root;
@@ -400,6 +410,9 @@ export class ScpNativeHtmlParser {
         }
         return;
       }
+      if (ScpNativeHtmlParser.hasNoiseId(current)) {
+        return;
+      }
       if (current.tag === 'br') {
         append(style, '\n');
         return;
@@ -425,6 +438,13 @@ export class ScpNativeHtmlParser {
         return;
       }
       const currentClass = ScpNativeHtmlParser.classes(current);
+      // Original CN articles often render Simplified/Traditional labels in
+      // parallel `.lang-cn`/`.lang-tr` spans. The website's CSS hides one
+      // branch; native extraction has no CSS cascade, so keep the Simplified
+      // branch and drop the Traditional duplicate at the HTML boundary.
+      if (currentClass.indexOf(' lang-tr ') >= 0) {
+        return;
+      }
       if (current.tag === 'sup' && currentClass.indexOf(' footnoteref ') >= 0) {
         const link = ScpNativeHtmlParser.descendantsByTag(current, 'a');
         const footnote = link.length > 0 ? link[0] : current;
@@ -560,6 +580,9 @@ export class ScpNativeHtmlParser {
         if (child.text.trim().length > 0) {
           blocks.push({ k: 'paragraph', spans: [{ s: 'plain', t: child.text }] });
         }
+        continue;
+      }
+      if (ScpNativeHtmlParser.hasNoiseId(child)) {
         continue;
       }
       const classNames = ScpNativeHtmlParser.classes(child);

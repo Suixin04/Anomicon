@@ -39,7 +39,8 @@ import {
   LibraryContentKind,
   LibraryContentRef,
   createLibraryContentRef,
-  isLibraryContentTitlePlaceholder
+  isLibraryContentTitlePlaceholder,
+  isLibraryScpId
 } from 'library';
 import { HapticFeedbackPort } from 'anomiconbasic';
 import {
@@ -268,7 +269,8 @@ struct ScpArticlePage {
     this.itemName = content.title;
     this.contentKind = content.kind;
     // 内容主键统一小写；SCP 标题栏仍沿用站点惯例展示大写编号。
-    this.itemId = content.kind === LibraryContentKind.SCP ? content.id.toUpperCase() : content.id;
+    this.itemId = content.kind === LibraryContentKind.SCP || isLibraryScpId(content.id) ?
+      content.id.toUpperCase() : content.id;
     hilog.info(DOMAIN, TAG,
       'route content: itemId=%{public}s, name=%{public}s, kind=%{public}s',
       this.itemId, this.itemName, this.contentKind);
@@ -469,7 +471,7 @@ struct ScpArticlePage {
     // SCP pages use a numeric object number (optionally with a language/site
     // prefix such as `cn`); this avoids misclassifying a story slug beginning
     // with the letters "scp" as an object page.
-    const isScp = /^scp-(?:\d+|[a-z]{2,4}-\d+)(?:-[a-z0-9]+)*$/.test(normalized);
+    const isScp = isLibraryScpId(normalized);
     const title = linkTitle.trim().length > 0 ? linkTitle.trim() : path;
     return createLibraryContentRef(
       isScp ? LibraryContentKind.SCP : LibraryContentKind.TALE,
@@ -492,14 +494,14 @@ struct ScpArticlePage {
 
   /** SCP 使用编号作主标题；故事和知识页优先显示可读名称，避免暴露站点 slug。 */
   private navigationMainTitle(): string {
-    if (this.contentKind === LibraryContentKind.SCP) {
+    if (this.contentKind === LibraryContentKind.SCP || isLibraryScpId(this.itemId)) {
       return this.itemId;
     }
     return this.itemName.trim().length > 0 ? this.itemName : this.itemId;
   }
 
   private navigationSubTitle(): string {
-    return this.contentKind === LibraryContentKind.SCP ? this.itemName : '';
+    return this.contentKind === LibraryContentKind.SCP || isLibraryScpId(this.itemId) ? this.itemName : '';
   }
 
   private isCurrentFavorite(): boolean {

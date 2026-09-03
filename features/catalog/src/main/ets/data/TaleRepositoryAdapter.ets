@@ -1,5 +1,6 @@
 import {
   ScpHtmlRequestPriority,
+  ScpHtmlLoadResult,
   ScpHtmlSource
 } from '../domain/ArticleHtmlRepository';
 import {
@@ -59,11 +60,11 @@ export class TaleRepositoryAdapter implements TaleRepository {
 
   async refresh(priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.BACKGROUND): Promise<TaleSnapshot> {
     const cached = await this.getCached();
-    const result = await this.service.loadHtmlForRequest(true, priority);
-    if (result.source === ScpHtmlSource.STALE_CACHE && cached !== undefined) {
+    const results = await this.loadSources(true, priority);
+    if (results.length === 0 && cached !== undefined) {
       return cached;
     }
-    const parsed = await this.parser.parseTales(result.html);
+    const parsed = await this.parseSources(results);
     const tales = this.validatedTales(parsed);
     const rawTales: TaleRawEntry[] = [];
     for (let index = 0; index < tales.length; index++) {
@@ -77,13 +78,16 @@ export class TaleRepositoryAdapter implements TaleRepository {
       error: typeof parsed.error === 'string' ? parsed.error : '',
       tales: rawTales
     };
-    await this.persist(payload, result.fetchedAt);
+    const fetchedAt = this.latestFetchedAt(results);
+    await this.persist(payload, fetchedAt);
+    const stale = this.hasStaleSource(results);
     const snapshot = new TaleSnapshot(
       tales,
-      result.source === ScpHtmlSource.STALE_CACHE ? CatalogSnapshotSource.STALE_CACHE :
-        (result.source === ScpHtmlSource.FRESH_CACHE ? CatalogSnapshotSource.CACHE : CatalogSnapshotSource.NETWORK),
-      result.fetchedAt,
-      result.source === ScpHtmlSource.STALE_CACHE,
+      stale ? CatalogSnapshotSource.STALE_CACHE :
+        (results.some((result: ScpHtmlLoadResult): boolean => result.source === ScpHtmlSource.NETWORK) ?
+          CatalogSnapshotSource.NETWORK : CatalogSnapshotSource.CACHE),
+      fetchedAt,
+      stale,
       false,
       parsed.parserVersion
     );
@@ -104,8 +108,11 @@ export class TaleRepositoryAdapter implements TaleRepository {
   }
 
   private async fetchAndParse(priority: ScpHtmlRequestPriority): Promise<TaleSnapshot> {
-    const result = await this.service.loadHtmlForRequest(false, priority);
-    const parsed = await this.parser.parseTales(result.html);
+    const results = await this.loadSources(false, priority);
+    if (results.length === 0) {
+      throw new Error('故事目录网络请求失败');
+    }
+    const parsed = await this.parseSources(results);
     const tales = this.validatedTales(parsed);
     const rawTales: TaleRawEntry[] = [];
     for (let index = 0; index < tales.length; index++) {
@@ -119,13 +126,16 @@ export class TaleRepositoryAdapter implements TaleRepository {
       error: typeof parsed.error === 'string' ? parsed.error : '',
       tales: rawTales
     };
-    await this.persist(payload, result.fetchedAt);
+    const fetchedAt = this.latestFetchedAt(results);
+    await this.persist(payload, fetchedAt);
+    const stale = this.hasStaleSource(results);
     const snapshot = new TaleSnapshot(
       tales,
-      result.source === ScpHtmlSource.STALE_CACHE ? CatalogSnapshotSource.STALE_CACHE :
-        (result.source === ScpHtmlSource.FRESH_CACHE ? CatalogSnapshotSource.CACHE : CatalogSnapshotSource.NETWORK),
-      result.fetchedAt,
-      result.source === ScpHtmlSource.STALE_CACHE,
+      stale ? CatalogSnapshotSource.STALE_CACHE :
+        (results.some((result: ScpHtmlLoadResult): boolean => result.source === ScpHtmlSource.NETWORK) ?
+          CatalogSnapshotSource.NETWORK : CatalogSnapshotSource.CACHE),
+      fetchedAt,
+      stale,
       false,
       parsed.parserVersion
     );
@@ -184,6 +194,65 @@ export class TaleRepositoryAdapter implements TaleRepository {
       // still useful when the local database is read-only/full/unavailable.
       console.warn(`Write tale cache failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
+  }
+
+  /** 主站翻译故事与中文分部原创故事分别请求，单一来源故障不遮蔽另一来源。 */
+  private async loadSources(
+    forceNetwork: boolean,
+    priority: ScpHtmlRequestPriority
+  ): Promise<ScpHtmlLoadResult[]> {
+    const results: ScpHtmlLoadResult[] = [];
+    const main = await this.service.loadHtmlForRequest(forceNetwork, priority).catch((error: Object): undefined => {
+      console.warn(`Load translated tale index failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      return undefined;
+    });
+    if (main !== undefined) {
+      results.push(main);
+    }
+    const original = await this.service.loadOriginalHtmlForRequest(forceNetwork, priority)
+      .catch((error: Object): undefined => {
+        console.warn(`Load original tale index failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+        return undefined;
+      });
+    if (original !== undefined) {
+      results.push(original);
+    }
+    return results;
+  }
+
+  private async parseSources(results: ScpHtmlLoadResult[]): Promise<TaleParseResult> {
+    const all: CatalogTaleEntry[] = [];
+    let parserVersion: number = TALE_LIST_PARSER_VERSION;
+    const errors: string[] = [];
+    for (let index = 0; index < results.length; index++) {
+      const parsed = await this.parser.parseTales(results[index].html);
+      parserVersion = Math.max(parserVersion, parsed.parserVersion);
+      if (parsed.ok) {
+        for (let taleIndex = 0; taleIndex < parsed.tales.length; taleIndex++) {
+          all.push(parsed.tales[taleIndex]);
+        }
+      } else if (parsed.error.length > 0) {
+        errors.push(parsed.error);
+      }
+    }
+    return {
+      parserVersion: parserVersion,
+      ok: all.length > 0,
+      error: all.length > 0 ? '' : errors.join('；'),
+      tales: all
+    };
+  }
+
+  private latestFetchedAt(results: ScpHtmlLoadResult[]): number {
+    let latest: number = 0;
+    for (let index = 0; index < results.length; index++) {
+      latest = Math.max(latest, results[index].fetchedAt);
+    }
+    return latest;
+  }
+
+  private hasStaleSource(results: ScpHtmlLoadResult[]): boolean {
+    return results.some((result: ScpHtmlLoadResult): boolean => result.source === ScpHtmlSource.STALE_CACHE);
   }
 
   private normalize(tales: CatalogTaleEntry[]): CatalogTaleEntry[] {

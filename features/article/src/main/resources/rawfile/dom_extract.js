@@ -3,7 +3,7 @@
 // 所有样式标签与结构映射见 ScpDocument.ets 的 ScpBlockType/ScpTextStyle。
 function __anomiconExtract() {
   var out = {
-    parserVersion: 4,
+    parserVersion: 5,
     ok: false,
     error: '',
     title: '',

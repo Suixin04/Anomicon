@@ -481,7 +481,10 @@ export class ScpDocumentMapper {
   }
 
   private itemIdOf(sourceUrl: string): string {
-    const match = /\/(scp-\d+)(?:$|\/)/i.exec(sourceUrl);
+    // CN originals use identifiers such as `scp-cn-963-j`; retain the full
+    // route token so document/cache keys and image ids do not collapse to the
+    // outer source URL.
+    const match = /\/(scp-(?:(?:[a-z]{2,4}-)?\d+|[a-z0-9]*\d+[a-z0-9]*)(?:-[a-z0-9]+)*)(?:$|\/)/i.exec(sourceUrl);
     return match !== null ? match[1].toUpperCase() : sourceUrl;
   }
 

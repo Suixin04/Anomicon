@@ -10,8 +10,12 @@ import {
   exploreEntriesFromPayload,
   selectExploreIndexes
 } from '../domain/ExploreContracts';
-import { ExploreListRepository } from '../domain/ExploreRepositories';
-import { LibraryContentKind } from 'library';
+import { ExploreListRepository, ExploreTitleResolver } from '../domain/ExploreRepositories';
+import {
+  isLibraryContentTitlePlaceholder,
+  isLibraryScpId,
+  LibraryContentKind
+} from 'library';
 
 /**
  * 探索索引应用用例。
@@ -21,13 +25,19 @@ import { LibraryContentKind } from 'library';
  */
 export class ExploreContentUseCase {
   private readonly repository: ExploreListRepository;
+  private readonly titleResolver: ExploreTitleResolver | undefined;
 
-  constructor(repository: ExploreListRepository) {
+  constructor(
+    repository: ExploreListRepository,
+    titleResolver?: ExploreTitleResolver
+  ) {
     this.repository = repository;
+    this.titleResolver = titleResolver;
   }
 
-  loadTopRated(force: boolean = false): Promise<ExploreSourceSnapshot> {
-    return this.loadSource(ExploreSource.TOP_RATED, force);
+  async loadTopRated(force: boolean = false): Promise<ExploreSourceSnapshot> {
+    const snapshot = await this.loadSource(ExploreSource.TOP_RATED, force);
+    return this.withResolvedTitles(snapshot);
   }
 
   async loadRecent(force: boolean = false): Promise<ExploreCombinedSnapshot> {
@@ -37,8 +47,8 @@ export class ExploreContentUseCase {
     ]);
     const items: ExploreContentItem[] = [];
     const seen: Set<string> = new Set();
-    this.appendRecent(items, seen, results[0].entries, '翻译主站');
-    this.appendRecent(items, seen, results[1].entries, '原创');
+    this.appendRecent(items, seen, await this.resolveTitles(results[0].entries), '翻译主站');
+    this.appendRecent(items, seen, await this.resolveTitles(results[1].entries), '原创');
     items.sort((left: ExploreContentItem, right: ExploreContentItem): number => {
       if (left.timestamp !== right.timestamp) {
         return right.timestamp - left.timestamp;
@@ -60,7 +70,7 @@ export class ExploreContentUseCase {
     ]);
     const pool: ExploreContentItem[] = [];
     const seen: Set<string> = new Set();
-    this.appendJokes(pool, seen, results[0].entries, LibraryContentKind.SCP, '搞笑 SCP');
+    this.appendJokes(pool, seen, await this.resolveTitles(results[0].entries), LibraryContentKind.SCP, '搞笑 SCP');
     this.appendJokes(pool, seen, results[1].entries, LibraryContentKind.TALE, '搞笑故事');
     const indexes = selectExploreIndexes(pool.length, pool.length, 'combined-jokes', dayKey);
     const items: ExploreContentItem[] = [];
@@ -73,6 +83,53 @@ export class ExploreContentUseCase {
       this.combinedOrigin(results[0], results[1]),
       this.latestFetchedAt(results[0], results[1])
     );
+  }
+
+  /**
+   * Explore indexes are allowed to publish a page id as their anchor text.
+   * Resolve that placeholder at the application boundary so every Explore
+   * surface (top-rated, recent and joke collections) shares the same title
+   * semantics as the article and recommendation cards.
+   */
+  private async withResolvedTitles(snapshot: ExploreSourceSnapshot): Promise<ExploreSourceSnapshot> {
+    if (snapshot.entries.length === 0) {
+      return snapshot;
+    }
+    return new ExploreSourceSnapshot(
+      await this.resolveTitles(snapshot.entries),
+      snapshot.error,
+      snapshot.origin,
+      snapshot.fetchedAt
+    );
+  }
+
+  private async resolveTitles(entries: ExploreEntry[]): Promise<ExploreEntry[]> {
+    if (this.titleResolver === undefined || entries.length === 0) {
+      return entries;
+    }
+    const tasks: Promise<ExploreEntry>[] = [];
+    for (let index = 0; index < entries.length; index++) {
+      tasks.push(this.resolveEntryTitle(entries[index]));
+    }
+    return Promise.all(tasks);
+  }
+
+  private async resolveEntryTitle(entry: ExploreEntry): Promise<ExploreEntry> {
+    if (!isLibraryScpId(entry.id) ||
+      !isLibraryContentTitlePlaceholder(entry.id, entry.title) ||
+      this.titleResolver === undefined) {
+      return entry;
+    }
+    try {
+      const resolved = (await this.titleResolver(entry.id)).trim();
+      if (resolved.length > 0 && !isLibraryContentTitlePlaceholder(entry.id, resolved)) {
+        return new ExploreEntry(entry.id, resolved, entry.score, entry.date, entry.comments);
+      }
+    } catch (_error) {
+      // A title is enrichment only; the stable page id remains readable when
+      // the catalog index is unavailable or still warming its cache.
+    }
+    return entry;
   }
 
   private async loadSource(source: ExploreSource, force: boolean): Promise<ExploreSourceSnapshot> {
@@ -193,7 +250,8 @@ export class ExploreContentUseCase {
         seen.add(entry.id);
         target.push(new ExploreContentItem(
           entry,
-          LibraryContentKind.WIKI,
+          isLibraryScpId(entry.id) ?
+            LibraryContentKind.SCP : LibraryContentKind.WIKI,
           sourceLabel,
           this.parseSourceDate(entry.date)
         ));

@@ -73,7 +73,7 @@ export class StaticCatalogHtmlParser {
       while (match !== null) {
         const href = StaticCatalogHtmlParser.normalizeHref(match[2] as string);
         const id = href.startsWith('/') ? href.substring(1).toUpperCase() : '';
-        if (/^SCP-\d{3,4}$/.test(id) && !seen.has(id)) {
+        if (StaticCatalogHtmlParser.isScpCatalogId(id) && !seen.has(id)) {
           seen.add(id);
           const linkText = StaticCatalogHtmlParser.cleanText(match[3] as string);
           let title = StaticCatalogHtmlParser.stripIdPrefix(linkText, id);
@@ -290,6 +290,11 @@ export class StaticCatalogHtmlParser {
     return index < 0 ? value : value.substring(index + id.length);
   }
 
+  /** 主站目录同时收录普通 SCP 与原创 SCP-CN（含 -J 等后缀）。 */
+  private static isScpCatalogId(value: string): boolean {
+    return /^SCP-(?:(?:[A-Z]{2,4}-)?\d+|[A-Z0-9]*\d+[A-Z0-9]*)(?:-[A-Z0-9]+)*$/i.test(value);
+  }
+
   private static cleanCatalogTitle(value: string): string {
     return value
       .replace(/^[\s\-–—:：'"‘’“”\[（(]+/, '')
@@ -307,11 +312,16 @@ export class StaticCatalogHtmlParser {
     if (lowerHref.startsWith('/system:') || lowerHref.startsWith('/_')) {
       return false;
     }
-    return lowerHref.indexOf('tales-by') < 0 &&
-      !lowerHref.startsWith('/tale') &&
-      lowerHref.indexOf('foundation-tales') < 0 &&
-      lowerHref.indexOf('canon') < 0 &&
-      !lowerHref.startsWith('/user:');
+    const slug = lowerHref.substring(1);
+    // Filter only known index/navigation pages.  Prefix filters such as
+    // `/tale...` or any URL containing `canon` discard legitimate original
+    // stories whose page names happen to start with those words.
+    const navigationPages: string[] = [
+      'tales-by-page-name', 'tales-cn-by-page-name', 'tales-cn-by-create-time',
+      'foundation-tales-cn', 'series-archive-cn', 'canon-hub-cn',
+      'contest-archive-cn', 'incident-reports-eye-witness-interviews-and-personal-logs'
+    ];
+    return navigationPages.indexOf(slug) < 0 && !slug.startsWith('user:');
   }
 
   private static normalizeHref(value: string): string {

@@ -5,6 +5,7 @@ export {
   LibraryFavorite,
   createLibraryContentRef,
   isLibraryContentTitlePlaceholder,
+  isLibraryScpId,
   parseLibraryContentKind,
   FavoriteRepository,
   ReadingHistoryRepository,

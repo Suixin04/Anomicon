@@ -28,6 +28,7 @@ export {
   ExploreHtmlSource,
   ExploreFetchedPage,
   ExploreRecommendationPageGateway,
+  ExploreTitleResolver,
   PreviewRepository,
   RecommendationRepository
 } from './domain/ExploreRepositories';

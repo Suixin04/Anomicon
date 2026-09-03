@@ -54,6 +54,10 @@ export interface ExploreRecommendationPageGateway {
   fetchPage(sourceUrl: string): Promise<ExploreFetchedPage>;
 }
 
+/** Resolve a human-readable title when a recommendation page only exposes its
+ * page slug (the common case for SCP pages). */
+export type ExploreTitleResolver = (itemId: string) => Promise<string>;
+
 /** 探索索引端口；具体 RDB/RCP/HTML 实现只能位于 data。 */
 export interface ExploreListRepository {
   read(source: ExploreSource): Promise<ExploreStoredSnapshot | undefined>;

@@ -15,6 +15,8 @@ const CACHE_KEY: string = 'tales';
 
 /** 故事目录页地址（全部故事静态渲染在 page-content 内）。 */
 const TALES_INDEX_URL: string = 'https://scp-wiki-cn.wikidot.com/tales-by-page-name';
+/** 中文分部原创故事目录；主站故事列表不会收录这部分页面。 */
+const ORIGINAL_TALES_INDEX_URL: string = 'https://scp-wiki-cn.wikidot.com/tales-cn-by-page-name';
 
 export class ScpStoredTaleList {
   readonly json: string;
@@ -110,6 +112,14 @@ export class TaleListService {
     priority: ScpHtmlRequestPriority
   ): Promise<ScpHtmlLoadResult> {
     return this.repository.loadHtml(TALES_INDEX_URL, forceNetwork, priority);
+  }
+
+  /** 拉取中文分部原创故事目录，供统一故事仓储合并。 */
+  async loadOriginalHtmlForRequest(
+    forceNetwork: boolean,
+    priority: ScpHtmlRequestPriority
+  ): Promise<ScpHtmlLoadResult> {
+    return this.repository.loadHtml(ORIGINAL_TALES_INDEX_URL, forceNetwork, priority);
   }
 
   private async open(context: common.UIAbilityContext): Promise<void> {

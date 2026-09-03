@@ -5,6 +5,7 @@ export {
   LibraryFavorite,
   createLibraryContentRef,
   isLibraryContentTitlePlaceholder,
+  isLibraryScpId,
   parseLibraryContentKind
 } from './domain/LibraryContentRef';
 export { FavoriteRepository, ReadingHistoryRepository } from './domain/LibraryRepositories';

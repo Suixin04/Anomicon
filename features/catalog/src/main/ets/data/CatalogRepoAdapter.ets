@@ -219,7 +219,8 @@ export class CatalogRepoAdapter implements CatalogRepository {
       const itemId = normalizeCatalogItemId(entry.itemId);
       const title = entry.title.trim();
       const description = typeof entry.description === 'string' ? entry.description.trim() : '';
-      if (!/^SCP-\d{3,4}$/.test(itemId) || title.length === 0 || seen.has(itemId)) {
+      if (!/^SCP-(?:(?:[A-Z]{2,4}-)?\d+|[A-Z0-9]*\d+[A-Z0-9]*)(?:-[A-Z0-9]+)*$/i.test(itemId) ||
+        title.length === 0 || seen.has(itemId)) {
         continue;
       }
       seen.add(itemId);

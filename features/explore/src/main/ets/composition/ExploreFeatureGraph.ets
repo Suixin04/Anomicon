@@ -3,7 +3,8 @@ import { RecommendationUseCase } from '../application/RecommendationUseCase';
 import {
   ExploreHtmlRepository,
   ExploreRecommendationPageGateway,
-  PreviewRepository
+  PreviewRepository,
+  ExploreTitleResolver
 } from '../domain/ExploreRepositories';
 
 /**
@@ -17,6 +18,7 @@ export interface ExploreFeatureDependencies {
   readonly htmlRepository: ExploreHtmlRepository;
   readonly recommendationPageGateway: ExploreRecommendationPageGateway;
   readonly previewRepository: PreviewRepository;
+  readonly titleResolver?: ExploreTitleResolver;
   initialize(): Promise<void>;
 }
 

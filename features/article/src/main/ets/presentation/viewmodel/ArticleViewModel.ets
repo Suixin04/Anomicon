@@ -927,6 +927,12 @@ export class ArticleViewModel implements ViewModelLifecycle {
     // when the product does not mount a metadata adapter.
     Promise.resolve().then(() => this.useCase.resolveTitle(content)).then((title: string): void => {
       resolvedTitle = typeof title === 'string' ? title.trim() : '';
+      // Title metadata is independent of the (potentially much larger) tale
+      // index. Publish it as soon as it is available so the navigation bar
+      // does not remain on a bare SCP id while related-content lookup runs.
+      if (resolvedTitle.length > 0 && this.isMetadataCurrent(token, content)) {
+        this.applyMetadataTitle(content, resolvedTitle);
+      }
     }).catch((): void => {
       resolvedTitle = '';
     }).finally(complete);

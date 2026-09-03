@@ -6,7 +6,8 @@ import {
 } from '../domain/ExploreContracts';
 import {
   ExploreRecommendationPageGateway,
-  PreviewRepository
+  PreviewRepository,
+  ExploreTitleResolver
 } from '../domain/ExploreRepositories';
 
 const RECOMMENDATION_COUNT: number = 6;
@@ -38,13 +39,16 @@ class RecommendationResolution {
 export class RecommendationService {
   private readonly pageGateway: ExploreRecommendationPageGateway;
   private readonly previewRepository: PreviewRepository;
+  private readonly titleResolver: ExploreTitleResolver | undefined;
 
   constructor(
     pageGateway: ExploreRecommendationPageGateway,
-    previewRepository: PreviewRepository
+    previewRepository: PreviewRepository,
+    titleResolver?: ExploreTitleResolver
   ) {
     this.pageGateway = pageGateway;
     this.previewRepository = previewRepository;
+    this.titleResolver = titleResolver;
   }
 
   async loadDaily(
@@ -110,7 +114,22 @@ export class RecommendationService {
       if (!this.isExistingPage(fetched.html)) {
         return new RecommendationResolution(undefined);
       }
-      const title = this.extractTitle(fetched.html, itemId);
+      let title = this.extractTitle(fetched.html, itemId);
+      // The article shell normally contains only `SCP-xxxx` in #page-title
+      // and document.title. Ask the Catalog title port for the real human
+      // title, while retaining the page id as a safe fallback for uncached or
+      // genuinely untitled pages.
+      if (this.titleResolver !== undefined && this.isPlaceholderTitle(itemId, title)) {
+        try {
+          const resolved = (await this.titleResolver(itemId)).trim();
+          if (resolved.length > 0 && !this.isPlaceholderTitle(itemId, resolved)) {
+            title = resolved;
+          }
+        } catch (_error) {
+          // A recommendation remains usable when its optional title lookup
+          // is offline; the stable SCP id is still shown.
+        }
+      }
       if (title.length === 0) {
         return new RecommendationResolution(undefined);
       }
@@ -130,6 +149,12 @@ export class RecommendationService {
     }
   }
 
+  private isPlaceholderTitle(itemId: string, title: string): boolean {
+    const normalizedId = itemId.trim().replace(/^\/+/, '').toLowerCase();
+    const normalizedTitle = title.trim().toLowerCase();
+    return normalizedTitle.length === 0 || normalizedTitle === normalizedId;
+  }
+
   private isExistingPage(html: string): boolean {
     const lower = html.toLowerCase();
     if (lower.indexOf('this page doesn\'t exist yet') >= 0 ||
@@ -142,6 +167,15 @@ export class RecommendationService {
   }
 
   private extractTitle(html: string, fallback: string): string {
+    const pageTitleIdPattern: RegExp =
+      /<(?:div|h1)\b[^>]*id=["']page-title["'][^>]*>([\s\S]*?)<\/(?:div|h1)>/i;
+    const pageTitleIdMatch = pageTitleIdPattern.exec(html);
+    if (pageTitleIdMatch !== null) {
+      const title = this.cleanText(pageTitleIdMatch[1] as string);
+      if (title.length > 0) {
+        return title;
+      }
+    }
     const pageTitlePattern: RegExp =
       /<div\b[^>]*class=["'][^"']*\bpage-title\b[^"']*["'][^>]*>([\s\S]*?)<\/div>/i;
     const pageTitleMatch = pageTitlePattern.exec(html);

@@ -157,7 +157,7 @@ export default function articleDocumentMapperTest(): void {
       let rejected = false;
       try {
         parser.parse(
-          '{"parserVersion":4,"ok":true,"error":"","title":"bad","rating":"","pageVersion":"","tags":[],"images":[],"blocks":[null],"footnotes":[],"warnings":[]}',
+          '{"parserVersion":5,"ok":true,"error":"","title":"bad","rating":"","pageVersion":"","tags":[],"images":[],"blocks":[null],"footnotes":[],"warnings":[]}',
           'https://scp-wiki-cn.wikidot.com/scp-173',
           1_600_000_000_000
         );
@@ -170,7 +170,7 @@ export default function articleDocumentMapperTest(): void {
     it('normalizes Traditional prose and removes empty footnote rows', 0, () => {
       const parser = createArticleDocumentParser();
       const document = parser.parse(
-        '{"parserVersion":4,"ok":true,"error":"","title":"測試項目","rating":"","pageVersion":"","tags":["scp","containment-class-safe","異常"],"images":[],"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"特別收容措施"}]}],"footnotes":[{"id":"empty","index":1,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"   "}]},{"k":"divider"}]},{"id":"readable","index":2,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"腳註內容"}]}]}],"warnings":[]}',
+        '{"parserVersion":5,"ok":true,"error":"","title":"測試項目","rating":"","pageVersion":"","tags":["scp","containment-class-safe","異常"],"images":[],"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"特別收容措施"}]}],"footnotes":[{"id":"empty","index":1,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"   "}]},{"k":"divider"}]},{"id":"readable","index":2,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"腳註內容"}]}]}],"warnings":[]}',
         'https://scp-wiki-cn.wikidot.com/scp-999',
         1_700_000_000_000
       );
@@ -223,6 +223,46 @@ export default function articleDocumentMapperTest(): void {
       expect(result.pendingExtraction === undefined).assertTrue();
       expect(result.document?.title).assertEqual('SCP-1000');
       expect(result.document?.blocks[0].spans[0].text).assertEqual('原生解析正文');
+    });
+
+    it('keeps only the visible language branch in original CN markup', 0, () => {
+      const html = '<div id="page-title">SCP-CN-2000</div>' +
+        '<div id="page-content"><div class="anom-bar-container">' +
+        '<span class="lang-cn">项目编号：</span><span class="lang-tr">項目編號：</span>' +
+        '<span class="number">CN-2000</span></div></div>';
+      const payload = ScpNativeHtmlParser.parse(html);
+      expect(payload.ok).assertTrue();
+      const document = createArticleDocumentParser().parse(
+        JSON.stringify(payload),
+        'https://scp-wiki-cn.wikidot.com/scp-cn-2000',
+        1_700_000_000_000
+      );
+      expect(document.blocks[0].spans[0].text).assertEqual('项目编号：');
+      expect(document.blocks[0].spans[1].text).assertEqual('CN-2000');
+    });
+
+    it('filters nested presentation nodes by semantic id, not string shape', 0, () => {
+      const html = '<div id="page-title">SCP-CN-963-J</div>' +
+        '<div class="page-tags"><a href="/system:page-tags/tag/搞笑">搞笑</a></div>' +
+        '<div id="page-content"><p>正文前</p><p>广告链接是本文笑点的一部分</p>' +
+        '<blockquote id=ads><div><p>广告提示不应出现</p></div></blockquote>' +
+        '<section id="adend"><div><p>第二段广告不应出现</p></div></section>' +
+        '<p>正文后</p></div>';
+      const payload = ScpNativeHtmlParser.parse(html);
+      expect(payload.ok).assertTrue();
+      const serialized = JSON.stringify(payload);
+      expect(serialized.indexOf('广告提示不应出现')).assertEqual(-1);
+      expect(serialized.indexOf('第二段广告不应出现')).assertEqual(-1);
+      expect(serialized.indexOf('正文前') >= 0).assertTrue();
+      expect(serialized.indexOf('广告链接是本文笑点的一部分') >= 0).assertTrue();
+      expect(serialized.indexOf('正文后') >= 0).assertTrue();
+      const document = createArticleDocumentParser().parse(
+        JSON.stringify(payload),
+        'https://scp-wiki-cn.wikidot.com/scp-cn-963-j',
+        1_700_000_000_000
+      );
+      expect(document.tags.length).assertEqual(1);
+      expect(document.tags[0]).assertEqual('搞笑');
     });
   });
 }

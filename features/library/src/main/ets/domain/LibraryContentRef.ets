@@ -54,6 +54,11 @@ export function isLibraryContentTitlePlaceholder(id: string, title: string): boo
   return normalizedTitle.length === 0 || normalizedTitle === normalizeLibraryContentId(id);
 }
 
+/** Recognize main-site SCP slugs, including original CN and alphanumeric joke ids. */
+export function isLibraryScpId(id: string): boolean {
+  return /^scp-(?:(?:[a-z]{2,4}-)?\d+|[a-z0-9]*\d+[a-z0-9]*)(?:-[a-z0-9]+)*$/i.test(id.trim());
+}
+
 /**
  * 写入同一内容的新快照时保留质量更高的旧标题。
  * 类型与编号采用本次入口语义，只有标题允许从旧快照回退。

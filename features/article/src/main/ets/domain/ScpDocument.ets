@@ -87,9 +87,9 @@ export class ScpFootnote {
 }
 
 export class ScpArticleDocument {
-  /** v4：解析器保留列表、代码、行内图片、ruby 与动态列表正文，并记录保真度警告。 */
-  static readonly CURRENT_SCHEMA_VERSION: number = 4;
-  static readonly CURRENT_PARSER_VERSION: number = 4;
+  /** v5：增加原创 CN 双语标记投影，避免隐藏的繁体分支重复进入正文。 */
+  static readonly CURRENT_SCHEMA_VERSION: number = 5;
+  static readonly CURRENT_PARSER_VERSION: number = 5;
 
   readonly schemaVersion: number;
   readonly itemId: string;

@@ -8,7 +8,7 @@ import {
 } from '../main/ets/domain/ScpDocument';
 
 export const CURRENT_PAYLOAD: string = `{
-  "parserVersion": 4,
+  "parserVersion": 5,
   "ok": true,
   "error": "",
   "title": "SCP-173 - 雕像",

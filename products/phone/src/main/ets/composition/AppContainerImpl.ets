@@ -270,7 +270,8 @@ export class AppContainer {
       const exploreDependencies = new CatalogExploreDependenciesAdapter(
         catalogGraph.articleHtmlRepository,
         catalogGraph.previewRepository,
-        (): Promise<void> => catalogGraph.initialize()
+        (): Promise<void> => catalogGraph.initialize(),
+        (itemId: string): Promise<string> => catalogGraph.titleResolver.resolve(itemId)
       );
       this.exploreGraph = createExploreFeatureGraph(context, exploreDependencies);
       this.exploreContentUseCase = this.exploreGraph.contentUseCase;
