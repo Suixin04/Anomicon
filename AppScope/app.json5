@@ -2,7 +2,7 @@
   "app": {
     "bundleName": "com.suixin.anomicon",
     "vendor": "suixin",
-    "versionCode": 1010000,
+    "versionCode": 1020000,
     "versionName": "1.2.0",
     "buildVersion": "3",
     "icon": "$media:layered_image",
