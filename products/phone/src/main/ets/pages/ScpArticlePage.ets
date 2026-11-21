@@ -501,7 +501,14 @@ struct ScpArticlePage {
   }
 
   private navigationSubTitle(): string {
-    return this.contentKind === LibraryContentKind.SCP || isLibraryScpId(this.itemId) ? this.itemName : '';
+    if (this.contentKind !== LibraryContentKind.SCP && !isLibraryScpId(this.itemId)) {
+      return '';
+    }
+    return this.itemId.length > 0 && !isLibraryContentTitlePlaceholder(this.itemId, this.itemName) ? this.itemName : '';
+  }
+
+  private isStoryDetail(): boolean {
+    return this.contentKind === LibraryContentKind.TALE && !isLibraryScpId(this.itemId);
   }
 
   private isCurrentFavorite(): boolean {
@@ -625,7 +632,8 @@ struct ScpArticlePage {
       progress: this.readingPercent,
       level: this.research.profile.level,
       experience: this.research.profile.experience,
-      contentReady: this.document !== undefined && !this.loading
+      contentReady: this.document !== undefined && !this.loading,
+      compactProfile: this.isStoryDetail()
     })
   }
 
@@ -706,6 +714,7 @@ struct ScpArticlePage {
                   relatedTales: this.relatedTales,
                   fontSize: this.fontSize,
                   lineHeightMultiple: this.lineHeightMultiple,
+                  galleryAfterBody: this.isStoryDetail(),
                   galleryReturnIndex: this.previewIndex,
                   galleryReturnEpoch: this.galleryReturnEpoch,
                   onOpenUrl: (url: string) => this.openUrl(url),

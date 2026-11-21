@@ -18,8 +18,8 @@ function supportsUrlParser(): boolean {
   }
 }
 
-/** Forces the same transient image failure seen in the device hilog. */
-class FailingImageCache extends ScpImageCacheService {
+/** A cold image download must not be required to resolve a recommendation preview. */
+class UnavailablePreviewImageCache extends ScpImageCacheService {
   readonly requestedUrls: string[] = [];
 
   async load(sourceUrl: string): Promise<string> {
@@ -40,7 +40,7 @@ function createRepository(): CachedArticleRepo {
 export default function scpPreviewImageFallbackTest(): void {
   describe('ScpPreviewImageFallback', () => {
     const fallbackTest = async (): Promise<void> => {
-      const imageCache = new FailingImageCache();
+      const imageCache = new UnavailablePreviewImageCache();
       const service = new ScpPreviewService(createRepository(), imageCache);
       const html = '<html><body><div id="page-content">' +
         '<p>描述：这是一段足够长的正文描述，用于验证失败回退仍保留卡片文案。</p>' +
@@ -49,23 +49,19 @@ export default function scpPreviewImageFallbackTest(): void {
 
       const preview = await service.resolveFetchedHtml('SCP-5793', html, FETCHED_AT);
 
-      expect(imageCache.requestedUrls.length).assertEqual(1);
-      expect(imageCache.requestedUrls[0]).assertEqual(
-        'https://scp-wiki.wikidot.com/local--files/scp-5793/store.jpg'
-      );
+      expect(imageCache.requestedUrls.length).assertEqual(0);
       expect(preview.path).assertEqual('');
       expect(preview.url).assertEqual(
         'https://scp-wiki.wikidot.com/local--files/scp-5793/store.jpg'
       );
-      expect(preview.aspect).assertEqual(1);
       expect(preview.description.length > 0).assertTrue();
       expect(preview.fetchedAt).assertEqual(FETCHED_AT);
       expect(preview.stale).assertFalse();
     };
     if (supportsUrlParser()) {
-      it('keeps the remote image URL when local download fails', 0, fallbackTest);
+      it('returns the remote image URL without waiting for a local download', 0, fallbackTest);
     } else {
-      xit('keeps the remote image URL when local download fails', 0, (): void => {});
+      xit('returns the remote image URL without waiting for a local download', 0, (): void => {});
     }
   });
 }

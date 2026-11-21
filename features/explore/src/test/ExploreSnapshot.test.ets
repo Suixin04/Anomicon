@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ViewModelLoadState } from 'anomiconbasic';
 import {
+  ExploreCombinedSnapshot,
   ExploreCollectionMode,
   ExploreCollectionVM,
   ExploreContentUseCase,
@@ -45,6 +46,24 @@ class PartialExploreRepository implements ExploreListRepository {
 
   put(_source: ExploreSource, _payload: ExplorePayload, _fetchedAt?: number): Promise<void> {
     return Promise.resolve();
+  }
+}
+
+class DelayedExploreSecondSource extends PartialExploreRepository {
+  private finishSecond: (() => void) | undefined = undefined;
+  private readonly secondGate: Promise<void> = new Promise<void>((resolve: () => void): void => {
+    this.finishSecond = resolve;
+  });
+
+  async load(source: ExploreSource, forceNetwork?: boolean): Promise<ExploreLoadedPayload> {
+    if (source === ExploreSource.RECENT_ORIGINAL) {
+      await this.secondGate;
+    }
+    return super.load(source, forceNetwork);
+  }
+
+  releaseSecond(): void {
+    this.finishSecond?.();
   }
 }
 
@@ -102,6 +121,26 @@ export default function exploreCollectionSnapshotTest(): void {
       expect(routeErrorSnapshot.error?.recoverable).assertFalse();
       expect(routeErrorSnapshot.error?.message).assertEqual('探索列表参数无效');
       viewModel.dispose();
+    });
+
+    it('publishes the first source while the other is still waiting', 0, async () => {
+      const repository = new DelayedExploreSecondSource();
+      const useCase = new ExploreContentUseCase(repository);
+      let releaseProgress: ((snapshot: ExploreCombinedSnapshot) => void) | undefined = undefined;
+      const progressArrived = new Promise<ExploreCombinedSnapshot>(
+        (resolve: (snapshot: ExploreCombinedSnapshot) => void): void => {
+          releaseProgress = resolve;
+        });
+      const result = useCase.loadRecent(false, (snapshot: ExploreCombinedSnapshot): void => {
+        releaseProgress?.(snapshot);
+      });
+      const first = await progressArrived;
+      repository.releaseSecond();
+      const complete = await result;
+      expect(first.items.length).assertEqual(1);
+      expect(first.error).assertEqual('');
+      expect(complete.items.length).assertEqual(1);
+      expect(complete.error).assertEqual('正在显示已载入的部分内容');
     });
 
     it('enriches id-only original SCP index rows through the shared title port', 0, async () => {

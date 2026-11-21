@@ -1,4 +1,3 @@
-import { uiMaterial } from '@kit.ArkUI';
 import { ExploreRecommendation } from '../../domain/ExploreContracts';
 import { AppTypography, SkeletonBlock, ViewModelLoadState } from 'anomiconbasic';
 import { ExploreHeroAnchor } from './ExploreViewContracts';
@@ -155,12 +154,6 @@ struct ExploreRecommendationCard {
   private mounted: boolean = false;
   /** Invalidates callbacks from a card node after it leaves the visible deck. */
   private lifecycleGeneration: number = 0;
-
-  private readonly material: uiMaterial.ImmersiveMaterial =
-    new uiMaterial.ImmersiveMaterial({
-      style: uiMaterial.ImmersiveStyle.THIN,
-      applyShadow: true
-    });
 
   private effectiveDepth(): number {
     if (this.row.depth === 0) {
@@ -355,7 +348,7 @@ struct ExploreRecommendationCard {
       .padding({ left: 18, right: 18, top: 14, bottom: 18 })
     }
     .width('100%')
-    .height(340)
+    .height(RECOMMENDATION_CARD_HEIGHT)
   }
 
   @Builder
@@ -364,11 +357,17 @@ struct ExploreRecommendationCard {
       this.cardContent()
     }
     .width('100%')
-    .height(340)
-    .backgroundColor(this.materialEnabled ? Color.Transparent : $r('sys.color.comp_background_primary'))
+    .height(RECOMMENDATION_CARD_HEIGHT)
+    // Content-area cards cannot rely on systemMaterial in API 26.
+    // Keep a theme-aware base even when the optional highlight is enabled.
+    .backgroundColor($r('sys.color.comp_background_primary'))
+    .linearGradient(this.materialEnabled ? {
+      direction: GradientDirection.RightBottom,
+      colors: [[Color.Transparent, 0], [Color.Transparent, 0.44], [$r('sys.color.comp_divider'), 1]]
+    } : undefined)
+    .border({ width: 1, color: $r('sys.color.comp_divider') })
     .borderRadius(24)
     .clip(true)
-    .systemMaterial(this.materialEnabled ? this.material : undefined)
     .scale({ x: this.scaleOfDepth(), y: this.scaleOfDepth() })
     .translate({
       x: this.row.depth === 0 ? this.dragX : 0,
@@ -394,6 +393,7 @@ struct ExploreRecommendationCard {
 export struct ExploreRecommendationDeck {
   @Require @Param recommendations: ExploreRecommendation[];
   @Require @Param currentIndex: number;
+  @Require @Param deckVersion: number;
   @Require @Param loading: boolean;
   @Require @Param error: string;
   /**
@@ -406,7 +406,7 @@ export struct ExploreRecommendationDeck {
   @Param skeletonAnimated: boolean = true;
   @Require @Param materialEnabled: boolean;
   @Event onOpen: (itemId: string, name: string) => void;
-  @Event onDismiss: () => void;
+  @Event onDismiss: (deckVersion: number) => void;
   @Event onRefresh: () => void;
   @Event onHeroAnchorChange: (anchor: ExploreHeroAnchor) => void =
     (_anchor: ExploreHeroAnchor): void => {};
@@ -415,6 +415,7 @@ export struct ExploreRecommendationDeck {
   @Local private rows: ExploreRecommendationRowState[] = [];
   private suppressClick: boolean = false;
   private dismissing: boolean = false;
+  private dragDeckVersion: number = -1;
 
   aboutToAppear(): void {
     this.publishRows();
@@ -430,13 +431,16 @@ export struct ExploreRecommendationDeck {
     this.publishDepths();
   }
 
-  private sameRecommendation(
-    before: ExploreRecommendation,
-    after: ExploreRecommendation
-  ): boolean {
-    return before.entry.itemId === after.entry.itemId &&
-      before.entry.title === after.entry.title &&
-      before.preview.path === after.preview.path &&
+  @Monitor('deckVersion')
+  onDeckVersionChanged(): void {
+    this.dragX = 0;
+    if (!this.dismissing) {
+      this.suppressClick = false;
+    }
+  }
+
+  private samePreview(before: ExploreRecommendation, after: ExploreRecommendation): boolean {
+    return before.preview.path === after.preview.path &&
       before.preview.url === after.preview.url &&
       Math.abs(before.preview.aspect - after.preview.aspect) <= 0.01 &&
       before.preview.description === after.preview.description &&
@@ -457,10 +461,15 @@ export struct ExploreRecommendationDeck {
         currentById.get(recommendation.entry.itemId);
       if (row === undefined) {
         row = new ExploreRecommendationRowState(recommendation);
-      } else if (!this.sameRecommendation(row.recommendation, recommendation)) {
-        row.recommendation = recommendation;
-        row.imageGeneration++;
-        row.imageFailed = false;
+      } else {
+        const previewChanged = !this.samePreview(row.recommendation, recommendation);
+        if (previewChanged || row.recommendation.entry.title !== recommendation.entry.title) {
+          row.recommendation = recommendation;
+          if (previewChanged) {
+            row.imageGeneration++;
+            row.imageFailed = false;
+          }
+        }
       }
       next.push(row);
     }
@@ -511,10 +520,11 @@ export struct ExploreRecommendationDeck {
     }
     this.dismissing = true;
     this.suppressClick = true;
+    const deckVersion = this.deckVersion;
     const uiContext = this.getUIContext();
     if (uiContext === undefined) {
       this.dragX = 0;
-      this.onDismiss();
+      this.onDismiss(deckVersion);
       this.dismissing = false;
       this.suppressClick = false;
       return;
@@ -525,7 +535,9 @@ export struct ExploreRecommendationDeck {
       onFinish: () => {
         // 四层卡牌此时已到达下一索引的视觉位置，状态一起提交不会产生跳帧。
         this.dragX = 0;
-        this.onDismiss();
+        if (deckVersion === this.deckVersion) {
+          this.onDismiss(deckVersion);
+        }
         this.dismissing = false;
         this.suppressClick = false;
       }
@@ -734,12 +746,13 @@ export struct ExploreRecommendationDeck {
     .gesture(
       PanGesture({ fingers: 1, direction: PanDirection.Horizontal, distance: 5 })
         .onActionStart(() => {
-          if (this.recommendations.length > 0) {
+          this.dragDeckVersion = this.recommendations.length > 1 ? this.deckVersion : -1;
+          if (this.dragDeckVersion === this.deckVersion && !this.dismissing) {
             this.suppressClick = false;
           }
         })
         .onActionUpdate((event: GestureEvent) => {
-          if (this.recommendations.length === 0 || this.dismissing) {
+          if (this.dragDeckVersion !== this.deckVersion || this.dismissing) {
             return;
           }
           this.dragX = event.offsetX;
@@ -748,9 +761,10 @@ export struct ExploreRecommendationDeck {
           }
         })
         .onActionEnd((event: GestureEvent) => {
-          if (this.recommendations.length === 0) {
+          if (this.dragDeckVersion !== this.deckVersion || this.dismissing) {
             return;
           }
+          this.dragDeckVersion = -1;
           const fastSwipe = Math.abs(event.velocityX) >= CARD_DISMISS_VELOCITY;
           if (Math.abs(this.dragX) >= CARD_DISMISS_THRESHOLD || fastSwipe) {
             const direction = fastSwipe ? event.velocityX : this.dragX;
@@ -760,9 +774,10 @@ export struct ExploreRecommendationDeck {
           }
         })
         .onActionCancel(() => {
-          if (this.recommendations.length > 0) {
+          if (this.dragDeckVersion === this.deckVersion && !this.dismissing) {
             this.settle();
           }
+          this.dragDeckVersion = -1;
         })
     )
     .onClick(() => this.openTopRecommendation())
@@ -800,7 +815,7 @@ export struct ExploreRecommendationDeck {
           SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
             .fontSize(18)
             .fontColor([$r('sys.color.icon_secondary')])
-          Text('更新失败，正在显示上一批推荐')
+          Text(this.error)
             .fontSize(AppTypography.CAPTION_L)
             .fontColor($r('sys.color.font_secondary'))
             .maxLines(2)

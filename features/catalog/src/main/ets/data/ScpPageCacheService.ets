@@ -192,10 +192,12 @@ export class ScpPageCacheService {
   }
 
   /** 服务器以 304 确认副本未变时只续期时间戳，不重写正文。 */
-  async updateFetchedAt(sourceUrl: string, fetchedAt: number, generation?: number): Promise<void> {
+  async updateFetchedAt(sourceUrl: string, fetchedAt: number, generation?: number): Promise<boolean> {
+    let renewed = false;
     await this.enqueueOperation(async (): Promise<void> => {
       const storedFetchedAt = await this.readFetchedAtNow(sourceUrl);
-      if (!this.shouldAcceptWrite(sourceUrl, fetchedAt, generation, storedFetchedAt)) {
+      if (storedFetchedAt === undefined ||
+        !this.shouldAcceptWrite(sourceUrl, fetchedAt, generation, storedFetchedAt)) {
         return;
       }
       const store = await this.requireStore();
@@ -214,18 +216,27 @@ export class ScpPageCacheService {
           throw new Error(`续期网页缓存失败：${sourceUrl}`);
         }
         this.recordCommittedWrite(sourceUrl, fetchedAt, generation);
+        renewed = true;
       } catch (error) {
         throw this.cacheError('续期', error);
       }
     });
+    return renewed;
   }
 
   /** 仅删除指定 URL 的原始网页快照，不影响其他文章缓存。 */
-  async remove(sourceUrl: string): Promise<void> {
+  async remove(sourceUrl: string, rejectedHtml?: string): Promise<void> {
     await this.enqueueOperation(async (): Promise<void> => {
-      // Advance the URL tombstone while holding the same lock as writes. Any
-      // queued result from an older request is rejected after this point.
-      this.advanceGeneration(sourceUrl);
+      if (rejectedHtml !== undefined) {
+        const current = await this.getNow(sourceUrl);
+        if (current === undefined || current.html !== rejectedHtml) {
+          return;
+        }
+        // This rejection concerns one payload, not any pending refresh for the URL.
+      } else {
+        // Explicit URL invalidation also rejects older in-flight writes.
+        this.advanceGeneration(sourceUrl);
+      }
       const store = await this.requireStore();
       const previousPath = await this.findHtmlPathNow(sourceUrl);
       const predicates = new relationalStore.RdbPredicates(TABLE_NAME);

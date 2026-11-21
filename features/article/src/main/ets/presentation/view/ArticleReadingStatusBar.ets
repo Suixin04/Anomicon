@@ -14,6 +14,7 @@ export struct ArticleReadingStatusBar {
   @Require @Param level: number;
   @Require @Param experience: number;
   @Require @Param contentReady: boolean;
+  @Param compactProfile: boolean = false;
 
   private readonly material: uiMaterial.ImmersiveMaterial =
     new uiMaterial.ImmersiveMaterial({
@@ -61,16 +62,23 @@ export struct ArticleReadingStatusBar {
 
         Blank()
 
-        Text(`Lv.${this.normalizedInteger(this.level, 1)}`)
-          .fontSize(AppTypography.CAPTION_L)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font_emphasize'))
-          .maxLines(1)
+        if (this.compactProfile) {
+          Text(`Lv.${this.normalizedInteger(this.level, 1)} · ${this.normalizedInteger(this.experience)} XP`)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_secondary'))
+            .maxLines(1)
+        } else {
+          Text(`Lv.${this.normalizedInteger(this.level, 1)}`)
+            .fontSize(AppTypography.CAPTION_L)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('sys.color.font_emphasize'))
+            .maxLines(1)
 
-        Text(`${this.normalizedInteger(this.experience)} XP`)
-          .fontSize(AppTypography.CAPTION_L)
-          .fontColor($r('sys.color.font_secondary'))
-          .maxLines(1)
+          Text(`${this.normalizedInteger(this.experience)} XP`)
+            .fontSize(AppTypography.CAPTION_L)
+            .fontColor($r('sys.color.font_secondary'))
+            .maxLines(1)
+        }
       }
       .width('100%')
       .height(32)

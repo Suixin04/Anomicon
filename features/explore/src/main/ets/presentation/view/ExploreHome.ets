@@ -70,8 +70,9 @@ export struct ExploreHome {
     }
   }
 
-  private nextRecommendation(): void {
-    if (this.viewModel.recommendations.length > 1) {
+  private nextRecommendation(deckVersion: number): void {
+    if (this.active && deckVersion === this.viewModel.recommendationDeckVersion &&
+      this.viewModel.recommendations.length > 1) {
       this.onSelection();
       this.viewModel.nextRecommendation();
     }
@@ -88,6 +89,7 @@ export struct ExploreHome {
           ExploreRecommendationDeck({
             recommendations: this.viewModel.recommendations,
             currentIndex: this.viewModel.recommendationIndex,
+            deckVersion: this.viewModel.recommendationDeckVersion,
             loading: this.viewModel.recommendationLoading,
             error: this.viewModel.recommendationError,
             status: this.viewModel.recommendationStatus,
@@ -96,7 +98,7 @@ export struct ExploreHome {
             materialEnabled: this.materialEnabled,
             onOpen: (itemId: string, name: string) =>
               this.openContent(itemId, name, LibraryContentKind.SCP),
-            onDismiss: () => this.nextRecommendation(),
+            onDismiss: (deckVersion: number) => this.nextRecommendation(deckVersion),
             onRefresh: () => this.refreshRecommendations(),
             onHeroAnchorChange: (anchor: ExploreHeroAnchor): void =>
               this.onHeroAnchorChange(anchor)

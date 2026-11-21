@@ -101,30 +101,41 @@ export class CachedArticleRepo implements ArticleHtmlRepository {
     try {
       const priority = this.inflightPriorities.get(requestKey) ??
         ScpHtmlRequestPriority.USER_INITIATED;
-      const fetched = await this.fetchService.fetchPage(
+      let fetched = await this.fetchService.fetchPage(
         sourceUrl,
         cached?.etag ?? '',
         cached?.lastModified ?? '',
         priority
       );
-      const fetchedAt = Date.now();
+      let fetchedAt = Date.now();
       if (fetched.notModified && cached !== undefined) {
-        // 服务器确认本地副本仍是最新：只续期新鲜度，不重写正文。
-        try {
-          await this.cacheService.updateFetchedAt(sourceUrl, fetchedAt, generation);
-        } catch (error) {
-          console.warn(`Renew catalog cache failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+        // 304 only renews an existing row for the still-current request generation.
+        if (await this.cacheService.updateFetchedAt(sourceUrl, fetchedAt, generation)) {
+          return new ScpHtmlLoadResult(cached.html, ScpHtmlSource.FRESH_CACHE, fetchedAt);
         }
-        return new ScpHtmlLoadResult(cached.html, ScpHtmlSource.FRESH_CACHE, fetchedAt);
+        // If the body was discarded while the conditional request was in flight,
+        // do not publish it as fresh. Re-read a concurrent write or retry unconditionally.
+        cached = undefined;
+        const current = await this.cacheService.get(sourceUrl);
+        if (current !== undefined) {
+          const source = ScpCachePolicy.isFresh(current.fetchedAt) ?
+            ScpHtmlSource.FRESH_CACHE : ScpHtmlSource.STALE_CACHE;
+          return new ScpHtmlLoadResult(current.html, source, current.fetchedAt);
+        }
+        fetched = await this.fetchService.fetchPage(sourceUrl, '', '', priority);
+        fetchedAt = Date.now();
       }
-      try {
-        await this.cacheService.put(
-          new ScpCachedPage(sourceUrl, fetched.html, fetchedAt, fetched.etag, fetched.lastModified),
-          generation
-        );
-      } catch (error) {
-        console.warn(`Write catalog cache failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      if (fetched.notModified) {
+        throw new Error('服务器返回 304，但本地没有可用正文');
       }
+      // Queue persistence before returning so later reads and conditional
+      // invalidation still run after this write, without delaying HTML parsing.
+      this.cacheService.put(
+        new ScpCachedPage(sourceUrl, fetched.html, fetchedAt, fetched.etag, fetched.lastModified),
+        generation
+      ).catch((error: Error): void => {
+        console.warn(`Write catalog cache failed: ${error.message}`);
+      });
       return new ScpHtmlLoadResult(fetched.html, ScpHtmlSource.NETWORK, fetchedAt);
     } catch (networkError) {
       if (cached !== undefined) {
@@ -151,9 +162,9 @@ export class CachedArticleRepo implements ArticleHtmlRepository {
   }
 
   /** 由了解页面语义的上层定向丢弃无效快照。 */
-  async discard(sourceUrl: string): Promise<void> {
+  async discard(sourceUrl: string, rejected?: ScpHtmlLoadResult): Promise<void> {
     try {
-      await this.cacheService.remove(ScpWikiUrlPolicy.normalizePageUrl(sourceUrl));
+      await this.cacheService.remove(ScpWikiUrlPolicy.normalizePageUrl(sourceUrl), rejected?.html);
     } catch (error) {
       console.warn(`Discard invalid page cache failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     }

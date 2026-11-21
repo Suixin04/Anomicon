@@ -274,6 +274,7 @@ export struct ArticleNativeRenderer {
   @Require @Param relatedTales: ArticleRelatedTale[];
   @Require @Param fontSize: number;
   @Require @Param lineHeightMultiple: number;
+  @Param galleryAfterBody: boolean = false;
   /** Index selected when the product-owned full-screen preview closes. */
   @Param galleryReturnIndex: number = 0;
   /** Monotonic token that makes repeated returns to the same index observable. */
@@ -796,11 +797,16 @@ export struct ArticleNativeRenderer {
   build() {
     Column({ space: 16 }) {
       this.headerCard()
-      this.imageGallery()
+      if (!this.galleryAfterBody) {
+        this.imageGallery()
+      }
       ForEach(this.blockRows, (block: ArticleBlockRowState) => {
         this.blockView(block)
       }, (block: ArticleBlockRowState) => block.key)
       this.footnotesSection()
+      if (this.galleryAfterBody) {
+        this.imageGallery()
+      }
       this.relatedTalesSection()
       this.licenseFooter()
     }

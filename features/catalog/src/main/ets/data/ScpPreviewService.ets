@@ -469,7 +469,8 @@ export class ScpPreviewService {
     itemId: string,
     result: ScpHtmlLoadResult,
     previous: ScpPreviewRow | undefined,
-    writeGeneration: number
+    writeGeneration: number,
+    warmImage: boolean = true
   ): Promise<ScpPreviewInfo> {
     const extracted = ScpPreviewService.extractFirstImage(result.html);
     if (extracted.error.length > 0) {
@@ -502,7 +503,9 @@ export class ScpPreviewService {
       (previous !== undefined && previous.imageUrl === imageUrl ? previous.aspect : 0);
     await this.safePutRow(itemId, imageUrl, '', aspect, description,
       result.fetchedAt, writeGeneration);
-    this.warmCatalogImageIfCurrent(itemId, imageUrl, writeGeneration);
+    if (warmImage) {
+      this.warmCatalogImageIfCurrent(itemId, imageUrl, writeGeneration);
+    }
     return new ScpPreviewInfo('', aspect, description, imageUrl, result.fetchedAt,
       result.source === ScpHtmlSource.STALE_CACHE);
   }
@@ -511,61 +514,21 @@ export class ScpPreviewService {
    * 复用调用方已经取得的官网 HTML 构建预览，避免为了首图再次请求同一文章。
    * 每日推荐的随机编号校验与预览提取因此共享同一份服务器响应。
    */
-  resolveFetchedHtml(
+  async resolveFetchedHtml(
     itemId: string,
     html: string,
     fetchedAt: number = Date.now()
   ): Promise<ScpPreviewInfo> {
     const writeGeneration = this.beginPreviewWrite(itemId);
-    return this.resolveHtml(
+    // 和目录一样优先复用本地图；否则交给原生 Image 加载，不卡住推荐卡出牌。
+    const previous = await this.readRowNow(itemId).catch((): ScpPreviewRow | undefined => undefined);
+    return this.resolveCatalogHtml(
       itemId,
       new ScpHtmlLoadResult(html, ScpHtmlSource.NETWORK, fetchedAt),
-      writeGeneration
+      previous,
+      writeGeneration,
+      false // The rendered deck window loads its own images; do not download off-window cards.
     );
-  }
-
-  /** 从已加载的原始页面构建预览，并把派生行绑定到该页面的抓取时间。 */
-  private async resolveHtml(
-    itemId: string,
-    result: ScpHtmlLoadResult,
-    writeGeneration: number
-  ): Promise<ScpPreviewInfo> {
-    const extracted = ScpPreviewService.extractFirstImage(result.html);
-    if (extracted.error.length > 0) {
-      return this.failedPreview(
-        extracted.error,
-        result.fetchedAt,
-        result.source === ScpHtmlSource.STALE_CACHE
-      );
-    }
-    const image = extracted.candidate;
-    const imageUrl = image.url;
-    const description = ScpPreviewService.extractDescription(result.html);
-    if (imageUrl.length === 0) {
-      // 无图文章也缓存描述，避免重复抓取。
-      await this.safePutRow(itemId, '', '', 0, description, result.fetchedAt, writeGeneration);
-      return new ScpPreviewInfo('', 1, description, '', result.fetchedAt,
-        result.source === ScpHtmlSource.STALE_CACHE);
-    }
-    try {
-      const path = await this.imageCache.load(imageUrl);
-      const aspect = await ScpPreviewService.readAspect(path);
-      await this.safePutRow(
-        itemId, imageUrl, path, aspect, description, result.fetchedAt, writeGeneration
-      );
-      return new ScpPreviewInfo(path, aspect, description, '', result.fetchedAt,
-        result.source === ScpHtmlSource.STALE_CACHE);
-    } catch (error) {
-      // 本地缓存失败不应把可用的远程图地址一并丢弃；推荐卡可让 ArkUI
-      // 直接走 HTTPS 图片管线，后续再次进入视口时仍会重试缓存。
-      const aspect = image.aspect > 0.05 ? image.aspect : 1;
-      await this.safePutRow(
-        itemId, imageUrl, '', aspect, description, result.fetchedAt, writeGeneration
-      );
-      this.warmCatalogImageIfCurrent(itemId, imageUrl, writeGeneration);
-      return new ScpPreviewInfo('', aspect, description, imageUrl, result.fetchedAt,
-        result.source === ScpHtmlSource.STALE_CACHE);
-    }
   }
 
   /** 已有缓存行：本地文件直接返回；缺宽高比/描述时用（6h 缓存的）文章 HTML 补全。 */

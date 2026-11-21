@@ -7,6 +7,7 @@ import {
   ExploreListRepository,
   ExploreRecommendation,
   ExploreRecommendationEntry,
+  ExploreRecommendationProgress,
   ExploreContentUseCase,
   ExploreStoredSnapshot,
   RecommendationRepository,
@@ -48,23 +49,69 @@ class ImmediateExploreRepository implements ExploreListRepository {
   }
 }
 
-/** Keeps recommendation requests pending so lifecycle invalidation is observable. */
-class PendingRecommendationRepository implements RecommendationRepository {
-  calls: number = 0;
-  private readonly resolvers: Array<(items: ExploreRecommendation[]) => void> = [];
+class SlowTopRatedRepository extends ImmediateExploreRepository {
+  private finish: (() => void) | undefined;
 
-  loadDaily(_batchIndex: number, _dayKey?: string): Promise<ExploreRecommendation[]> {
-    this.calls += 1;
-    return new Promise<ExploreRecommendation[]>(
-      (resolve: (items: ExploreRecommendation[]) => void): void => {
-        this.resolvers.push(resolve);
-      }
-    );
+  async load(source: ExploreSource, forceNetwork?: boolean): Promise<ExploreLoadedPayload> {
+    if (source === ExploreSource.TOP_RATED) {
+      await new Promise<void>((resolve: () => void): void => {
+        this.finish = resolve;
+      });
+    }
+    return super.load(source, forceNetwork);
   }
 
-  resolveNext(items: ExploreRecommendation[] = []): void {
-    const resolve = this.resolvers.shift();
-    resolve?.(items);
+  release(): void {
+    this.finish?.();
+  }
+}
+
+/** 手动发牌和结束批次，便于断言中间状态。 */
+class PendingRecommendationRequest {
+  readonly progress: ExploreRecommendationProgress | undefined;
+  readonly items: ExploreRecommendation[] = [];
+  readonly dayKey: string;
+  readonly batchIndex: number;
+  private finish: (items: ExploreRecommendation[]) => void = (): void => {};
+  private fail: (error: Error) => void = (): void => {};
+  readonly result: Promise<ExploreRecommendation[]> = new Promise<ExploreRecommendation[]>(
+    (resolve: (items: ExploreRecommendation[]) => void, reject: (error: Error) => void): void => {
+      this.finish = resolve;
+      this.fail = reject;
+    }
+  );
+
+  constructor(batchIndex: number, dayKey: string, progress?: ExploreRecommendationProgress) {
+    this.batchIndex = batchIndex;
+    this.dayKey = dayKey;
+    this.progress = progress;
+  }
+
+  publish(item: ExploreRecommendation): void {
+    this.items.push(item);
+    this.progress?.onCandidate(item);
+  }
+
+  complete(): void {
+    this.finish(this.items);
+  }
+
+  reject(): void {
+    this.fail(new Error('连接中断'));
+  }
+}
+
+class PendingRecommendationRepository implements RecommendationRepository {
+  readonly requests: PendingRecommendationRequest[] = [];
+
+  loadDaily(
+    batchIndex: number,
+    dayKey?: string,
+    progress?: ExploreRecommendationProgress
+  ): Promise<ExploreRecommendation[]> {
+    const request = new PendingRecommendationRequest(batchIndex, dayKey ?? '', progress);
+    this.requests.push(request);
+    return request.result;
   }
 }
 
@@ -74,10 +121,8 @@ async function drainMicrotasks(count: number = 24): Promise<void> {
   }
 }
 
-function oneRecommendation(): ExploreRecommendation[] {
-  return [new ExploreRecommendation(
-    new ExploreRecommendationEntry('SCP-001', '测试推荐'),
-  )];
+function recommendation(id: string): ExploreRecommendation {
+  return new ExploreRecommendation(new ExploreRecommendationEntry(id, id));
 }
 
 export default function exploreHomeViewModelTest(): void {
@@ -97,7 +142,7 @@ export default function exploreHomeViewModelTest(): void {
 
       const firstActivation = viewModel.activate();
       await drainMicrotasks();
-      expect(recommendationRepository.calls).assertEqual(1);
+      expect(recommendationRepository.requests.length).assertEqual(1);
       expect(viewModel.recommendationLoading).assertTrue();
       expect(viewModel.recommendationRefreshing).assertFalse();
       expect(viewModel.recommendationStatus).assertEqual(ViewModelLoadState.LOADING);
@@ -111,20 +156,135 @@ export default function exploreHomeViewModelTest(): void {
 
       const secondActivation = viewModel.activate();
       await drainMicrotasks();
-      expect(recommendationRepository.calls).assertEqual(2);
+      expect(recommendationRepository.requests.length).assertEqual(2);
       expect(viewModel.recommendationLoading).assertTrue();
       expect(viewModel.recommendationRefreshing).assertFalse();
       expect(viewModel.recommendationStatus).assertEqual(ViewModelLoadState.LOADING);
 
       // Resolve the stale request first and the current request second. Epoch
       // and token checks must discard the first result without clearing state.
-      recommendationRepository.resolveNext(oneRecommendation());
-      recommendationRepository.resolveNext(oneRecommendation());
+      const stale = recommendationRepository.requests[0];
+      expect(stale.progress?.isCurrent()).assertFalse();
+      stale.publish(recommendation('SCP-001'));
+      stale.complete();
       await firstActivation;
+      expect(viewModel.recommendations.length).assertEqual(0);
+      expect(viewModel.recommendationLoading).assertTrue();
+      const current = recommendationRepository.requests[1];
+      current.publish(recommendation('SCP-002'));
+      current.complete();
       await secondActivation;
       expect(viewModel.recommendationLoading).assertFalse();
       expect(viewModel.recommendationStatus).assertEqual(ViewModelLoadState.READY);
+      expect(viewModel.recommendations[0].entry.itemId).assertEqual('SCP-002');
       viewModel.dispose();
+      current.progress?.onTitle('SCP-002', '迟到的标题');
+      expect(viewModel.recommendations[0].entry.title).assertEqual('SCP-002');
+    });
+
+    it('publishes the first card while the home index is still pending', 0, async () => {
+      const content = new SlowTopRatedRepository();
+      const repository = new PendingRecommendationRepository();
+      const vm = new ExploreHomeViewModel(new ExploreContentUseCase(content),
+        new RecommendationUseCase(repository), (): string => '2026-08-30');
+      try {
+        const activation = vm.activate();
+        await drainMicrotasks();
+        expect(vm.topRatedLoading).assertTrue();
+        expect(repository.requests.length).assertEqual(1);
+        repository.requests[0].publish(recommendation('SCP-001'));
+        expect(vm.recommendations.length).assertEqual(1);
+        expect(vm.recommendationLoading).assertFalse();
+        expect(vm.topRatedLoading).assertTrue();
+        repository.requests[0].complete();
+        content.release();
+        await activation;
+      } finally {
+        vm.dispose();
+      }
+    });
+
+    it('retains the old deck until the first card and preserves index on append or title update', 0, async () => {
+      const repository = new PendingRecommendationRepository();
+      const vm = new ExploreHomeViewModel(new ExploreContentUseCase(new ImmediateExploreRepository()),
+        new RecommendationUseCase(repository), (): string => '2026-08-30');
+      try {
+        const activation = vm.activate();
+        repository.requests[0].publish(recommendation('SCP-001'));
+        repository.requests[0].publish(recommendation('SCP-002'));
+        repository.requests[0].complete();
+        await activation;
+        vm.nextRecommendation();
+        const priorVersion = vm.recommendationDeckVersion;
+        const refresh = vm.refreshRecommendations();
+        await vm.refreshRecommendations();
+        expect(repository.requests.length).assertEqual(2);
+        expect(vm.recommendationIndex).assertEqual(1);
+        expect(vm.recommendations[1].entry.itemId).assertEqual('SCP-002');
+        const request = repository.requests[1];
+        expect(request.batchIndex).assertEqual(1);
+        request.publish(recommendation('SCP-003'));
+        expect(vm.recommendations.length).assertEqual(1);
+        expect(vm.recommendationIndex).assertEqual(0);
+        expect(vm.recommendationDeckVersion).assertEqual(priorVersion + 1);
+        expect(vm.recommendationRefreshing).assertTrue();
+        vm.nextRecommendation();
+        expect(vm.recommendationIndex).assertEqual(0);
+        request.publish(recommendation('SCP-004'));
+        vm.nextRecommendation();
+        request.publish(recommendation('SCP-005'));
+        request.progress?.onTitle('SCP-004', '补齐的标题');
+        expect(vm.recommendationIndex).assertEqual(1);
+        expect(vm.recommendations[1].entry.title).assertEqual('补齐的标题');
+        expect(vm.recommendationDeckVersion).assertEqual(priorVersion + 1);
+        request.reject();
+        await refresh;
+        expect(vm.recommendations.length).assertEqual(3);
+        expect(vm.recommendationIndex).assertEqual(1);
+        expect(vm.recommendationStatus).assertEqual(ViewModelLoadState.PARTIAL);
+        expect(vm.recommendationRefreshing).assertFalse();
+
+        const empty = vm.refreshRecommendations();
+        repository.requests[2].complete();
+        await empty;
+        expect(vm.recommendations.length).assertEqual(3);
+        expect(vm.recommendationIndex).assertEqual(1);
+        expect(vm.recommendationDeckVersion).assertEqual(priorVersion + 1);
+      } finally {
+        vm.dispose();
+      }
+    });
+
+    it('ignores stale candidates, titles and completion on day rollover', 0, async () => {
+      const repository = new PendingRecommendationRepository();
+      let today: string = '2026-08-30';
+      const vm = new ExploreHomeViewModel(new ExploreContentUseCase(new ImmediateExploreRepository()),
+        new RecommendationUseCase(repository), (): string => today);
+      try {
+        const activation = vm.activate();
+        const old = repository.requests[0];
+        old.publish(recommendation('SCP-001'));
+        today = '2026-08-31';
+        const rollover = vm.refreshDay();
+        await vm.refreshDay();
+        expect(repository.requests.length).assertEqual(2);
+        expect(repository.requests[1].dayKey).assertEqual(today);
+        expect(old.progress?.isCurrent()).assertFalse();
+        old.publish(recommendation('SCP-002'));
+        old.progress?.onTitle('SCP-001', '旧标题');
+        old.complete();
+        await activation;
+        expect(vm.recommendations.length).assertEqual(1);
+        expect(vm.recommendations[0].entry.title).assertEqual('SCP-001');
+        expect(vm.recommendationRefreshing).assertTrue();
+        repository.requests[1].publish(recommendation('SCP-003'));
+        repository.requests[1].complete();
+        await rollover;
+        expect(vm.recommendations[0].entry.itemId).assertEqual('SCP-003');
+        expect(vm.recommendationRefreshing).assertFalse();
+      } finally {
+        vm.dispose();
+      }
     });
   });
 }

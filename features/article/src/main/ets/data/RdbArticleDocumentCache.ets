@@ -78,22 +78,19 @@ export class RdbArticleDocumentCache implements ArticleDocumentCachePort {
       this.closeResultSet(resultSet, 'document');
     }
 
-    let json = currentJson;
+    let json: string | undefined = undefined;
     if (jsonPath.length > 0) {
-      // The file column is the new source of truth, but older rows still keep
-      // a usable JSON copy in `json`.  A missing/temporarily unreadable file
-      // must therefore fall back to that legacy copy instead of turning a
-      // valid cache row into a miss.  Ignore whitespace or malformed files so
-      // they cannot hide a valid legacy value.
       const fileJson = await this.requireTextFiles().read(jsonPath);
       if (fileJson !== undefined && this.isValidJson(fileJson)) {
         json = fileJson;
       }
     }
-    if (!this.isValidJson(json)) {
-      // AtomicTextCacheFileStore removes only files it can prove damaged.
-      // An undefined read may be a transient I/O failure; never turn that
-      // cache miss into destructive cleanup at this layer.
+    // 仅在文件缺失、不可读或内容无效时校验旧列。
+    if (json === undefined && this.isValidJson(currentJson)) {
+      json = currentJson;
+    }
+    if (json === undefined) {
+      // 文件读取失败可能只是暂时的 I/O 问题，此处不清理缓存。
       return undefined;
     }
     return {

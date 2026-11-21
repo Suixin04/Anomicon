@@ -66,9 +66,20 @@ export interface ExploreListRepository {
   put(source: ExploreSource, payload: ExplorePayload, fetchedAt?: number): Promise<void>;
 }
 
-/** 推荐候选端口；dayKey 作为测试和未来离线实现的显式输入。 */
+/** 每张完成的卡只追加一次；标题补齐只更新已发布的卡。 */
+export interface ExploreRecommendationProgress {
+  isCurrent: () => boolean;
+  onCandidate: (item: ExploreRecommendation) => void;
+  onTitle: (itemId: string, title: string) => void;
+}
+
+/** 推荐候选端口；不提供进度监听时返回已补齐标题的批次。 */
 export interface RecommendationRepository {
-  loadDaily(batchIndex: number, dayKey?: string): Promise<ExploreRecommendation[]>;
+  loadDaily(
+    batchIndex: number,
+    dayKey?: string,
+    progress?: ExploreRecommendationProgress
+  ): Promise<ExploreRecommendation[]>;
 }
 
 /** 卡片预览端口；不向上层暴露图片缓存或 ArkUI 类型。 */

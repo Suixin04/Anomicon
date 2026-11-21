@@ -19,6 +19,12 @@ import {
 } from '../../domain/ScpSeriesItem';
 
 const CATALOG_LOAD_TIMEOUT_MS: number = 40 * 1000;
+type CatalogSearchTimeoutScheduler = (onTimeout: () => void) => () => void;
+
+function scheduleCatalogSearchTimeout(onTimeout: () => void): () => void {
+  const timeoutId = setTimeout(onTimeout, CATALOG_LOAD_TIMEOUT_MS);
+  return (): void => clearTimeout(timeoutId);
+}
 
 /** Immutable screen projection consumed by the Catalog search View. */
 export class CatalogSearchScreenData {
@@ -64,17 +70,25 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
 
   private readonly search: CatalogSearchUseCase;
   private readonly randomCount: number;
+  private readonly scheduleTimeout: CatalogSearchTimeoutScheduler;
   private token: number = 0;
   private active: boolean = false;
   private disposed: boolean = false;
   private initialized: boolean = false;
   private unsubscribe: (() => void) | undefined = undefined;
-  private pendingTimeout: number = -1;
+  private cancelPendingTimeout: (() => void) | undefined = undefined;
+  private loadTimedOut: boolean = false;
+  private appliedCatalog: CatalogSnapshot | undefined = undefined;
   private snapshotRevision: number = 0;
 
-  constructor(search: CatalogSearchUseCase, randomCount: number = 10) {
+  constructor(
+    search: CatalogSearchUseCase,
+    randomCount: number = 10,
+    scheduleTimeout: CatalogSearchTimeoutScheduler = scheduleCatalogSearchTimeout
+  ) {
     this.search = search;
     this.randomCount = randomCount;
+    this.scheduleTimeout = scheduleTimeout;
     this.snapshot = new ViewModelSnapshot<CatalogSearchScreenData>(
       ViewModelLoadState.IDLE,
       new CatalogSearchScreenData('', DEFAULT_SERIES_ID, [], [], [], false)
@@ -186,8 +200,8 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   }
 
   private observeSeries(id: string, forceRefresh: boolean = false): void {
-    this.stopObservation();
     const token = ++this.token;
+    this.stopObservation();
     const hasEntries = this.entries.length > 0;
     this.catalogPending = forceRefresh && !hasEntries;
     this.status = forceRefresh && hasEntries ?
@@ -195,9 +209,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.errorMessage = '';
     this.publishSnapshot();
     this.unsubscribe = this.search.observe(id, (snapshot: CatalogSnapshot): void => {
-      if (this.isCurrent(token, id)) {
-        this.applySnapshot(snapshot);
-      }
+      this.applyCurrentSnapshot(id, token, snapshot);
     });
     if (this.catalogPending) {
       this.armPendingTimeout(id, token);
@@ -207,52 +219,32 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
 
   private async loadCached(id: string, token: number, forceRefresh: boolean = false): Promise<void> {
     try {
-      if (forceRefresh) {
-        const loaded = await this.search.refresh(this.descriptor(id));
+      if (!forceRefresh) {
+        const cached = await this.search.cached(id);
         if (!this.isCurrent(token, id)) {
           return;
         }
-        // An observer may have received the same cache notification first;
-        // applying the returned force-refresh result still guarantees that a
-        // repository which cannot notify subscribers completes the retry.
-        this.applySnapshot(loaded);
-        return;
-      }
-      const cached = await this.search.cached(id);
-      if (!this.isCurrent(token, id)) {
-        return;
-      }
-      if (cached === undefined) {
+        if (cached !== undefined) {
+          // 图鉴页负责重验；搜索页只观察缓存更新。
+          this.applyCurrentSnapshot(id, token, cached);
+          return;
+        }
+        if (this.appliedCatalog !== undefined) {
+          // 读缓存期间已经收到了更新，不再发起冷加载。
+          return;
+        }
         this.entries = [];
         this.randomItems = [];
         this.catalogPending = true;
-        this.armPendingTimeout(id, token);
         this.status = ViewModelLoadState.LOADING;
-        this.publishSnapshot();
-        const loaded = await this.search.load(this.descriptor(id));
-        if (!this.isCurrent(token, id)) {
-          return;
-        }
-        // The shared catalog repository may publish the same snapshot through
-        // observe() before load() resolves.  Only project the returned value
-        // when no observer has already completed this cold load, avoiding a
-        // second random-discovery shuffle while still surviving cache-write
-        // failures that cannot notify subscribers.
-        if (this.catalogPending) {
-          this.applySnapshot(loaded);
-        }
-        return;
-      }
-      this.stopPendingTimeout();
-      this.applySnapshot(cached);
-      if (cached.stale) {
-        // 图鉴页会负责重验；搜索页只观察更新通知，避免重复网络请求。
-        this.status = cached.partial || cached.stale ?
-          ViewModelLoadState.PARTIAL : ViewModelLoadState.READY;
+        this.armPendingTimeout(id, token);
         this.publishSnapshot();
       }
+      const descriptor = this.descriptor(id);
+      const loaded = forceRefresh ? await this.search.refresh(descriptor) : await this.search.load(descriptor);
+      this.applyCurrentSnapshot(id, token, loaded);
     } catch (error) {
-      if (!this.isCurrent(token, id)) {
+      if (!this.isCurrent(token, id) || this.loadTimedOut || this.appliedCatalog !== undefined) {
         return;
       }
       this.catalogPending = false;
@@ -263,7 +255,15 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     }
   }
 
-  private applySnapshot(snapshot: CatalogSnapshot): void {
+  private applyCurrentSnapshot(id: string, token: number, snapshot: CatalogSnapshot): void {
+    if (!this.isCurrent(token, id) || snapshot.seriesId !== id) {
+      return;
+    }
+    const applied = this.appliedCatalog;
+    if (applied !== undefined &&
+      (snapshot.fetchedAt < applied.fetchedAt || this.isSameProjection(applied, snapshot))) {
+      return;
+    }
     this.entries = snapshot.entries.slice();
     // Random discovery is an application concern; keep the ViewModel focused
     // on lifecycle/state projection and request-token guards.
@@ -274,9 +274,28 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.errorMessage = snapshot.error;
     this.status = snapshot.partial || snapshot.stale ?
       ViewModelLoadState.PARTIAL : ViewModelLoadState.READY;
+    this.appliedCatalog = snapshot;
+    this.loadTimedOut = false;
     this.stopPendingTimeout();
     this.publishVisible();
     this.publishSnapshot();
+  }
+
+  private isSameProjection(previous: CatalogSnapshot, next: CatalogSnapshot): boolean {
+    // 缓存通知与请求返回的 source 可以不同，只比较影响界面投影的内容。
+    if (previous.fetchedAt !== next.fetchedAt || previous.stale !== next.stale ||
+      previous.partial !== next.partial || previous.error !== next.error ||
+      previous.entries.length !== next.entries.length) {
+      return false;
+    }
+    for (let index = 0; index < previous.entries.length; index++) {
+      const before = previous.entries[index];
+      const after = next.entries[index];
+      if (before.itemId !== after.itemId || before.title !== after.title || before.description !== after.description) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private publishVisible(): void {
@@ -284,31 +303,29 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   }
 
   private armPendingTimeout(id: string, token: number): void {
-    if (this.pendingTimeout >= 0) {
-      return;
-    }
-    this.pendingTimeout = setTimeout((): void => {
-      this.pendingTimeout = -1;
-      if (!this.isCurrent(token, id)) {
+    this.cancelPendingTimeout = this.scheduleTimeout((): void => {
+      if (!this.isCurrent(token, id) || !this.catalogPending) {
         return;
       }
+      this.cancelPendingTimeout = undefined;
+      // 超时只结束等待提示，不作废当前代次。
+      this.loadTimedOut = true;
       this.catalogPending = false;
       this.status = ViewModelLoadState.ERROR;
       this.errorMessage = '目录加载超时，请重试';
-      this.token++;
       this.publishSnapshot();
-    }, CATALOG_LOAD_TIMEOUT_MS);
+    });
   }
 
   private stopPendingTimeout(): void {
-    if (this.pendingTimeout >= 0) {
-      clearTimeout(this.pendingTimeout);
-      this.pendingTimeout = -1;
-    }
+    this.cancelPendingTimeout?.();
+    this.cancelPendingTimeout = undefined;
   }
 
   private stopObservation(): void {
     this.stopPendingTimeout();
+    this.loadTimedOut = false;
+    this.appliedCatalog = undefined;
     this.unsubscribe?.();
     this.unsubscribe = undefined;
   }

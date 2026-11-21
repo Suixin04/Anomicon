@@ -1,4 +1,5 @@
 import {
+  ArticleHtmlRepository,
   ScpHtmlLoadResult,
   ScpHtmlRequestPriority,
   ScpHtmlSource
@@ -18,11 +19,12 @@ import {
   ScpCatalogPayload,
   ScpCatalogRawEntry
 } from '../domain/StaticCatalogContracts';
-import { CachedArticleRepo } from './CachedArticleRepo';
 import {
   ScpCatalogCacheService,
   ScpStoredCatalog
 } from './ScpCatalogCacheService';
+
+const CATALOG_FALLBACK_MESSAGE: string = '目录更新失败，正在显示缓存内容';
 
 /**
  * 目录 Data adapter。缓存、HTML 仓储和解析器均由 feature composition 显式注入，
@@ -30,12 +32,12 @@ import {
  */
 export class CatalogRepoAdapter implements CatalogRepository {
   private readonly cache: ScpCatalogCacheService;
-  private readonly html: CachedArticleRepo;
+  private readonly html: ArticleHtmlRepository;
   private readonly parser: CatalogParser;
 
   constructor(
     cache: ScpCatalogCacheService,
-    html: CachedArticleRepo,
+    html: ArticleHtmlRepository,
     parser: CatalogParser
   ) {
     this.cache = cache;
@@ -77,29 +79,7 @@ export class CatalogRepoAdapter implements CatalogRepository {
     priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.BACKGROUND
   ): Promise<CatalogSnapshot> {
     const cached = await this.getCached(series.id);
-    // An explicit refresh is a user request and must bypass the fresh HTML
-    // cache.  The repository still falls back to stale data on network error.
-    const htmlResult = await this.html.loadHtml(series.url, true, priority);
-    // 条件请求失败时保留旧派生快照，不把旧 HTML 的解析时间当作新鲜时间。
-    if (htmlResult.source === ScpHtmlSource.STALE_CACHE && cached !== undefined) {
-      // Keep the cache timestamp so a failed request cannot make the snapshot
-      // look fresh.  Retain the cache source rank, however: this is the same
-      // durable snapshot already projected by the VM, and a lower
-      // STALE_CACHE rank would be rejected as an out-of-order update.  The
-      // stale/partial/error fields carry the failed refresh provenance to the
-      // UI without replacing the usable entries.
-      return new CatalogSnapshot(
-        cached.seriesId,
-        cached.entries,
-        cached.source,
-        cached.fetchedAt,
-        true,
-        true,
-        cached.parserVersion,
-        '目录更新失败，正在显示缓存内容'
-      );
-    }
-    return this.parseResult(series.id, htmlResult);
+    return this.fetchAndParse(series, true, priority, cached);
   }
 
   subscribe(seriesId: string, listener: CatalogSnapshotListener): () => void {
@@ -114,13 +94,42 @@ export class CatalogRepoAdapter implements CatalogRepository {
   private async fetchAndParse(
     series: ScpSeriesDescriptor,
     forceNetwork: boolean,
-    priority: ScpHtmlRequestPriority
+    priority: ScpHtmlRequestPriority,
+    cached?: CatalogSnapshot
   ): Promise<CatalogSnapshot> {
-    const htmlResult = await this.html.loadHtml(series.url, forceNetwork, priority);
-    return this.parseResult(series.id, htmlResult);
+    try {
+      const result = await this.html.loadHtml(series.url, forceNetwork, priority);
+      if (result.source === ScpHtmlSource.STALE_CACHE && cached !== undefined) {
+        return this.fallback(cached);
+      }
+      return await this.parseResult(series, result);
+    } catch (error) {
+      const latest = await this.getCached(series.id);
+      if (latest !== undefined && (cached === undefined || latest.fetchedAt > cached.fetchedAt)) {
+        return latest;
+      }
+      if (cached !== undefined) {
+        return this.fallback(cached);
+      }
+      throw new Error(error instanceof Error ? error.message : '目录加载失败');
+    }
   }
 
-  private async parseResult(seriesId: string, result: ScpHtmlLoadResult): Promise<CatalogSnapshot> {
+  private fallback(cached: CatalogSnapshot): CatalogSnapshot {
+    // 失败不能续期；同一份派生快照保留原来源，避免被 VM 当成低优先级结果拒绝。
+    return new CatalogSnapshot(
+      cached.seriesId,
+      cached.entries,
+      cached.source,
+      cached.fetchedAt,
+      true,
+      true,
+      cached.parserVersion,
+      CATALOG_FALLBACK_MESSAGE
+    );
+  }
+
+  private async parseResult(series: ScpSeriesDescriptor, result: ScpHtmlLoadResult): Promise<CatalogSnapshot> {
     const parsed = await this.parser.parseCatalog(result.html);
     if (parsed === undefined || parsed === null || typeof parsed !== 'object') {
       throw new Error('目录解析结果不是对象');
@@ -128,19 +137,24 @@ export class CatalogRepoAdapter implements CatalogRepository {
     if (!Array.isArray(parsed.entries)) {
       throw new Error('目录解析结果字段不完整');
     }
-    const validEntries = this.normalizeEntries(parsed.entries);
-    const stale = result.source === ScpHtmlSource.STALE_CACHE;
-    if (parsed.parserVersion !== SCP_CATALOG_PARSER_VERSION ||
-      parsed.ok !== true || validEntries.length === 0) {
-      const message = parsed.parserVersion !== SCP_CATALOG_PARSER_VERSION ?
-        `目录解析器版本不兼容：${parsed.parserVersion}` :
-        (parsed.ok === true ? '目录解析结果为空' :
-          `目录解析失败：${typeof parsed.error === 'string' ? parsed.error : '未知错误'}`);
-      throw new Error(message);
+    if (parsed.parserVersion !== SCP_CATALOG_PARSER_VERSION) {
+      throw new Error(`目录解析器版本不兼容：${parsed.parserVersion}`);
     }
-    const staleMessage = stale ? '目录更新失败，正在显示缓存内容' : '';
+    const validEntries = this.normalizeEntries(parsed.entries);
+    if (parsed.ok !== true || validEntries.length === 0) {
+      // StaticCatalogHtmlParser 的这两种结果才明确表示正文不是有效目录。
+      // TaskPool/解析器内部异常也可能返回 ok:false，但不能据此删除原始缓存。
+      if (parsed.ok === true || parsed.error === 'page-content node not found' ||
+        parsed.error === 'series entries not found') {
+        await this.html.discard(series.url, result);
+      }
+      throw new Error(parsed.ok === true ? '目录解析结果为空' :
+        `目录解析失败：${typeof parsed.error === 'string' ? parsed.error : '未知错误'}`);
+    }
+    const stale = result.source === ScpHtmlSource.STALE_CACHE;
+    const staleMessage = stale ? CATALOG_FALLBACK_MESSAGE : '';
     const snapshot = new CatalogSnapshot(
-      seriesId,
+      series.id,
       validEntries,
       this.sourceOf(result),
       result.fetchedAt,
@@ -168,7 +182,7 @@ export class CatalogRepoAdapter implements CatalogRepository {
         entries: rawEntries
       };
       await this.cache.put(new ScpStoredCatalog(
-        seriesId,
+        series.id,
         JSON.stringify(payload),
         result.fetchedAt
       ));

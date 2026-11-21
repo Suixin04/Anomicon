@@ -6,13 +6,15 @@ import {
 } from '../domain/ExploreContracts';
 import {
   ExploreRecommendationPageGateway,
+  ExploreRecommendationProgress,
   PreviewRepository,
   ExploreTitleResolver
 } from '../domain/ExploreRepositories';
 
 const RECOMMENDATION_COUNT: number = 6;
 const MAX_CANDIDATE_ATTEMPTS: number = 24;
-const CANDIDATE_GROUP_SIZE: number = 6;
+const CANDIDATE_CONCURRENCY: number = 6;
+const TITLE_CONCURRENCY: number = 2;
 const WIKI_BASE: string = 'https://scp-wiki-cn.wikidot.com/';
 /** 主站已接入 I–X 系列；编号以 001–9999 为随机空间，实际存在性由官网响应确认。 */
 const SCP_NUMBER_SPACE: number = 9999;
@@ -28,18 +30,47 @@ class RecommendationResolution {
   }
 }
 
+/** 跨批次限制在途请求；释放时把名额直接交给队首。 */
+class RecommendationWorkLimit {
+  private readonly limit: number;
+  private readonly waiters: Array<() => void> = [];
+  private activeCount: number = 0;
+
+  constructor(limit: number) {
+    this.limit = limit;
+  }
+
+  async run<T>(task: () => Promise<T>): Promise<T> {
+    if (this.activeCount < this.limit) {
+      this.activeCount++;
+    } else {
+      await new Promise<void>((resolve: () => void): void => {
+        this.waiters.push(resolve);
+      });
+    }
+    try {
+      return await task();
+    } finally {
+      const next = this.waiters.shift();
+      if (next === undefined) {
+        this.activeCount--;
+      } else {
+        next();
+      }
+    }
+  }
+}
+
 /**
- * 每日推荐直接由随机 SCP 编号驱动：
- * - 当天 batch 0 稳定，次日自然变化；
- * - 手动“换一批”改变 batch salt，生成另一组编号；
- * - 每个编号直接请求中文主站，只有真实存在且能解析标题的页面才会发布。
- *
- * 目录缓存不再参与候选选择，避免“推荐只是浏览过的内容”。
+ * 每日推荐由日键和批次决定候选编号，但按实际可用的顺序发牌。
+ * 候选由主站响应验证，目录只用于后台补全显示标题。
  */
 export class RecommendationService {
   private readonly pageGateway: ExploreRecommendationPageGateway;
   private readonly previewRepository: PreviewRepository;
   private readonly titleResolver: ExploreTitleResolver | undefined;
+  private readonly candidateLimit = new RecommendationWorkLimit(CANDIDATE_CONCURRENCY);
+  private readonly titleLimit = new RecommendationWorkLimit(TITLE_CONCURRENCY);
 
   constructor(
     pageGateway: ExploreRecommendationPageGateway,
@@ -53,41 +84,61 @@ export class RecommendationService {
 
   async loadDaily(
     batchIndex: number = 0,
-    dayKey: string = exploreDayKey()
+    dayKey: string = exploreDayKey(),
+    progress?: ExploreRecommendationProgress
   ): Promise<ExploreRecommendation[]> {
     const ids = this.generateCandidateIds(batchIndex, dayKey);
     const recommendations: ExploreRecommendation[] = [];
-    let failureCount: number = 0;
-    for (let start = 0;
-      start < ids.length && recommendations.length < RECOMMENDATION_COUNT;
-      start += CANDIDATE_GROUP_SIZE) {
-      const tasks: Promise<RecommendationResolution>[] = [];
-      const end = Math.min(start + CANDIDATE_GROUP_SIZE, ids.length);
-      for (let index = start; index < end; index++) {
-        tasks.push(this.resolveRecommendation(ids[index]));
-      }
-      const resolved = await Promise.all(tasks);
-      for (let index = 0;
-        index < resolved.length && recommendations.length < RECOMMENDATION_COUNT;
-        index++) {
-        const resolution = resolved[index];
-        if (resolution.failed) {
-          failureCount += 1;
+    const titleTasks: Promise<void>[] = [];
+    const isCurrent = (): boolean => progress?.isCurrent() ?? true;
+    let nextIndex: number = 0;
+    let failed: boolean = false;
+
+    // 每个 worker 填一张卡：落空就立即补位，成功后交还名额，不多发候选请求。
+    const fillSlot = async (): Promise<void> => {
+      while (isCurrent() && nextIndex < ids.length) {
+        const id = ids[nextIndex++];
+        const resolution = await this.candidateLimit.run<RecommendationResolution>(
+          (): Promise<RecommendationResolution> => this.resolveRecommendation(id, isCurrent)
+        );
+        if (!isCurrent()) {
+          return;
         }
-        if (resolution.recommendation !== undefined) {
-          recommendations.push(resolution.recommendation);
+        failed = failed || resolution.failed;
+        const item = resolution.recommendation;
+        if (item === undefined) {
+          continue;
         }
+        const position = recommendations.length;
+        recommendations.push(item);
+        progress?.onCandidate(item);
+        const titleTask = this.enrichTitle(item, isCurrent).then((title: string): void => {
+          if (title.length > 0 && isCurrent()) {
+            if (progress === undefined) {
+              recommendations[position] = new ExploreRecommendation(
+                new ExploreRecommendationEntry(id, title), item.preview);
+            } else {
+              progress.onTitle(id, title);
+            }
+          }
+        });
+        if (progress === undefined) {
+          titleTasks.push(titleTask);
+        }
+        return;
       }
+    };
+    const workers: Promise<void>[] = [];
+    for (let index = 0; index < RECOMMENDATION_COUNT; index++) {
+      workers.push(fillSlot());
     }
-    // An empty candidate set is a legitimate result only when every request
-    // completed and the sampled wiki pages were genuinely absent/invalid.
-    // If at least one transport/cache/preview operation failed, publishing an
-    // empty READY state would suppress retries for the rest of the day.
-    if (recommendations.length < RECOMMENDATION_COUNT && failureCount > 0) {
-      // Do not publish a short list as READY when some of the sampled pages
-      // failed to load.  The caller can retain an older card set and expose a
-      // retry/partial state instead of silently presenting an incomplete batch.
+    // 这里只等批次结束；各 worker 已独立发布结果。
+    await Promise.all(workers);
+    if (isCurrent() && recommendations.length < RECOMMENDATION_COUNT && failed) {
       throw new Error('今日推荐部分请求失败');
+    }
+    if (progress === undefined) {
+      await Promise.all(titleTasks);
     }
     return recommendations;
   }
@@ -107,32 +158,38 @@ export class RecommendationService {
     return ids;
   }
 
-  private async resolveRecommendation(itemId: string): Promise<RecommendationResolution> {
+  private async enrichTitle(item: ExploreRecommendation, isCurrent: () => boolean): Promise<string> {
+    const resolver = this.titleResolver;
+    const id = item.entry.itemId;
+    if (resolver === undefined || !this.isPlaceholderTitle(id, item.entry.title)) {
+      return '';
+    }
+    return this.titleLimit.run<string>(async (): Promise<string> => {
+      if (!isCurrent()) {
+        return '';
+      }
+      try {
+        const title = (await resolver(id)).trim();
+        return this.isPlaceholderTitle(id, title) ? '' : title;
+      } catch (_error) {
+        return '';
+      }
+    });
+  }
+
+  private async resolveRecommendation(
+    itemId: string,
+    isCurrent: () => boolean
+  ): Promise<RecommendationResolution> {
+    if (!isCurrent()) {
+      return new RecommendationResolution(undefined);
+    }
     try {
-      // 不读取图鉴或文章缓存；随机编号始终由主站响应验证。
       const fetched = await this.pageGateway.fetchPage(`${WIKI_BASE}${itemId.toLowerCase()}`);
-      if (!this.isExistingPage(fetched.html)) {
+      if (!isCurrent() || !this.isExistingPage(fetched.html)) {
         return new RecommendationResolution(undefined);
       }
-      let title = this.extractTitle(fetched.html, itemId);
-      // The article shell normally contains only `SCP-xxxx` in #page-title
-      // and document.title. Ask the Catalog title port for the real human
-      // title, while retaining the page id as a safe fallback for uncached or
-      // genuinely untitled pages.
-      if (this.titleResolver !== undefined && this.isPlaceholderTitle(itemId, title)) {
-        try {
-          const resolved = (await this.titleResolver(itemId)).trim();
-          if (resolved.length > 0 && !this.isPlaceholderTitle(itemId, resolved)) {
-            title = resolved;
-          }
-        } catch (_error) {
-          // A recommendation remains usable when its optional title lookup
-          // is offline; the stable SCP id is still shown.
-        }
-      }
-      if (title.length === 0) {
-        return new RecommendationResolution(undefined);
-      }
+      const title = this.extractTitle(fetched.html, itemId);
       const info = await this.previewRepository.resolveFetchedHtml(
         itemId,
         fetched.html,

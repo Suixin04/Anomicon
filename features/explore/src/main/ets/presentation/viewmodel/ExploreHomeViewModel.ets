@@ -3,6 +3,7 @@ import {
   ExploreContentItem,
   ExploreEntry,
   ExploreRecommendation,
+  ExploreRecommendationEntry,
   ExploreSourceSnapshot,
   exploreDayKey
 } from '../../domain/ExploreContracts';
@@ -10,6 +11,7 @@ import {
   ExploreContentUseCase
 } from '../../application/ExploreContentUseCase';
 import { RecommendationUseCase } from '../../application/RecommendationUseCase';
+import { ExploreRecommendationProgress } from '../../domain/ExploreRepositories';
 import { ViewModelLifecycle, ViewModelLoadState } from 'anomiconbasic';
 import {
   ExploreHomeEvent,
@@ -49,6 +51,7 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
   @Trace recommendations: ExploreRecommendation[] = [];
   @Trace recommendationIndex: number = 0;
   @Trace recommendationBatch: number = 0;
+  @Trace recommendationDeckVersion: number = 0;
   @Trace recommendationLoading: boolean = false;
   @Trace recommendationRefreshing: boolean = false;
   @Trace recommendationError: string = '';
@@ -67,8 +70,8 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
   private dayRolloverTimer: number = -1;
   private active: boolean = false;
   private disposed: boolean = false;
-  private initialLoadRunning: boolean = false;
-  private initialized: boolean = false;
+  private recommendationRequestBatch: number = 0;
+  private recommendationRequestDayKey: string = '';
   /** The day for which the last successful jokes/recommendations request ran. */
   private topRatedLoaded: boolean = false;
   private recentLoaded: boolean = false;
@@ -91,36 +94,35 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
     this.activeDayKey = dayKeyProvider();
   }
 
-  /** 激活屏幕；首次激活并行加载三个索引，完成后再启动推荐候选。 */
-  activate(): Promise<void> {
+  /** 激活时各区块独立启动；推荐优先发起，不等索引或索引的标题补齐。 */
+  async activate(): Promise<void> {
     if (this.disposed || this.active) {
-      return Promise.resolve();
+      return;
     }
     this.active = true;
     this.scheduleDayRollover();
-    if (!this.initialized && !this.initialLoadRunning) {
-      this.initialLoadRunning = true;
-      const epoch = this.lifecycleEpoch;
-      const task = this.loadInitialContent(epoch);
-      task.then((): void => {
-        if (this.isEpochCurrent(epoch)) {
-          this.initialized = true;
-        }
-      }).catch((): void => {
-        // 各区块已经发布自己的错误；首页初始化不再抛出到 View。
-      }).finally((): void => {
-        // A previous activation may finish after the screen has been
-        // deactivated and activated again.  Its completion must not clear the
-        // in-flight marker (or initialized flag) belonging to the newer
-        // epoch; deactivate() already resets the marker for the next entry.
-        if (this.isEpochCurrent(epoch)) {
-          this.initialLoadRunning = false;
-        }
-      });
-      return task;
+    const today = this.dayKeyProvider();
+    this.activeDayKey = today;
+    const epoch = this.lifecycleEpoch;
+    const tasks: Promise<void>[] = [];
+    if (this.recommendationLoadedDayKey !== today || this.retryRecommendationsOnActivate) {
+      const batch = this.recommendationRequestDayKey === today && this.retryRecommendationsOnActivate ?
+        this.recommendationRequestBatch : 0;
+      tasks.push(this.loadRecommendations(batch, epoch, today));
     }
-    this.activateForToday();
-    return Promise.resolve();
+    if (!this.recentLoaded || this.retryRecentOnActivate) {
+      tasks.push(this.loadRecentInternal(this.retryRecentOnActivate, epoch));
+      this.retryRecentOnActivate = false;
+    }
+    if (this.jokeLoadedDayKey !== today || this.retryJokesOnActivate) {
+      tasks.push(this.loadJokesInternal(this.retryJokesOnActivate, epoch, today));
+      this.retryJokesOnActivate = false;
+    }
+    if (!this.topRatedLoaded || this.retryTopRatedOnActivate) {
+      tasks.push(this.loadTopRatedInternal(this.retryTopRatedOnActivate, epoch));
+      this.retryTopRatedOnActivate = false;
+    }
+    await Promise.all(tasks);
   }
 
   /** 暂停屏幕并使所有在途请求失效；可稍后再次 activate。 */
@@ -151,11 +153,6 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
       this.recommendationRefreshing ||
       this.recommendationStatus === ViewModelLoadState.LOADING ||
       this.recommendationStatus === ViewModelLoadState.REFRESHING;
-    // Keep completed snapshots across Tab switches.  If the first load was
-    // interrupted, its epoch-aware finally block below resets `initialized`
-    // for the next activation; completed sections can therefore be reused
-    // without turning every tab switch into a full network refresh.
-    this.initialLoadRunning = false;
     this.clearDayRolloverTimer();
     this.resetInFlightFlags();
   }
@@ -202,10 +199,10 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
 
   /** 重新生成下一批推荐；正在请求时保持幂等。 */
   refreshRecommendations(): Promise<void> {
-    if (this.recommendationLoading || this.recommendationRefreshing || this.disposed) {
+    if (this.recommendationLoading || this.recommendationRefreshing || !this.active || this.disposed) {
       return Promise.resolve();
     }
-    return this.loadRecommendations(this.recommendationBatch + 1, false, this.lifecycleEpoch);
+    return this.loadRecommendations(this.recommendationBatch + 1, this.lifecycleEpoch);
   }
 
   /** 丢弃当前顶牌并显示下一层；卡牌数量不足时保持原索引。 */
@@ -222,100 +219,21 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
       return;
     }
     const today = this.dayKeyProvider();
-    const needsRefresh = today !== this.activeDayKey ||
-      this.jokeLoadedDayKey !== today || this.recommendationLoadedDayKey !== today;
-    if (!needsRefresh) {
-      return;
-    }
-    this.activeDayKey = today;
-    // A timer can fire while the destination is hidden.  Record the new day,
-    // but defer network work until activate() so no hidden screen owns a load.
     if (!this.active) {
       return;
     }
+    const dayChanged = today !== this.activeDayKey;
+    this.activeDayKey = today;
     const epoch = this.lifecycleEpoch;
-    await Promise.all([
-      this.loadJokesInternal(false, epoch, today),
-      this.loadRecommendations(0, false, epoch, today)
-    ]);
-  }
-
-  private async loadInitialContent(epoch: number): Promise<void> {
-    const dayKey = this.activeDayKey;
-    await Promise.all([
-      this.loadRecentInternal(false, epoch),
-      this.loadJokesInternal(false, epoch, dayKey),
-      this.loadTopRatedInternal(false, epoch)
-    ]);
-    if (!this.isEpochCurrent(epoch)) {
-      return;
+    const tasks: Promise<void>[] = [];
+    if (dayChanged || (this.recommendationLoadedDayKey !== today &&
+      !this.recommendationLoading && !this.recommendationRefreshing)) {
+      tasks.push(this.loadRecommendations(0, epoch, today));
     }
-    // A midnight timer may have already started the current-day request while
-    // the three initial indexes were resolving.  Do not launch a second
-    // recommendation request for the obsolete day (which could otherwise
-    // strand the newer request's loading flag).
-    if (dayKey !== this.activeDayKey) {
-      this.activateForToday();
-      return;
+    if (dayChanged || (this.jokeLoadedDayKey !== today && !this.jokeLoading)) {
+      tasks.push(this.loadJokesInternal(false, epoch, today));
     }
-    if (this.recommendationLoading || this.recommendationRefreshing) {
-      return;
-    }
-    await this.loadRecommendations(0, true, epoch, dayKey);
-    // If midnight crossed while the initial requests were in flight, queue a
-    // current-day refresh instead of leaving the old day's cards marked ready.
-    if (this.isEpochCurrent(epoch) && this.dayKeyProvider() !== this.activeDayKey) {
-      this.activateForToday();
-    }
-  }
-
-  private activateForToday(): void {
-    if (this.disposed || !this.active) {
-      return;
-    }
-    const today = this.dayKeyProvider();
-    if (today !== this.activeDayKey) {
-      this.activeDayKey = today;
-    }
-    const epoch = this.lifecycleEpoch;
-    if (this.retryTopRatedOnActivate && !this.topRatedLoading) {
-      this.retryTopRatedOnActivate = false;
-      this.loadTopRatedInternal(true, epoch);
-    }
-    if (this.retryRecentOnActivate && !this.recentLoading) {
-      this.retryRecentOnActivate = false;
-      this.loadRecentInternal(true, epoch);
-    }
-    if (this.retryJokesOnActivate && !this.jokeLoading) {
-      this.retryJokesOnActivate = false;
-      this.loadJokesInternal(true, epoch, today);
-    }
-    if (this.retryRecommendationsOnActivate && !this.recommendationLoading &&
-      !this.recommendationRefreshing) {
-      this.retryRecommendationsOnActivate = false;
-      this.loadRecommendations(0, false, epoch, today);
-    }
-    if (this.jokeLoadedDayKey !== today && !this.jokeLoading) {
-      this.loadJokesInternal(false, epoch, today);
-    }
-    if (this.recommendationLoadedDayKey !== today && !this.recommendationLoading &&
-      !this.recommendationRefreshing) {
-      this.loadRecommendations(0, false, epoch, today);
-    }
-    if (!this.topRatedLoaded && !this.topRatedLoading) {
-      this.loadTopRatedInternal(false, epoch);
-    }
-    if (!this.recentLoaded && !this.recentLoading) {
-      this.loadRecentInternal(false, epoch);
-    }
-    if (this.jokeItems.length === 0 && this.jokeLoadedDayKey.length === 0 && !this.jokeLoading) {
-      this.loadJokesInternal(false, epoch, today);
-    }
-    if (this.recommendations.length === 0 && this.recommendationLoadedDayKey.length === 0 &&
-      !this.recommendationLoading &&
-      !this.recommendationRefreshing) {
-      this.loadRecommendations(0, true, epoch, today);
-    }
+    await Promise.all(tasks);
   }
 
   private async loadTopRatedInternal(force: boolean, epoch: number): Promise<void> {
@@ -365,7 +283,13 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
     this.recentStatus = this.recentItems.length > 0 ?
       ViewModelLoadState.REFRESHING : ViewModelLoadState.LOADING;
     try {
-      const snapshot: ExploreCombinedSnapshot = await this.contentUseCase.loadRecent(force);
+      const snapshot: ExploreCombinedSnapshot = await this.contentUseCase.loadRecent(force,
+        (progress: ExploreCombinedSnapshot): void => {
+          if (this.isSourceCurrent(epoch, token, this.recentRequestToken)) {
+            this.recentItems = progress.items;
+            this.recentStatus = ViewModelLoadState.REFRESHING;
+          }
+        });
       if (!this.isSourceCurrent(epoch, token, this.recentRequestToken)) {
         return;
       }
@@ -403,7 +327,13 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
     this.jokeStatus = this.jokeItems.length > 0 ?
       ViewModelLoadState.REFRESHING : ViewModelLoadState.LOADING;
     try {
-      const snapshot: ExploreCombinedSnapshot = await this.contentUseCase.loadJokes(dayKey, force);
+      const snapshot: ExploreCombinedSnapshot = await this.contentUseCase.loadJokes(dayKey, force,
+        (progress: ExploreCombinedSnapshot): void => {
+          if (this.isDaySourceCurrent(epoch, token, this.jokeRequestToken, dayKey)) {
+            this.jokeItems = progress.items;
+            this.jokeStatus = ViewModelLoadState.REFRESHING;
+          }
+        });
       if (!this.isDaySourceCurrent(epoch, token, this.jokeRequestToken, dayKey)) {
         return;
       }
@@ -432,70 +362,86 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
 
   private async loadRecommendations(
     batch: number,
-    initial: boolean,
     epoch: number,
     dayKey: string = this.activeDayKey
   ): Promise<void> {
-    if (this.disposed || !this.active) {
+    if (!this.isEpochCurrent(epoch)) {
       return;
     }
     const token = ++this.recommendationRequestToken;
-    // An empty deck has no stale content to keep on screen.  Treat every
-    // request for that deck as the initial load, including a resume after a
-    // tab switch and a day-rollover request.  Otherwise callers using the
-    // refresh path would expose `REFRESHING` with `loading = false`, and the
-    // empty deck could briefly render its retry branch.
-    const emptyDeckInitialLoad: boolean = this.recommendations.length === 0;
-    const showInitialLoading: boolean = initial || emptyDeckInitialLoad;
-    if (showInitialLoading) {
-      this.recommendationLoading = true;
-      this.recommendationStatus = this.recommendations.length > 0 ?
-        ViewModelLoadState.REFRESHING : ViewModelLoadState.LOADING;
-    } else {
-      this.recommendationRefreshing = true;
-      this.recommendationStatus = ViewModelLoadState.REFRESHING;
-    }
+    this.recommendationRequestBatch = batch;
+    this.recommendationRequestDayKey = dayKey;
+    this.retryRecommendationsOnActivate = false;
+    this.recommendationLoading = this.recommendations.length === 0;
+    this.recommendationRefreshing = !this.recommendationLoading;
+    this.recommendationStatus = this.recommendationLoading ?
+      ViewModelLoadState.LOADING : ViewModelLoadState.REFRESHING;
     this.recommendationError = '';
+
+    let published: boolean = false;
+    const isCurrent = (): boolean =>
+      this.isDaySourceCurrent(epoch, token, this.recommendationRequestToken, dayKey);
+    const progress: ExploreRecommendationProgress = {
+      isCurrent: isCurrent,
+      onCandidate: (item: ExploreRecommendation): void => {
+        if (!isCurrent()) {
+          return;
+        }
+        if (!published) {
+          published = true;
+          this.recommendationBatch = batch;
+          this.recommendationIndex = 0;
+          this.recommendationDeckVersion++;
+          this.recommendations = [item];
+          this.recommendationLoading = false;
+          this.recommendationRefreshing = true;
+          this.recommendationStatus = ViewModelLoadState.REFRESHING;
+          return;
+        }
+        this.recommendations = this.recommendations.concat([item]);
+      },
+      onTitle: (itemId: string, title: string): void => {
+        if (!isCurrent() || !published) {
+          return;
+        }
+        const items = this.recommendations.slice();
+        for (let index = 0; index < items.length; index++) {
+          if (items[index].entry.itemId === itemId) {
+            items[index] = new ExploreRecommendation(
+              new ExploreRecommendationEntry(itemId, title), items[index].preview);
+            this.recommendations = items;
+            return;
+          }
+        }
+      }
+    };
     try {
-      const recommendations = await this.recommendationUseCase.loadDaily(batch, dayKey);
-      if (!this.isDaySourceCurrent(epoch, token, this.recommendationRequestToken, dayKey)) {
+      const items = await this.recommendationUseCase.loadDaily(batch, dayKey, progress);
+      if (!isCurrent()) {
         return;
       }
+      if (!published) {
+        for (let index = 0; index < items.length; index++) {
+          progress.onCandidate(items[index]);
+        }
+      }
       this.recommendationBatch = batch;
-      if (recommendations.length > 0) {
-        this.recommendations = recommendations;
-        this.recommendationIndex = 0;
-        this.recommendationError = '';
-        this.recommendationStatus = ViewModelLoadState.READY;
-      } else if (this.recommendations.length > 0) {
-        // Empty batches are valid (for example when all sampled pages are
-        // absent).  Retain the previous cards and make the stale result
-        // visible instead of replacing a usable deck with a skeleton.
+      if (!published && this.recommendations.length > 0) {
         this.recommendationError = '今天没有新的推荐，正在显示上一批推荐';
         this.recommendationStatus = ViewModelLoadState.PARTIAL;
       } else {
-        // Empty READY is a first-class state.  The Deck can now render its
-        // empty prompt and the day key prevents an activation request loop.
-        this.recommendationError = '';
         this.recommendationStatus = ViewModelLoadState.READY;
       }
       this.recommendationLoadedDayKey = dayKey;
-      this.retryRecommendationsOnActivate = false;
     } catch (error) {
-      if (this.isDaySourceCurrent(epoch, token, this.recommendationRequestToken, dayKey)) {
-        this.recommendationError = this.messageOf(error, '今日推荐加载失败');
+      if (isCurrent()) {
+        this.recommendationError = !published && this.recommendations.length > 0 ?
+          '更新失败，正在显示上一批推荐' : this.messageOf(error, '今日推荐加载失败');
         this.recommendationStatus = this.recommendations.length > 0 ?
           ViewModelLoadState.PARTIAL : ViewModelLoadState.ERROR;
-        // Keep a previously rendered card set visible during a day rollover or
-        // a transient network failure.  Only an empty first load should clear
-        // the list so the View can show its full error state.
-        if (showInitialLoading && this.recommendations.length === 0) {
-          this.recommendations = [];
-          this.recommendationIndex = 0;
-        }
       }
     } finally {
-      if (this.isDaySourceCurrent(epoch, token, this.recommendationRequestToken, dayKey)) {
+      if (isCurrent()) {
         this.recommendationLoading = false;
         this.recommendationRefreshing = false;
       }
@@ -539,7 +485,11 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
     const nextDay = new Date(now.getTime());
     nextDay.setHours(24, 0, 0, 250);
     const delay = Math.max(1000, nextDay.getTime() - now.getTime());
+    const epoch = this.lifecycleEpoch;
     this.dayRolloverTimer = setTimeout((): void => {
+      if (!this.isEpochCurrent(epoch)) {
+        return;
+      }
       this.dayRolloverTimer = -1;
       this.refreshDay();
       if (this.active && !this.disposed) {

@@ -87,13 +87,95 @@ async function drainMicrotasks(rounds: number = 20): Promise<void> {
   }
 }
 
-function createSearchViewModel(repository: CatalogRepository): CatalogSearchViewModel {
+class ManualCatalogSearchTimeout {
+  private callback: (() => void) | undefined = undefined;
+
+  schedule(callback: () => void): () => void {
+    this.callback = callback;
+    return (): void => {
+      this.callback = undefined;
+    };
+  }
+
+  fire(): void {
+    const callback = this.callback;
+    if (callback === undefined) {
+      throw new Error('没有待触发的目录超时');
+    }
+    this.callback = undefined;
+    callback();
+  }
+}
+
+class DeferredCatalogSearchLoad {
+  readonly promise: Promise<CatalogSnapshot>;
+  private resolveLoad: ((snapshot: CatalogSnapshot) => void) | undefined = undefined;
+  private rejectLoad: ((error: Error) => void) | undefined = undefined;
+
+  constructor() {
+    this.promise = new Promise<CatalogSnapshot>((resolve: (snapshot: CatalogSnapshot) => void,
+      reject: (error: Error) => void): void => {
+      this.resolveLoad = resolve;
+      this.rejectLoad = reject;
+    });
+  }
+
+  resolve(snapshot: CatalogSnapshot): void {
+    this.resolveLoad?.(snapshot);
+  }
+
+  reject(): void {
+    this.rejectLoad?.(new Error('catalog offline'));
+  }
+}
+
+class DeferredCatalogSearchRepository implements CatalogRepository {
+  readonly loads: DeferredCatalogSearchLoad[] = [];
+  readonly refreshes: DeferredCatalogSearchLoad[] = [];
+  readonly listeners: ((snapshot: CatalogSnapshot) => void)[] = [];
+
+  getCached(_seriesId: string): Promise<CatalogSnapshot | undefined> {
+    return Promise.resolve(undefined);
+  }
+
+  load(_series: ScpSeriesDescriptor): Promise<CatalogSnapshot> {
+    const request = new DeferredCatalogSearchLoad();
+    this.loads.push(request);
+    return request.promise;
+  }
+
+  refresh(_series: ScpSeriesDescriptor): Promise<CatalogSnapshot> {
+    const request = new DeferredCatalogSearchLoad();
+    this.refreshes.push(request);
+    return request.promise;
+  }
+
+  subscribe(_seriesId: string, listener: (snapshot: CatalogSnapshot) => void): () => void {
+    this.listeners.push(listener);
+    return (): void => {
+      // 保留旧回调，模拟取消订阅前已排队的通知。
+    };
+  }
+}
+
+function searchCatalogSnapshot(
+  fetchedAt: number,
+  source: CatalogSnapshotSource = CatalogSnapshotSource.NETWORK
+): CatalogSnapshot {
+  return new CatalogSnapshot(DEFAULT_SERIES_ID, [new CatalogEntry('SCP-173', '雕像')], source, fetchedAt);
+}
+
+function createSearchViewModel(
+  repository: CatalogRepository,
+  timeout: ManualCatalogSearchTimeout = new ManualCatalogSearchTimeout()
+): CatalogSearchViewModel {
   return new CatalogSearchViewModel(
     new CatalogSearchUseCase(
       new CatalogContentUseCase(repository),
       new SearchHistoryUseCase(new MemorySearchHistoryRepository())
     ),
-    1
+    1,
+    (callback: () => void): () => void => timeout.schedule(callback)
   );
 }
 
@@ -144,6 +226,109 @@ export default function catalogSearchSnapshotTest(): void {
       expect(failed.error?.message).assertEqual('catalog offline');
       expect(failed.data?.catalogPending).assertFalse();
       expect(failed.data?.entries.length).assertEqual(0);
+      viewModel.dispose();
+    });
+
+    it('recovers when the cold load returns after timeout without a cache notification', 0, async () => {
+      const repository = new DeferredCatalogSearchRepository();
+      const timeout = new ManualCatalogSearchTimeout();
+      const viewModel = createSearchViewModel(repository, timeout);
+      viewModel.activate();
+      await drainMicrotasks();
+      expect(viewModel.snapshot.data?.catalogPending).assertTrue();
+
+      timeout.fire();
+      expect(viewModel.snapshot.state).assertEqual(ViewModelLoadState.ERROR);
+      expect(viewModel.snapshot.error?.message).assertEqual('目录加载超时，请重试');
+      expect(viewModel.snapshot.data?.catalogPending).assertFalse();
+      viewModel.setQuery('173');
+      repository.loads[0].resolve(searchCatalogSnapshot(321));
+      await drainMicrotasks();
+
+      const recovered = viewModel.snapshot;
+      expect(recovered.state).assertEqual(ViewModelLoadState.READY);
+      expect(recovered.error === undefined).assertTrue();
+      expect(recovered.data?.entries[0].itemId).assertEqual('SCP-173');
+      expect(recovered.data?.catalogPending).assertFalse();
+      repository.listeners[0](searchCatalogSnapshot(321, CatalogSnapshotSource.CACHE));
+      expect(viewModel.snapshot.revision).assertEqual(recovered.revision);
+      viewModel.dispose();
+    });
+
+    it('recovers from a retry timeout through observe and applies its returned duplicate only once', 0, async () => {
+      const repository = new DeferredCatalogSearchRepository();
+      const timeout = new ManualCatalogSearchTimeout();
+      const viewModel = createSearchViewModel(repository, timeout);
+      viewModel.activate();
+      await drainMicrotasks();
+      viewModel.retry();
+      timeout.fire();
+      expect(viewModel.snapshot.state).assertEqual(ViewModelLoadState.ERROR);
+
+      repository.listeners[1](searchCatalogSnapshot(456, CatalogSnapshotSource.CACHE));
+      const recovered = viewModel.snapshot;
+      expect(recovered.state).assertEqual(ViewModelLoadState.READY);
+      expect(recovered.error === undefined).assertTrue();
+      expect(recovered.fetchedAt).assertEqual(456);
+      repository.refreshes[0].resolve(searchCatalogSnapshot(456));
+      await drainMicrotasks();
+      expect(viewModel.snapshot.revision).assertEqual(recovered.revision);
+
+      repository.listeners[1](searchCatalogSnapshot(789, CatalogSnapshotSource.CACHE));
+      expect(viewModel.snapshot.fetchedAt).assertEqual(789);
+      viewModel.dispose();
+    });
+
+    it('keeps the timeout message when the current load eventually fails', 0, async () => {
+      const repository = new DeferredCatalogSearchRepository();
+      const timeout = new ManualCatalogSearchTimeout();
+      const viewModel = createSearchViewModel(repository, timeout);
+      viewModel.activate();
+      await drainMicrotasks();
+      timeout.fire();
+      const timedOut = viewModel.snapshot;
+      repository.loads[0].reject();
+      await drainMicrotasks();
+      expect(viewModel.snapshot.revision).assertEqual(timedOut.revision);
+      expect(viewModel.snapshot.error?.message).assertEqual('目录加载超时，请重试');
+      viewModel.dispose();
+    });
+
+    it('keeps old returns and queued notifications out after retry, series switch and page exit', 0, async () => {
+      const repository = new DeferredCatalogSearchRepository();
+      const timeout = new ManualCatalogSearchTimeout();
+      const viewModel = createSearchViewModel(repository, timeout);
+      viewModel.activate();
+      await drainMicrotasks();
+      timeout.fire();
+      viewModel.retry();
+      const retry = viewModel.snapshot;
+      repository.listeners[0](searchCatalogSnapshot(100));
+      repository.loads[0].resolve(searchCatalogSnapshot(100));
+      await drainMicrotasks();
+      expect(viewModel.snapshot.revision).assertEqual(retry.revision);
+
+      viewModel.selectSeries('scp-series-2');
+      viewModel.selectSeries(DEFAULT_SERIES_ID);
+      await drainMicrotasks();
+      const switched = viewModel.snapshot;
+      repository.listeners[1](searchCatalogSnapshot(200));
+      repository.refreshes[0].resolve(searchCatalogSnapshot(200));
+      await drainMicrotasks();
+      expect(viewModel.snapshot.revision).assertEqual(switched.revision);
+
+      viewModel.deactivate();
+      viewModel.activate();
+      await drainMicrotasks();
+      const reopened = viewModel.snapshot;
+      repository.listeners[3](searchCatalogSnapshot(300));
+      repository.loads[1].resolve(searchCatalogSnapshot(300));
+      await drainMicrotasks();
+      expect(viewModel.snapshot.revision).assertEqual(reopened.revision);
+      repository.loads[2].resolve(searchCatalogSnapshot(400));
+      await drainMicrotasks();
+      expect(viewModel.snapshot.state).assertEqual(ViewModelLoadState.READY);
+      expect(viewModel.snapshot.fetchedAt).assertEqual(400);
       viewModel.dispose();
     });
   });

@@ -28,6 +28,7 @@ export {
   ExploreHtmlSource,
   ExploreFetchedPage,
   ExploreRecommendationPageGateway,
+  ExploreRecommendationProgress,
   ExploreTitleResolver,
   PreviewRepository,
   RecommendationRepository

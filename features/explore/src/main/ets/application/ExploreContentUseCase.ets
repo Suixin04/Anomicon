@@ -40,15 +40,20 @@ export class ExploreContentUseCase {
     return this.withResolvedTitles(snapshot);
   }
 
-  async loadRecent(force: boolean = false): Promise<ExploreCombinedSnapshot> {
-    const results = await Promise.all([
-      this.loadSource(ExploreSource.RECENT_TRANSLATED, force),
-      this.loadSource(ExploreSource.RECENT_ORIGINAL, force)
-    ]);
+  async loadRecent(
+    force: boolean = false,
+    onProgress?: (snapshot: ExploreCombinedSnapshot) => void
+  ): Promise<ExploreCombinedSnapshot> {
+    return this.loadPair(ExploreSource.RECENT_TRANSLATED, ExploreSource.RECENT_ORIGINAL, force, true,
+      (first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreCombinedSnapshot =>
+        this.mergeRecent(first, second), onProgress);
+  }
+
+  private mergeRecent(first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreCombinedSnapshot {
     const items: ExploreContentItem[] = [];
     const seen: Set<string> = new Set();
-    this.appendRecent(items, seen, await this.resolveTitles(results[0].entries), '翻译主站');
-    this.appendRecent(items, seen, await this.resolveTitles(results[1].entries), '原创');
+    this.appendRecent(items, seen, first.entries, '翻译主站');
+    this.appendRecent(items, seen, second.entries, '原创');
     items.sort((left: ExploreContentItem, right: ExploreContentItem): number => {
       if (left.timestamp !== right.timestamp) {
         return right.timestamp - left.timestamp;
@@ -57,21 +62,29 @@ export class ExploreContentUseCase {
     });
     return new ExploreCombinedSnapshot(
       items,
-      this.combinedError(results[0], results[1]),
-      this.combinedOrigin(results[0], results[1]),
-      this.latestFetchedAt(results[0], results[1])
+      this.combinedError(first, second),
+      this.combinedOrigin(first, second),
+      this.latestFetchedAt(first, second)
     );
   }
 
-  async loadJokes(dayKey: string, force: boolean = false): Promise<ExploreCombinedSnapshot> {
-    const results = await Promise.all([
-      this.loadSource(ExploreSource.JOKE_SCPS, force),
-      this.loadSource(ExploreSource.JOKE_TALES, force)
-    ]);
+  async loadJokes(
+    dayKey: string,
+    force: boolean = false,
+    onProgress?: (snapshot: ExploreCombinedSnapshot) => void
+  ): Promise<ExploreCombinedSnapshot> {
+    return this.loadPair(ExploreSource.JOKE_SCPS, ExploreSource.JOKE_TALES, force, false,
+      (first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreCombinedSnapshot =>
+        this.mergeJokes(dayKey, first, second), onProgress);
+  }
+
+  private mergeJokes(
+    dayKey: string, first: ExploreSourceSnapshot, second: ExploreSourceSnapshot
+  ): ExploreCombinedSnapshot {
     const pool: ExploreContentItem[] = [];
     const seen: Set<string> = new Set();
-    this.appendJokes(pool, seen, await this.resolveTitles(results[0].entries), LibraryContentKind.SCP, '搞笑 SCP');
-    this.appendJokes(pool, seen, results[1].entries, LibraryContentKind.TALE, '搞笑故事');
+    this.appendJokes(pool, seen, first.entries, LibraryContentKind.SCP, '搞笑 SCP');
+    this.appendJokes(pool, seen, second.entries, LibraryContentKind.TALE, '搞笑故事');
     const indexes = selectExploreIndexes(pool.length, pool.length, 'combined-jokes', dayKey);
     const items: ExploreContentItem[] = [];
     for (let index = 0; index < indexes.length; index++) {
@@ -79,10 +92,42 @@ export class ExploreContentUseCase {
     }
     return new ExploreCombinedSnapshot(
       items,
-      this.combinedError(results[0], results[1]),
-      this.combinedOrigin(results[0], results[1]),
-      this.latestFetchedAt(results[0], results[1])
+      this.combinedError(first, second),
+      this.combinedOrigin(first, second),
+      this.latestFetchedAt(first, second)
     );
+  }
+
+  /** Publish parsed sources first; optional title enrichment never gates the first rows. */
+  private async loadPair(
+    firstSource: ExploreSource,
+    secondSource: ExploreSource,
+    force: boolean,
+    resolveSecondTitles: boolean,
+    merge: (first: ExploreSourceSnapshot, second: ExploreSourceSnapshot) => ExploreCombinedSnapshot,
+    onProgress?: (snapshot: ExploreCombinedSnapshot) => void
+  ): Promise<ExploreCombinedSnapshot> {
+    let first = new ExploreSourceSnapshot([]);
+    let second = new ExploreSourceSnapshot([]);
+    const publish = (): void => {
+      if (onProgress !== undefined && (first.entries.length > 0 || second.entries.length > 0)) {
+        onProgress(merge(first, second));
+      }
+    };
+    const firstTask = this.loadSource(firstSource, force).then(async (snapshot: ExploreSourceSnapshot): Promise<void> => {
+      first = snapshot;
+      publish();
+      first = await this.withResolvedTitles(snapshot);
+    });
+    const secondTask = this.loadSource(secondSource, force).then(async (snapshot: ExploreSourceSnapshot): Promise<void> => {
+      second = snapshot;
+      publish();
+      if (resolveSecondTitles) {
+        second = await this.withResolvedTitles(snapshot);
+      }
+    });
+    await Promise.all([firstTask, secondTask]);
+    return merge(first, second);
   }
 
   /**
