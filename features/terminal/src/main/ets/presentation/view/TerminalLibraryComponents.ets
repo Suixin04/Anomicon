@@ -5,7 +5,6 @@ import {
 } from 'library';
 import { ReadingHistoryEntry } from 'library';
 import { AppTypography } from 'anomiconbasic';
-import { uiMaterial } from '@kit.ArkUI';
 
 const FAVORITE_CARD_WIDTH: number = 220;
 const FAVORITE_CARD_HEIGHT: number = 132;
@@ -42,12 +41,6 @@ export struct TerminalFavoriteCards {
   @Require @Param entries: LibraryFavorite[];
   @Require @Param materialEnabled: boolean;
   @Event onOpenContent: (content: LibraryContentRef) => void;
-
-  private readonly cardMaterial: uiMaterial.ImmersiveMaterial =
-    new uiMaterial.ImmersiveMaterial({
-      style: uiMaterial.ImmersiveStyle.THIN,
-      applyShadow: false
-    });
 
   private displayId(content: LibraryContentRef): string {
     return content.kind === LibraryContentKind.SCP ? content.id.toUpperCase() : '已加入收藏';
@@ -110,7 +103,7 @@ export struct TerminalFavoriteCards {
       Color.Transparent : $r('sys.color.comp_background_primary'))
     .borderRadius(20)
     .clip(true)
-    .systemMaterial(this.materialEnabled ? this.cardMaterial : undefined)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
     .onClick(() => this.onOpenContent(row.item.content))
     .accessibilityText(`打开收藏，${row.item.content.title}`)
   }
@@ -378,12 +371,6 @@ export struct TerminalReadingHistoryList {
   @Require @Param materialEnabled: boolean;
   @Event onOpenContent: (content: LibraryContentRef) => void;
 
-  private readonly cardMaterial: uiMaterial.ImmersiveMaterial =
-    new uiMaterial.ImmersiveMaterial({
-      style: uiMaterial.ImmersiveStyle.THIN,
-      applyShadow: false
-    });
-
   build() {
     Column() {
       Repeat<ReadingHistoryEntry>(this.entries)
@@ -410,6 +397,6 @@ export struct TerminalReadingHistoryList {
       Color.Transparent : $r('sys.color.comp_background_primary'))
     .borderRadius(this.continueReading ? 22 : 18)
     .clip(true)
-    .systemMaterial(this.materialEnabled ? this.cardMaterial : undefined)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
   }
 }

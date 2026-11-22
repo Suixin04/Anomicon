@@ -93,7 +93,7 @@ jobs:
         with:
           name: phone-hap
           path: release-assets
-      - name: Create GitHub Release draft
+      - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.prepare.outputs.tag }}
@@ -103,4 +103,4 @@ jobs:
           printf '\n> 附件为未签名 HAP，不能直接安装到真机。\n' >> release-notes/anomicon-release-notes.md
           gh release create "$TAG" "release-assets/$ASSET" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE" \
-            --notes-file release-notes/anomicon-release-notes.md --draft
+            --notes-file release-notes/anomicon-release-notes.md

@@ -1,4 +1,3 @@
-import { uiMaterial } from '@kit.ArkUI';
 import { ResearchProfileCard } from './ResearchProfileCard';
 import {
   TerminalErrorState,
@@ -16,12 +15,14 @@ import { LibraryContentRef, LibraryFavorite } from 'library';
 import { ReadingHistoryEntry } from 'library';
 import { ResearchProgress } from 'library';
 import { LibraryCollectionMode } from 'library';
-import { pageContentTop, PHONE_PAGE_MARGIN } from 'anomiconbasic';
+import { pageContentTop, PHONE_PAGE_MARGIN, PHONE_TAB_CONTENT_MAX_WIDTH } from 'anomiconbasic';
 import { AppTypography } from 'anomiconbasic';
 import { TerminalViewModel } from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
 
 const SECTION_SPACE: number = 28;
+const TERMINAL_TWO_COLUMN_MIN_WIDTH: number = 840;
+const TERMINAL_WIDE_CONTENT_MAX_WIDTH: number = 1120;
 
 /**
  * 终端首页：档案阅历、个人资料库与基金会手册。
@@ -37,12 +38,7 @@ export struct TerminalHome {
   @Require @Param onOpenCollection: (mode: LibraryCollectionMode) => void;
   @Require @Param viewModel: TerminalViewModel;
   @Require @Param settings: SettingsViewModel;
-
-  private readonly cardMaterial: uiMaterial.ImmersiveMaterial =
-    new uiMaterial.ImmersiveMaterial({
-      style: uiMaterial.ImmersiveStyle.THIN,
-      applyShadow: false
-    });
+  @Local private sideBySide: boolean = false;
 
   private isImmersiveMaterialEnabled(): boolean {
     return this.settings.immersiveMaterialEnabled;
@@ -326,7 +322,7 @@ export struct TerminalHome {
           }
           .width('100%')
           .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(BarState.Off)
+          .scrollBar(this.sideBySide ? BarState.Auto : BarState.Off)
           .edgeEffect(EdgeEffect.Spring)
           if (this.favoriteError.length > 0) {
             this.partialError(this.favoriteError, () => this.retryFavorites())
@@ -492,7 +488,7 @@ export struct TerminalHome {
         Color.Transparent : $r('sys.color.comp_background_primary'))
       .borderRadius(18)
       .clip(true)
-      .systemMaterial(this.isImmersiveMaterialEnabled() ? this.cardMaterial : undefined)
+      .backgroundBlurStyle(this.isImmersiveMaterialEnabled() ? BlurStyle.COMPONENT_REGULAR : undefined)
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -538,30 +534,43 @@ export struct TerminalHome {
         .width('100%')
         .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
 
-        this.personalLibrary()
+        Flex({ direction: this.sideBySide ? FlexDirection.Row : FlexDirection.Column, alignItems: ItemAlign.Start }) {
+          Column() {
+            this.personalLibrary()
+          }
+          .width(this.sideBySide ? '56%' : '100%')
+          .margin({ bottom: this.sideBySide ? 0 : SECTION_SPACE })
 
-        Column() {
-          this.foundationManual()
+          Column() {
+            this.foundationManual()
+          }
+          .width(this.sideBySide ? '44%' : '100%')
+          .padding({ left: this.sideBySide ? SECTION_SPACE : PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
         }
         .width('100%')
-        .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
 
         Blank()
           .width('100%')
           .height(136)
       }
       .width('100%')
-      .constraintSize({ maxWidth: 680 })
+      .constraintSize({ maxWidth: this.sideBySide ? TERMINAL_WIDE_CONTENT_MAX_WIDTH : PHONE_TAB_CONTENT_MAX_WIDTH })
       .padding({
         top: pageContentTop() + 12,
         bottom: 24
       })
     }
     .scrollable(ScrollDirection.Vertical)
-    .scrollBar(BarState.Off)
+    .scrollBar(this.sideBySide ? BarState.Auto : BarState.Off)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .height('100%')
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const viewportWidth = Number(newArea.width);
+      if (viewportWidth > 0) {
+        this.sideBySide = viewportWidth >= TERMINAL_TWO_COLUMN_MIN_WIDTH;
+      }
+    })
     .backgroundColor($r('sys.color.background_secondary'))
   }
 }

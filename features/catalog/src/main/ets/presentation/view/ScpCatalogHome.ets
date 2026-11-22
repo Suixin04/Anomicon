@@ -34,6 +34,7 @@ export struct ScpCatalogHome {
 
   @Local private searchState: ScpCatalogSearchState = sharedCatalogSearchState();
   @Local private entries: ScpCatalogEntry[] = [];
+  @Local private catalogColumns: string = '1fr 1fr';
   /** Single refresh generation shared by every visible preview card. */
   @Local private previewReloadToken: number = 0;
   /** Keep preview projections alive while search temporarily hides an item. */
@@ -259,6 +260,14 @@ export struct ScpCatalogHome {
     .justifyContent(FlexAlign.Center);
   }
 
+  private updateCatalogColumns(area: Area): void {
+    const viewportWidth = Number(area.width);
+    if (viewportWidth > 0) {
+      this.catalogColumns = viewportWidth >= 1440 ? '1fr 1fr 1fr 1fr 1fr' :
+        viewportWidth >= 840 ? '1fr 1fr 1fr 1fr' : viewportWidth >= 600 ? '1fr 1fr 1fr' : '1fr 1fr';
+    }
+  }
+
   build() {
     Column() {
       Stack({ alignContent: Alignment.Top }) {
@@ -292,7 +301,7 @@ export struct ScpCatalogHome {
                     .virtualScroll();
                 }
               }
-              .columnsTemplate('1fr 1fr')
+              .columnsTemplate(this.catalogColumns)
               .columnsGap(LengthMetrics.vp(12))
               .rowsGap(LengthMetrics.vp(12))
               .padding({ left: 16, right: 16, bottom: 160 });
@@ -300,13 +309,15 @@ export struct ScpCatalogHome {
             .header(() => {
               this.listHeader();
             })
-            .width('100%');
+            .width('100%')
+            .constraintSize({ maxWidth: 1440 });
           }
           .scrollable(ScrollDirection.Vertical)
           .scrollBar(BarState.Off)
           .edgeEffect(EdgeEffect.Spring)
           .layoutWeight(1)
-          .width('100%');
+          .width('100%')
+          .onAreaChange((_oldArea: Area, newArea: Area): void => this.updateCatalogColumns(newArea));
         }
         .onRefreshing(() => this.retry())
         .layoutWeight(1)

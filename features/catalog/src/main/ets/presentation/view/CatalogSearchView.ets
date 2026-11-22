@@ -2,6 +2,7 @@ import { LengthMetrics } from '@kit.ArkUI';
 import {
   AppTypography,
   PHONE_PAGE_MARGIN,
+  PHONE_TAB_CONTENT_MAX_WIDTH,
   pageContentTop,
   ViewModelLoadState
 } from 'anomiconbasic';
@@ -277,7 +278,8 @@ struct CatalogSearchContent {
     .width('100%')
   }
 
-  build() {
+  @Builder
+  private searchContent() {
     Column({ space: 8 }) {
       Search({
         placeholder: '搜索编号或名称',
@@ -317,8 +319,18 @@ struct CatalogSearchContent {
       }
     }
     .width('100%')
+    .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
     .height('100%')
     .padding({ top: pageContentTop() + 8 })
+  }
+
+  build() {
+    Column() {
+      this.searchContent()
+    }
+    .width('100%')
+    .height('100%')
+    .alignItems(HorizontalAlign.Center)
     .backgroundColor($r('sys.color.background_secondary'))
   }
 }

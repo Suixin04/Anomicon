@@ -1,4 +1,3 @@
-import { uiMaterial } from '@kit.ArkUI';
 import { AppTypography } from 'anomiconbasic';
 
 const PROFILE_CARD_MAX_WIDTH: number = 680;
@@ -63,12 +62,6 @@ export struct ResearchProfileCard {
   @Require @Param notice: string;
   @Require @Param materialEnabled: boolean;
   @Event onRetry: () => void;
-
-  private readonly cardMaterial: uiMaterial.ImmersiveMaterial =
-    new uiMaterial.ImmersiveMaterial({
-      style: uiMaterial.ImmersiveStyle.THIN,
-      applyShadow: false
-    });
 
   private normalizedInteger(value: number, minimum: number = 0): number {
     if (!Number.isFinite(value)) {
@@ -384,6 +377,6 @@ export struct ResearchProfileCard {
     .backgroundColor(this.materialEnabled ?
       Color.Transparent : $r('sys.color.comp_background_primary'))
     .borderRadius(24)
-    .systemMaterial(this.materialEnabled ? this.cardMaterial : undefined)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
   }
 }

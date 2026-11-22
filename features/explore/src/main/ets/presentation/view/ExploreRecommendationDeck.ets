@@ -358,13 +358,9 @@ struct ExploreRecommendationCard {
     }
     .width('100%')
     .height(RECOMMENDATION_CARD_HEIGHT)
-    // Content-area cards cannot rely on systemMaterial in API 26.
-    // Keep a theme-aware base even when the optional highlight is enabled.
-    .backgroundColor($r('sys.color.comp_background_primary'))
-    .linearGradient(this.materialEnabled ? {
-      direction: GradientDirection.RightBottom,
-      colors: [[Color.Transparent, 0], [Color.Transparent, 0.44], [$r('sys.color.comp_divider'), 1]]
-    } : undefined)
+    // 叠卡升层只改变位置和透明度，不切换材质。卡组仅挂载当前四层。
+    .backgroundColor(this.materialEnabled ? Color.Transparent : $r('sys.color.comp_background_primary'))
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
     .border({ width: 1, color: $r('sys.color.comp_divider') })
     .borderRadius(24)
     .clip(true)

@@ -312,6 +312,8 @@ export struct MainTabIndex {
         }
       })
     }
+    // Tabs are the home content, not a master pane for an empty destination.
+    .mode(NavigationMode.Stack)
     .titleBar({
       avoidLayoutSafeArea: false,
       enableComponentSafeArea: false,

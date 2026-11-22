@@ -116,10 +116,15 @@ export struct TaleList {
     .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, top: PHONE_TAB_CONTENT_TOP_GAP, bottom: 24 })
   }
 
+  private hasDirectoryUpdate(): boolean {
+    return this.viewModel.tales.length > 0 && (this.viewModel.loading || this.viewModel.refreshing ||
+      this.viewModel.errorMessage.length > 0 || this.viewModel.stale);
+  }
+
   @Builder
   private errorBlock() {
     Column({ space: 12 }) {
-      Text(this.viewModel.errorMessage.length > 0 ? this.viewModel.errorMessage : '故事目录加载失败')
+      Text('暂时无法加载故事目录')
         .fontSize(14)
         .fontColor($r('sys.color.font_secondary'))
         .textAlign(TextAlign.Center)
@@ -134,9 +139,15 @@ export struct TaleList {
   }
 
   @Builder
-  private partialBlock() {
+  private directoryUpdateBlock() {
     Column() {
-      ContentUpdateNotice({ message: this.viewModel.errorMessage, onRetry: () => this.retryCurrent() })
+      ContentUpdateNotice({
+        message: this.viewModel.errorMessage.length > 0 ? '目录更新失败，仍可浏览已缓存的故事' :
+          '暂未获取到最新目录，仍可浏览已缓存的故事',
+        updating: this.viewModel.loading || this.viewModel.refreshing,
+        updatingMessage: '正在更新目录',
+        onRetry: () => this.retryCurrent()
+      })
     }
     .width('100%')
     .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 8 })
@@ -145,7 +156,10 @@ export struct TaleList {
   @Builder
   private emptyBlock() {
     Column({ space: 12 }) {
-      Text('无匹配故事')
+      if (this.hasDirectoryUpdate()) {
+        this.directoryUpdateBlock()
+      }
+      Text(this.filterState.active ? '没有匹配的故事' : '暂无故事')
         .fontSize(14)
         .fontColor($r('sys.color.font_tertiary'))
       if (this.filterState.active) {
@@ -211,8 +225,8 @@ export struct TaleList {
   private listHeader() {
     Column() {
       this.topSpacer()
-      if (this.viewModel.errorMessage.length > 0 && this.viewModel.visibleTales.length > 0) {
-        this.partialBlock()
+      if (this.viewModel.visibleTales.length > 0 && this.hasDirectoryUpdate()) {
+        this.directoryUpdateBlock()
       }
     }
     .width('100%')
@@ -251,9 +265,9 @@ export struct TaleList {
         .layoutWeight(1)
         .width('100%')
 
-        if (this.viewModel.loading) {
+        if (this.viewModel.tales.length === 0 && this.viewModel.loading) {
           this.loadingBlock()
-        } else if (this.viewModel.errorMessage.length > 0 && this.viewModel.visibleTales.length === 0) {
+        } else if (this.viewModel.tales.length === 0 && this.viewModel.errorMessage.length > 0) {
           this.errorBlock()
         } else if (this.viewModel.visibleTales.length === 0) {
           this.emptyBlock()

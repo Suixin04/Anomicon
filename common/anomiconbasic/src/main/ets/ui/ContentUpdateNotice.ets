@@ -5,6 +5,7 @@ import { AppTypography } from '../foundation/AppTypography';
 export struct ContentUpdateNotice {
   @Require @Param message: string;
   @Param updating: boolean = false;
+  @Param updatingMessage: string = '正在更新';
   @Event onRetry: () => void;
 
   build() {
@@ -19,7 +20,7 @@ export struct ContentUpdateNotice {
           .fontSize(16)
           .fontColor([$r('sys.color.icon_secondary')])
       }
-      Text(this.updating ? '正在更新' : this.message)
+      Text(this.updating ? this.updatingMessage : this.message)
         .fontSize(AppTypography.CAPTION_L)
         .fontColor($r('sys.color.font_secondary'))
         .layoutWeight(1)

@@ -18,17 +18,20 @@ export const PHONE_TAB_CONTENT_BOTTOM_SPACE: number = 160;
 export const HDS_TITLE_BAR_HEIGHT_MINI: number = 56;
 const FALLBACK_STATUS_BAR_HEIGHT: number = 60;
 
-let statusBarHeight: number | undefined = undefined;
-
-export function updateWindowAvoidArea(avoidTop: number): void {
-  statusBarHeight = avoidTop;
+@ObservedV2
+class NavigationTopInsetState {
+  @Trace avoidTop: number = FALLBACK_STATUS_BAR_HEIGHT;
 }
 
-/** Content top inset: status bar + floating MINI title bar. */
+const navigationTopInset = new NavigationTopInsetState();
+
+export function updateWindowAvoidArea(avoidTop: number): void {
+  navigationTopInset.avoidTop = avoidTop;
+}
+
+/** Content top inset: system avoid area + floating MINI title bar. */
 export function pageContentTop(): number {
-  const statusBar = statusBarHeight !== undefined ?
-    statusBarHeight : FALLBACK_STATUS_BAR_HEIGHT;
-  return statusBar + HDS_TITLE_BAR_HEIGHT_MINI;
+  return navigationTopInset.avoidTop + HDS_TITLE_BAR_HEIGHT_MINI;
 }
 
 // Cache only a positive capability result. A transient false result can mean

@@ -30,6 +30,7 @@ import {
 } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import {
+  ContentUpdateNotice,
   PHONE_PAGE_MARGIN,
   createAppTitleBarStyle,
   pageContentTop
@@ -109,7 +110,7 @@ struct ScpArticlePage {
   @Local private routeErrorMessage: string = '';
   @Local private partialNoticeVisible: boolean = false;
   @Local private partialRefreshing: boolean = false;
-  @Local private partialErrorMessage: string = '';
+  @Local private partialUpdateFailed: boolean = false;
   @Local private expandedKeys: string[] = [];
   @Local private previewVisible: boolean = false;
   @Local private previewIndex: number = 0;
@@ -158,7 +159,7 @@ struct ScpArticlePage {
       this.errorMessage = this.routeErrorMessage;
       this.partialNoticeVisible = false;
       this.partialRefreshing = false;
-      this.partialErrorMessage = '';
+      this.partialUpdateFailed = false;
       this.pendingHtml = '';
       this.pendingSourceUrl = '';
       this.activeExtractionRequestId = 0;
@@ -185,7 +186,7 @@ struct ScpArticlePage {
     this.partialRefreshing = partial &&
       (vm.state === ViewModelLoadState.REFRESHING ||
         (vm.state === ViewModelLoadState.LOADING && vm.error === undefined));
-    this.partialErrorMessage = vm.error?.message ?? '';
+    this.partialUpdateFailed = partial && vm.error !== undefined;
     this.errorMessage = this.routeErrorMessage.length > 0 ? this.routeErrorMessage :
       (partial ? '' : vm.error?.message ?? '');
     this.readingPercent = vm.readingPercent;
@@ -227,7 +228,7 @@ struct ScpArticlePage {
     this.errorMessage = '';
     this.partialNoticeVisible = false;
     this.partialRefreshing = false;
-    this.partialErrorMessage = '';
+    this.partialUpdateFailed = false;
     this.pendingHtml = '';
     this.pendingSourceUrl = '';
     this.activeExtractionRequestId = 0;
@@ -639,36 +640,13 @@ struct ScpArticlePage {
 
   @Builder
   private partialNotice() {
-    Row({ space: 8 }) {
-      SymbolGlyph(this.partialRefreshing ? $r('sys.symbol.clock') :
-        $r('sys.symbol.exclamationmark_circle'))
-        .fontSize(17)
-        .fontColor([$r('sys.color.icon_secondary')])
-      Column({ space: 2 }) {
-        Text(this.partialRefreshing ? '正在更新正文…' : '当前显示缓存正文')
-          .fontSize(13)
-          .fontColor($r('sys.color.font_secondary'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (!this.partialRefreshing && this.partialErrorMessage.length > 0) {
-          Text(this.partialErrorMessage)
-            .fontSize(12)
-            .fontColor($r('sys.color.font_tertiary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-        }
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-      Button('重试', { stateEffect: false })
-        .height(32)
-        .enabled(!this.partialRefreshing)
-        .onClick(() => this.retryArticle())
-    }
-    .width('100%')
-    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
-    .backgroundColor($r('sys.color.comp_background_tertiary'))
-    .borderRadius(12)
+    ContentUpdateNotice({
+      message: this.partialUpdateFailed ? '更新失败，仍可阅读缓存正文' : '当前显示缓存正文',
+      updating: this.partialRefreshing,
+      updatingMessage: '正在更新正文…',
+      onRetry: () => this.retryArticle()
+    })
+      .margin({ top: 8, bottom: 12 })
   }
 
   build() {
@@ -682,7 +660,7 @@ struct ScpArticlePage {
                   .width(32)
                   .height(32)
                   .color($r('sys.color.icon_emphasize'))
-                Text(this.parsing ? '正在整理档案内容…' : '正在加载档案…')
+                Text(this.parsing ? '正在整理正文…' : '正在加载正文…')
                   .fontSize(14)
                   .fontColor($r('sys.color.font_secondary'))
               }
