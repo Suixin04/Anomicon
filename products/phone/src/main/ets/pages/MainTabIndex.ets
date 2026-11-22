@@ -82,6 +82,8 @@ export struct MainTabIndex {
   /** 故事筛选只在首页会话内共享给筛选栏和列表。 */
   @Local private taleFilterState: TaleFilterState = new TaleFilterState();
   @Local private completionRevision: number = 0;
+  // 顶部栏跟随页签选中；页面激活和滚动绑定仍等切页完成。
+  @Local private titleTabIndex: number = HomeTabId.EXPLORE;
   private readingHistoryUnsubscribe: (() => void) | undefined = undefined;
   @Local private tabsViewModel: TabsViewModel = new TabsViewModel({
     onCatalogSearch: () => this.openCatalogSearchMenu(),
@@ -175,16 +177,15 @@ export struct MainTabIndex {
 
   /** 当前 Tab 是否有标题栏底部工具栏。 */
   private hasToolbar(): boolean {
-    return this.tabsViewModel.currentIndex === HomeTabId.CATALOG ||
-      this.tabsViewModel.currentIndex === HomeTabId.STORY;
+    return this.titleTabIndex === HomeTabId.CATALOG || this.titleTabIndex === HomeTabId.STORY;
   }
 
   /** 工具栏高度：图鉴 chips 行 48vp；故事搜索框+字母索引 88vp。 */
   private toolbarHeight(): number {
-    if (this.tabsViewModel.currentIndex === HomeTabId.CATALOG) {
+    if (this.titleTabIndex === HomeTabId.CATALOG) {
       return CATALOG_TOOLBAR_HEIGHT;
     }
-    if (this.tabsViewModel.currentIndex === HomeTabId.STORY) {
+    if (this.titleTabIndex === HomeTabId.STORY) {
       return TALE_FILTER_BAR_HEIGHT;
     }
     return 0;
@@ -206,9 +207,9 @@ export struct MainTabIndex {
   /** 标题栏底部工具栏内容：按当前 Tab 分发。 */
   @Builder
   private toolbarBuilder() {
-    if (this.tabsViewModel.currentIndex === HomeTabId.CATALOG) {
+    if (this.titleTabIndex === HomeTabId.CATALOG) {
       this.catalogToolbar()
-    } else if (this.tabsViewModel.currentIndex === HomeTabId.STORY) {
+    } else if (this.titleTabIndex === HomeTabId.STORY) {
       StoryFilterBar({
         state: this.taleFilterState,
         hapticEnabled: this.settings.hapticEnabled,
@@ -300,6 +301,11 @@ export struct MainTabIndex {
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
         }
       })
+      .onSelected((index: number) => {
+        if (index >= 0 && index < this.tabsViewModel.items.length) {
+          this.titleTabIndex = index;
+        }
+      })
       .onChange((index: number) => {
         if (this.tabsViewModel.select(index)) {
           this.hapticService.playSelection(this.settings.hapticEnabled);
@@ -311,11 +317,10 @@ export struct MainTabIndex {
       enableComponentSafeArea: false,
       content: {
         title: {
-          mainTitle: this.tabsViewModel.currentTab.title
+          mainTitle: this.tabsViewModel.items[this.titleTabIndex].title
         },
-        menu: this.tabsViewModel.currentTab.menu,
-        // 标题栏底部工具栏：图鉴系列 chips / 故事搜索框+字母索引。
-        // 随标题栏动态显隐一起上下移动（hideBottomBuilder: true）。
+        menu: this.tabsViewModel.items[this.titleTabIndex].menu,
+        // 图鉴系列 chips / 故事搜索框+字母索引；滚动隐藏标题时保持吸顶。
         bottomBuilder: this.hasToolbar() ? {
           builder: (): void => this.toolbarBuilder(),
           height: this.toolbarHeight()

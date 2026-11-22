@@ -8,7 +8,13 @@ import {
   LibraryContentKind,
   createLibraryContentRef
 } from 'library';
-import { pageContentTop, PHONE_PAGE_MARGIN } from 'anomiconbasic';
+import {
+  pageContentTop,
+  PHONE_PAGE_MARGIN,
+  PHONE_TAB_CONTENT_BOTTOM_SPACE,
+  PHONE_TAB_CONTENT_MAX_WIDTH,
+  PHONE_TAB_CONTENT_TOP_GAP
+} from 'anomiconbasic';
 import { ExploreCollectionMode } from '../../domain/ExploreContracts';
 import { ExploreHomeViewModel } from '../viewmodel/ExploreHomeViewModel';
 import { ExploreHeroAnchor } from './ExploreViewContracts';
@@ -134,17 +140,14 @@ export struct ExploreHome {
             onOpenCollection: (mode: ExploreCollectionMode) => this.onOpenCollection(mode),
             onRetry: () => this.retryJokes()
           })
-          Blank()
-            .width('100%')
-            .height(136)
         }
         .width('100%')
-        .constraintSize({ maxWidth: 680 })
+        .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
         .padding({
           left: PHONE_PAGE_MARGIN,
           right: PHONE_PAGE_MARGIN,
-          top: pageContentTop() + 12,
-          bottom: 24
+          top: pageContentTop() + PHONE_TAB_CONTENT_TOP_GAP,
+          bottom: PHONE_TAB_CONTENT_BOTTOM_SPACE
         })
       }
       .scrollable(ScrollDirection.Vertical)

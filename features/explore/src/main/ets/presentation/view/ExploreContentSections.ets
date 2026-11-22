@@ -6,7 +6,7 @@ import {
   isLibraryScpId
 } from 'library';
 import { ExploreCollectionMode } from '../../domain/ExploreContracts';
-import { AppTypography, SkeletonBlock } from 'anomiconbasic';
+import { AppTypography, ContentUpdateNotice, SkeletonBlock } from 'anomiconbasic';
 
 const PREVIEW_LIMIT: number = 6;
 
@@ -92,29 +92,32 @@ struct ExploreSectionLoadState {
       // made a legitimate empty response look like an endless request.
       this.emptyRows()
     } else if (this.loading || this.error.length > 0) {
-      Row({ space: 6 }) {
-        if (this.loading) {
-          LoadingProgress()
-            .width(14)
-            .height(14)
-            .color($r('sys.color.icon_secondary'))
-        }
-        Text(this.loading ? '正在更新' : this.error)
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_tertiary'))
-          .layoutWeight(1)
-          .maxLines(2)
-        if (!this.loading && this.error.length > 0) {
-          Text('重试')
-            .fontSize(AppTypography.CAPTION_L)
-            .fontColor($r('sys.color.font_emphasize'))
-            .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-            .onClick(() => this.onRetry())
-        }
-      }
-      .width('100%')
-      .padding({ left: 4, right: 4 })
+      ContentUpdateNotice({
+        message: this.error,
+        updating: this.loading,
+        onRetry: () => this.onRetry()
+      })
     }
+  }
+}
+
+@ComponentV2
+struct ExploreSectionHeading {
+  @Require @Param title: string;
+  @Require @Param description: string;
+
+  build() {
+    Column({ space: 4 }) {
+      Text(this.title)
+        .fontSize(AppTypography.TITLE_S)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('sys.color.font'))
+      Text(this.description)
+        .fontSize(AppTypography.CAPTION_L)
+        .fontColor($r('sys.color.font_secondary'))
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
   }
 }
 
@@ -176,16 +179,7 @@ export struct ExploreTopRatedSection {
 
   build() {
     Column({ space: 12 }) {
-      Column({ space: 2 }) {
-        Text('热门原创')
-          .fontSize(AppTypography.TITLE_S)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font'))
-        Text('SCP 中文主站高分内容')
-          .fontSize(AppTypography.CAPTION_L)
-          .fontColor($r('sys.color.font_secondary'))
-      }
-      .alignItems(HorizontalAlign.Start)
+      ExploreSectionHeading({ title: '热门原创', description: 'SCP 中文主站高分内容' })
 
       if (this.entries.length > 0) {
         Column() {
@@ -298,16 +292,7 @@ export struct ExploreMixedSection {
 
   build() {
     Column({ space: 12 }) {
-      Column({ space: 2 }) {
-        Text(this.title)
-          .fontSize(AppTypography.TITLE_S)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font'))
-        Text(this.description)
-          .fontSize(AppTypography.CAPTION_L)
-          .fontColor($r('sys.color.font_secondary'))
-      }
-      .alignItems(HorizontalAlign.Start)
+      ExploreSectionHeading({ title: this.title, description: this.description })
 
       if (this.items.length > 0) {
         Column() {

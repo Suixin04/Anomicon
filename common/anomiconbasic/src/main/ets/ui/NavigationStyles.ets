@@ -11,6 +11,10 @@ const MATERIAL_DOMAIN = 0x0000;
 const MATERIAL_TAG = 'AnomiconMaterial';
 
 export const PHONE_PAGE_MARGIN: number = 16;
+export const PHONE_TAB_CONTENT_MAX_WIDTH: number = 680;
+export const PHONE_TAB_CONTENT_TOP_GAP: number = 12;
+/** Scrollable tail reserved for the overlapping floating tab bar. */
+export const PHONE_TAB_CONTENT_BOTTOM_SPACE: number = 160;
 export const HDS_TITLE_BAR_HEIGHT_MINI: number = 56;
 const FALLBACK_STATUS_BAR_HEIGHT: number = 60;
 

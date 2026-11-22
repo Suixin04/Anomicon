@@ -1,0 +1,106 @@
+name: Anomicon release
+
+on:
+  push:
+    branches: [main]
+    paths: [AppScope/app.json5]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: anomicon-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      title: ${{ steps.metadata.outputs.title }}
+      asset: ${{ steps.metadata.outputs.asset }}
+      ready: ${{ steps.check.outputs.ready }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read version and generate release notes
+        id: metadata
+        env:
+          NOTES_FILE: ${{ runner.temp }}/anomicon-release-notes.md
+        run: node scripts/release-metadata.mjs "$NOTES_FILE"
+      - name: Skip existing releases and tags
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.metadata.outputs.tag }}
+        run: |
+          releases=$(gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq '.[].tag_name')
+          if git show-ref --verify --quiet "refs/tags/$TAG" || grep -Fxq -- "$TAG" <<< "$releases"; then
+            echo "Tag or release already exists: $TAG"
+          else
+            echo 'ready=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/upload-artifact@v4
+        if: steps.check.outputs.ready == 'true'
+        with:
+          name: release-notes
+          path: ${{ runner.temp }}/anomicon-release-notes.md
+          if-no-files-found: error
+
+  build:
+    needs: prepare
+    if: needs.prepare.outputs.ready == 'true'
+    runs-on: [self-hosted, harmonyos-api26]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Build unsigned phone HAP
+        env:
+          ASSET: ${{ needs.prepare.outputs.asset }}
+          OUTPUT_DIR: ${{ runner.temp }}/anomicon-${{ github.run_id }}-${{ github.run_attempt }}
+        shell: bash
+        run: |
+          : "${DEVECO_SDK_HOME:?Configure the API 26 SDK on the runner}"
+          command -v ohpm
+          command -v hvigorw
+          ohpm install --all
+          hvigorw --no-daemon --mode module -p module=phone@default -p product=default -p buildMode=release assembleHap
+          mkdir -p "$OUTPUT_DIR"
+          cp products/phone/build/default/outputs/default/phone-default-unsigned.hap "$OUTPUT_DIR/$ASSET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: phone-hap
+          path: ${{ runner.temp }}/anomicon-${{ github.run_id }}-${{ github.run_attempt }}/*.hap
+          if-no-files-found: error
+
+  release:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-notes
+          path: release-notes
+      - uses: actions/download-artifact@v4
+        with:
+          name: phone-hap
+          path: release-assets
+      - name: Create GitHub Release draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          TITLE: ${{ needs.prepare.outputs.title }}
+          ASSET: ${{ needs.prepare.outputs.asset }}
+        run: |
+          printf '\n> 附件为未签名 HAP，不能直接安装到真机。\n' >> release-notes/anomicon-release-notes.md
+          gh release create "$TAG" "release-assets/$ASSET" \
+            --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE" \
+            --notes-file release-notes/anomicon-release-notes.md --draft

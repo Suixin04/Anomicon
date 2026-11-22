@@ -5,7 +5,16 @@ import {
   LazyColumnLayout,
   LazyColumnLayoutAttribute
 } from '@kit.ArkUI';
-import { pageContentTop, AppTypography, SkeletonBlock } from 'anomiconbasic';
+import {
+  AppTypography,
+  ContentUpdateNotice,
+  pageContentTop,
+  PHONE_PAGE_MARGIN,
+  PHONE_TAB_CONTENT_BOTTOM_SPACE,
+  PHONE_TAB_CONTENT_MAX_WIDTH,
+  PHONE_TAB_CONTENT_TOP_GAP,
+  SkeletonBlock
+} from 'anomiconbasic';
 
 /**
  * 故事列表 View。所有缓存、网络和解析都由 TaleListViewModel 编排；此处
@@ -103,7 +112,8 @@ export struct TaleList {
     }
     .width('100%')
     .margin({ top: pageContentTop() + TALE_FILTER_BAR_HEIGHT })
-    .padding({ left: 16, right: 16, top: 16, bottom: 24 })
+    .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
+    .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, top: PHONE_TAB_CONTENT_TOP_GAP, bottom: 24 })
   }
 
   @Builder
@@ -125,24 +135,11 @@ export struct TaleList {
 
   @Builder
   private partialBlock() {
-    Row({ space: 8 }) {
-      SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
-        .fontSize(16)
-        .fontColor([$r('sys.color.icon_secondary')])
-      Text(this.viewModel.errorMessage)
-        .fontSize(13)
-        .fontColor($r('sys.color.font_secondary'))
-        .maxLines(2)
-        .textOverflow({ overflow: TextOverflow.Ellipsis })
-        .layoutWeight(1)
-      Button('重试', { stateEffect: false })
-        .fontSize(13)
-        .onClick(() => this.retryCurrent())
+    Column() {
+      ContentUpdateNotice({ message: this.viewModel.errorMessage, onRetry: () => this.retryCurrent() })
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 8, bottom: 8 })
-    .backgroundColor($r('sys.color.comp_background_tertiary'))
-    .borderRadius(8)
+    .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 8 })
   }
 
   @Builder
@@ -207,7 +204,7 @@ export struct TaleList {
   private topSpacer() {
     Blank()
       .width('100%')
-      .height(pageContentTop() + TALE_FILTER_BAR_HEIGHT)
+      .height(pageContentTop() + TALE_FILTER_BAR_HEIGHT + PHONE_TAB_CONTENT_TOP_GAP)
   }
 
   @Builder
@@ -232,7 +229,12 @@ export struct TaleList {
                   this.taleRow(row)
                 }
                 .width('100%')
-                .padding({ left: 16, right: 16, bottom: 8 })
+                .padding({
+                  left: PHONE_PAGE_MARGIN,
+                  right: PHONE_PAGE_MARGIN,
+                  // Keep the tab-bar inset in the last item, not a lazy-layout footer.
+                  bottom: row.index === this.viewModel.visibleTales.length - 1 ? PHONE_TAB_CONTENT_BOTTOM_SPACE : 8
+                })
               })
               .key((tale: CatalogTaleEntry) => tale.id)
               .virtualScroll()
@@ -241,6 +243,7 @@ export struct TaleList {
             this.listHeader()
           })
           .width('100%')
+          .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
         }
         .scrollable(ScrollDirection.Vertical)
         .scrollBar(BarState.Off)
