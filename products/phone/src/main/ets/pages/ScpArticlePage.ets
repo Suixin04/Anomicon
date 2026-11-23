@@ -604,7 +604,7 @@ struct ScpArticlePage {
     if (this.canOpenArchive3D()) {
       items.push({
         content: {
-          icon: $r('sys.symbol.puzzle'),
+          icon: $r('sys.symbol.viewfinder_3D'),
           label: '三维档案',
           action: () => this.openArchive3D()
         }

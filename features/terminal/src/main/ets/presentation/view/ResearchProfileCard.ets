@@ -220,7 +220,7 @@ export struct ResearchProfileCard {
       }
       GridCol({ span: 1 }) {
         ResearchStatisticItem({
-          symbol: $r('sys.symbol.list_book_fill'),
+          symbol: $r('sys.symbol.book_open_fill'),
           value: `${this.normalizedInteger(this.studiedCount)}`,
           label: '已研读'
         })
@@ -234,7 +234,7 @@ export struct ResearchProfileCard {
       }
       GridCol({ span: 1 }) {
         ResearchStatisticItem({
-          symbol: $r('sys.symbol.archivebox_fill'),
+          symbol: $r('sys.symbol.doc_text_badge_clock_fill'),
           value: this.historyReady ? `${this.normalizedInteger(this.historyCount)}` : '—',
           label: '记录'
         })

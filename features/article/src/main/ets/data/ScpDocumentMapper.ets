@@ -133,7 +133,9 @@ export class ScpDocumentMapper {
       const blocks = this.mapFootnoteBlocks(
         itemId,
         footnote.blocks,
-        `${itemId}:fn:${footnote.index}`
+        `${itemId}:fn:${footnote.index}`,
+        footnote.index,
+        footnote.id
       );
       // A Wikidot footnote may contain only indentation, anchors or a trailing
       // <br>.  Do not create an empty visual row for that payload.
@@ -387,15 +389,152 @@ export class ScpDocumentMapper {
    * reader-facing meaning and would otherwise render as blank lines above the
    * “返回正文” action. Keep only blocks with actual text/media content.
    */
-  private mapFootnoteBlocks(itemId: string, raw: RawBlock[], prefix: string): ScpContentBlock[] {
+  private mapFootnoteBlocks(
+    itemId: string,
+    raw: RawBlock[],
+    prefix: string,
+    footnoteIndex: number,
+    footnoteId: string
+  ): ScpContentBlock[] {
     const mapped = this.mapBlocksWithPrefix(itemId, raw, prefix);
+    const cleaned = this.stripDuplicateFootnoteIndex(mapped, footnoteIndex, footnoteId);
     const result: ScpContentBlock[] = [];
-    for (let index: number = 0; index < mapped.length; index++) {
-      if (this.hasReadableFootnoteBlock(mapped[index])) {
-        result.push(mapped[index]);
+    for (let index: number = 0; index < cleaned.length; index++) {
+      if (this.hasReadableFootnoteBlock(cleaned[index])) {
+        result.push(cleaned[index]);
       }
     }
     return result;
+  }
+
+  private footnoteIndexTokens(footnoteIndex: number, footnoteId: string): string[] {
+    const tokens: string[] = [];
+    if (Number.isFinite(footnoteIndex) && footnoteIndex > 0) {
+      tokens.push(String(Math.floor(footnoteIndex)));
+    }
+    const normalizedId = footnoteId.trim();
+    if (/^\d+$/.test(normalizedId) && tokens.indexOf(normalizedId) < 0) {
+      tokens.push(normalizedId);
+    }
+    return tokens;
+  }
+
+  private matchesStandaloneFootnoteToken(text: string, tokens: string[]): boolean {
+    const trimmed = text.trim();
+    for (let index: number = 0; index < tokens.length; index++) {
+      const token = tokens[index];
+      if (trimmed === token || trimmed === `${token}.` || trimmed === `${token}．` ||
+        trimmed === `${token}、` || trimmed === `${token}:` || trimmed === `[${token}]`) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private replaceLeadingSpanText(block: ScpContentBlock, nextFirstText: string): ScpContentBlock {
+    const updated: ScpTextSpan[] = [];
+    if (nextFirstText.length > 0) {
+      const first = block.spans[0];
+      updated.push(new ScpTextSpan(first.style, nextFirstText, first.target, first.referenceId));
+    }
+    for (let index: number = 1; index < block.spans.length; index++) {
+      updated.push(block.spans[index]);
+    }
+    return new ScpContentBlock(
+      block.key,
+      block.type,
+      this.trimSpanEdges(updated),
+      block.source,
+      block.caption,
+      block.level,
+      block.children
+    );
+  }
+
+  private dropFirstSpanAndTrimLeading(
+    block: ScpContentBlock,
+    stripPunctuation: boolean
+  ): ScpContentBlock {
+    const updated: ScpTextSpan[] = [];
+    for (let index: number = 1; index < block.spans.length; index++) {
+      const span = block.spans[index];
+      let text = span.text;
+      if (index === 1 && stripPunctuation) {
+        text = text.replace(/^\s*(?:\.(?!\d)|[．、:])\s*/, '');
+      }
+      if (text.length > 0) {
+        updated.push(new ScpTextSpan(span.style, text, span.target, span.referenceId));
+      }
+    }
+    return new ScpContentBlock(
+      block.key,
+      block.type,
+      this.trimSpanEdges(updated),
+      block.source,
+      block.caption,
+      block.level,
+      block.children
+    );
+  }
+
+  private stripDuplicateFootnoteIndex(
+    blocks: ScpContentBlock[],
+    footnoteIndex: number,
+    footnoteId: string
+  ): ScpContentBlock[] {
+    const tokens = this.footnoteIndexTokens(footnoteIndex, footnoteId);
+    if (tokens.length === 0 || blocks.length === 0) {
+      return blocks;
+    }
+
+    // 兼容旧缓存中被拆成独立段落的 Wikidot 回跳编号块（如 ["1"] + [". 文本"]）。
+    if (blocks.length >= 2 && blocks[0].type === ScpBlockType.PARAGRAPH &&
+      this.matchesStandaloneFootnoteToken(this.plainText(blocks[0]), tokens)) {
+      const rest = blocks.slice(1);
+      if (rest[0].type === ScpBlockType.PARAGRAPH && rest[0].spans.length > 0) {
+        const nextText = rest[0].spans[0].text.replace(/^\s*(?:\.(?!\d)|[．、:\]])\s*/, '');
+        rest[0] = this.replaceLeadingSpanText(rest[0], nextText);
+      }
+      return rest;
+    }
+
+    const first = blocks[0];
+    if (first.type !== ScpBlockType.PARAGRAPH || first.spans.length === 0) {
+      return blocks;
+    }
+
+    const lead = first.spans[0].text.trim();
+    if (first.spans.length >= 2) {
+      for (let index: number = 0; index < tokens.length; index++) {
+        const token = tokens[index];
+        if (lead === token && /^\s*(?:\.(?!\d)|[．、:])/.test(first.spans[1].text)) {
+          const next = blocks.slice();
+          next[0] = this.dropFirstSpanAndTrimLeading(first, true);
+          return next;
+        }
+        if (lead === `${token}.` || lead === `${token}．` ||
+          lead === `${token}、` || lead === `${token}:` || lead === `[${token}]`) {
+          const next = blocks.slice();
+          next[0] = this.dropFirstSpanAndTrimLeading(first, lead === `[${token}]`);
+          return next;
+        }
+      }
+    }
+
+    const rawFirstText = first.spans[0].text;
+    for (let index: number = 0; index < tokens.length; index++) {
+      const token = tokens[index];
+      const pattern = new RegExp(
+        `^\\s*(?:\\[${token}\\]\\s*(?:(?:\\.(?!\\d)|[．、:])\\s*|(?=\\S))|${token}\\s*(?:\\.(?!\\d)|[．、:])\\s*)`
+      );
+      if (pattern.test(rawFirstText)) {
+        const stripped = rawFirstText.replace(pattern, '');
+        const next = blocks.slice();
+        next[0] = this.replaceLeadingSpanText(first, stripped);
+        return next;
+      }
+    }
+    return blocks;
   }
 
   /** 嵌套层级各自携带父级前缀，保证块 key 全局唯一（ForEach key / 展开状态都依赖它）。 */
@@ -470,7 +609,12 @@ export class ScpDocumentMapper {
           result.push(new ScpTextSpan(ScpTextStyle.LINK, text, span.u ?? ''));
           break;
         case 'footnote':
-          result.push(new ScpTextSpan(ScpTextStyle.FOOTNOTE_REFERENCE, text.trim(), '', span.r ?? ''));
+          result.push(new ScpTextSpan(
+            ScpTextStyle.FOOTNOTE_REFERENCE,
+            this.normalizeFootnoteRefLabel(text),
+            '',
+            span.r ?? ''
+          ));
           break;
         default:
           result.push(new ScpTextSpan(ScpTextStyle.PLAIN, text));
@@ -520,15 +664,25 @@ export class ScpDocumentMapper {
       .replace(/\n{2,}/g, '\n');
   }
 
+  private normalizeFootnoteRefLabel(raw: string): string {
+    return raw.trim().replace(/^\[+|\]+$/g, '').trim();
+  }
+
   private trimSpanEdges(spans: ScpTextSpan[]): ScpTextSpan[] {
-    const result: ScpTextSpan[] = [];
+    const nonEmpty: ScpTextSpan[] = [];
     for (let index: number = 0; index < spans.length; index++) {
-      const span = spans[index];
+      if (spans[index].text.length > 0) {
+        nonEmpty.push(spans[index]);
+      }
+    }
+    const result: ScpTextSpan[] = [];
+    for (let index: number = 0; index < nonEmpty.length; index++) {
+      const span = nonEmpty[index];
       let text = span.text;
       if (index === 0) {
         text = text.replace(/^\s+/, '');
       }
-      if (index === spans.length - 1) {
+      if (index === nonEmpty.length - 1) {
         text = text.replace(/\s+$/, '');
       }
       if (text.length === 0) {

@@ -19,6 +19,7 @@ export enum FoundationKnowledgeSectionId {
 export enum FoundationKnowledgeIcon {
   FOUNDATION = 'foundation',
   CLASSIFICATION = 'classification',
+  ESOTERIC_CLASSIFICATION = 'esoteric_classification',
   CLEARANCE = 'clearance',
   TASK_FORCE = 'task_force',
   DEPARTMENT = 'department',
@@ -95,7 +96,7 @@ const ESOTERIC_CLASSES = new FoundationKnowledgeItem(
   'esoteric-classes-complete-list',
   '机密分级完整列表',
   '查阅非常规与叙事性项目等级，各分级并无固定高低之分',
-  FoundationKnowledgeIcon.CLASSIFICATION,
+  FoundationKnowledgeIcon.ESOTERIC_CLASSIFICATION,
   FoundationKnowledgeSectionId.SYSTEM,
   LibraryContentKind.KNOWLEDGE
 );

@@ -197,10 +197,11 @@ function __anomiconExtract() {
         }
         if (tag === 'sup' && cls.indexOf('footnoteref') >= 0) {
           var supLink = node.querySelector('a');
+          var supLabel = supLink ? supLink.textContent : '';
           result.push({
             s: 'footnote',
             r: supLink ? (supLink.id || '').replace('footnoteref-', '') : '',
-            t: supLink ? supLink.textContent.trim() : ''
+            t: supLabel.trim().replace(/^\[+|\]+$/g, '').trim()
           });
           return;
         }
@@ -209,7 +210,7 @@ function __anomiconExtract() {
             result.push({
               s: 'footnote',
               r: (node.id || '').replace('footnoteref-', ''),
-              t: node.textContent.trim()
+              t: (node.textContent || '').trim().replace(/^\[+|\]+$/g, '').trim()
             });
             return;
           }
@@ -316,15 +317,20 @@ function __anomiconExtract() {
 
     function walkBlocks(root, blocks) {
       for (var node = root.firstChild; node; node = node.nextSibling) {
+        walkBlockNode(node, blocks);
+      }
+    }
+
+    function walkBlockNode(node, blocks) {
         if (node.nodeType === 3) {
           var rawText = node.nodeValue;
           if (rawText && rawText.trim().length > 0) {
             blocks.push({ k: 'paragraph', spans: [{ s: 'plain', t: rawText }] });
           }
-          continue;
+          return;
         }
         if (node.nodeType !== 1) {
-          continue;
+          return;
         }
         var tag = node.tagName.toLowerCase();
         var cls = classOf(node);
@@ -336,10 +342,10 @@ function __anomiconExtract() {
           cls.indexOf('footnotes-footer') >= 0 ||
           // 「« SCP-001 | SCP-002 | SCP-003 »」前一篇/后一篇系列导航。
           cls.indexOf('footer-wikiwalk-nav') >= 0) {
-          continue;
+          return;
         }
         if (tag === 'style' || tag === 'script' || tag === 'noscript') {
-          continue;
+          return;
         }
         if (cls.indexOf('list-pages-box') >= 0) {
           var blockCountBefore = blocks.length;
@@ -348,11 +354,11 @@ function __anomiconExtract() {
           if (blocks.length > blockCountBefore || out.images.length > imageCountBefore) {
             addWarning('compat:list-pages-box-content');
           }
-          continue;
+          return;
         }
         if (tag === 'ul' || tag === 'ol') {
           walkList(node, blocks, 0);
-          continue;
+          return;
         }
         if (tag === 'pre') {
           var preText = node.textContent || '';
@@ -360,28 +366,28 @@ function __anomiconExtract() {
             blocks.push({ k: 'paragraph', spans: [{ s: 'code', t: preText }] });
           }
           addWarning('degraded:pre-layout');
-          continue;
+          return;
         }
         if (tag === 'p') {
           var pSpans = spansOf(node);
           if (pSpans.length > 0) {
             blocks.push({ k: 'paragraph', spans: pSpans });
           }
-          continue;
+          return;
         }
         if (/^h[1-6]$/.test(tag)) {
           blocks.push({ k: 'heading', level: parseInt(tag.charAt(1), 10), spans: spansOf(node) });
-          continue;
+          return;
         }
         if (tag === 'blockquote') {
           var quoteBlocks = [];
           walkBlocks(node, quoteBlocks);
           blocks.push({ k: 'quote', blocks: quoteBlocks });
-          continue;
+          return;
         }
         if (tag === 'hr') {
           blocks.push({ k: 'divider' });
-          continue;
+          return;
         }
         if (tag === 'table') {
           var rows = [];
@@ -395,15 +401,15 @@ function __anomiconExtract() {
             rows.push({ k: 'row', blocks: cells });
           }
           blocks.push({ k: 'table', blocks: rows });
-          continue;
+          return;
         }
         if (tag === 'iframe') {
           var frameSrc = node.getAttribute('src') || '';
           if (frameSrc.indexOf('interwikiFrame') >= 0 || frameSrc.indexOf('styleFrame') >= 0) {
-            continue;
+            return;
           }
           blocks.push({ k: 'embed', src: frameSrc });
-          continue;
+          return;
         }
         if (tag === 'div' && cls.indexOf('scp-image-block') >= 0) {
           var imgEl = node.querySelector('img');
@@ -412,7 +418,7 @@ function __anomiconExtract() {
           if (imgEl) {
             recordImage(imgEl, caption);
           }
-          continue;
+          return;
         }
         if (tag === 'div' && cls.indexOf('collapsible-block') >= 0) {
           var linkEl = node.querySelector('.collapsible-block-link');
@@ -427,22 +433,21 @@ function __anomiconExtract() {
             title: linkEl ? linkEl.textContent.trim() : '',
             blocks: innerBlocks
           });
-          continue;
+          return;
         }
         if (tag === 'div') {
           walkBlocks(node, blocks);
-          continue;
+          return;
         }
         if (tag === 'audio' || tag === 'video' || tag === 'canvas' || tag === 'svg' ||
           tag === 'object' || tag === 'math') {
           unsupportedFallback(node, tag, blocks);
-          continue;
+          return;
         }
         var fallbackSpans = spansOf(node);
         if (fallbackSpans.length > 0) {
           blocks.push({ k: 'paragraph', spans: fallbackSpans });
         }
-      }
     }
 
     // `blocks.length > 0` 不能代表正文解析成功：空标题、空表格、空折叠块和
@@ -492,6 +497,92 @@ function __anomiconExtract() {
       return false;
     }
 
+    function isFootnoteBacklink(node) {
+      if (!node || node.nodeType !== 1 || node.tagName.toLowerCase() !== 'a') {
+        return false;
+      }
+      var onclick = (node.getAttribute('onclick') || '').toLowerCase();
+      if (onclick.indexOf('scrolltoreference') >= 0) {
+        return true;
+      }
+      var href = (node.getAttribute('href') || '').trim().toLowerCase();
+      var label = (node.textContent || '').trim();
+      return href === 'javascript:;' && /^\[?\d+\]?\.?$/.test(label);
+    }
+
+    function isFootnoteBlockTag(tag) {
+      if (/^h[1-6]$/.test(tag)) {
+        return true;
+      }
+      return tag === 'p' || tag === 'div' || tag === 'section' || tag === 'article' ||
+        tag === 'blockquote' || tag === 'ul' || tag === 'ol' || tag === 'table' ||
+        tag === 'pre' || tag === 'hr' || tag === 'iframe' || tag === 'audio' ||
+        tag === 'video' || tag === 'canvas' || tag === 'svg' || tag === 'object' ||
+        tag === 'math';
+    }
+
+    function parseFootnoteItem(item, itemBlocks) {
+      var wrapper = document.createElement('span');
+      var seenContent = false;
+      var strippedBacklink = false;
+
+      function flushInline() {
+        if (!wrapper.firstChild) {
+          return;
+        }
+        var pSpans = spansOf(wrapper);
+        if (pSpans.length > 0) {
+          itemBlocks.push({ k: 'paragraph', spans: pSpans });
+        }
+        while (wrapper.firstChild) {
+          wrapper.removeChild(wrapper.firstChild);
+        }
+      }
+
+      for (var node = item.firstChild; node; node = node.nextSibling) {
+        if (!seenContent && node.nodeType === 3) {
+          var raw = node.nodeValue || '';
+          if (raw.trim().length === 0) {
+            continue;
+          }
+          if (strippedBacklink) {
+            raw = raw.replace(/^\s*[.．、:]\s*/, '');
+            strippedBacklink = false;
+            if (raw.trim().length === 0) {
+              continue;
+            }
+          }
+          seenContent = true;
+          wrapper.appendChild(document.createTextNode(raw));
+          continue;
+        }
+        if (node.nodeType !== 1) {
+          continue;
+        }
+        var tag = node.tagName.toLowerCase();
+        if (!seenContent && isFootnoteBacklink(node)) {
+          strippedBacklink = true;
+          continue;
+        }
+        if (!seenContent && tag === 'br') {
+          continue;
+        }
+        if (isFootnoteBlockTag(tag)) {
+          flushInline();
+          strippedBacklink = false;
+          seenContent = true;
+          walkBlockNode(node, itemBlocks);
+          continue;
+        }
+        strippedBacklink = false;
+        if (tag === 'img' || tag === 'br' || readableTextOf(node).trim().length > 0) {
+          seenContent = true;
+        }
+        wrapper.appendChild(node.cloneNode(true));
+      }
+      flushInline();
+    }
+
     walkBlocks(pc, out.blocks);
 
     var footnotesBox = pc.querySelector('.footnotes-footer');
@@ -500,7 +591,7 @@ function __anomiconExtract() {
       for (var f = 0; f < footItems.length; f++) {
         var item = footItems[f];
         var itemBlocks = [];
-        walkBlocks(item, itemBlocks);
+        parseFootnoteItem(item, itemBlocks);
         out.footnotes.push({
           id: (item.id || '').replace('footnote-', ''),
           index: f + 1,

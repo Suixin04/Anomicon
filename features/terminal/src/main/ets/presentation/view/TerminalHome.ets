@@ -151,21 +151,23 @@ export struct TerminalHome {
   private knowledgeIcon(icon: FoundationKnowledgeIcon): Resource {
     switch (icon) {
       case FoundationKnowledgeIcon.CLASSIFICATION:
-        return $r('sys.symbol.list_book_fill');
+        return $r('sys.symbol.square_fill_grid_2x2');
+      case FoundationKnowledgeIcon.ESOTERIC_CLASSIFICATION:
+        return $r('sys.symbol.exclamationmark_shield_fill');
       case FoundationKnowledgeIcon.CLEARANCE:
-        return $r('sys.symbol.lock_fill');
+        return $r('sys.symbol.person_text_rectangle_fill');
       case FoundationKnowledgeIcon.TASK_FORCE:
-        return $r('sys.symbol.person_2_badge_flag_fill');
+        return $r('sys.symbol.bolt_shield_fill');
       case FoundationKnowledgeIcon.DEPARTMENT:
-        return $r('sys.symbol.building_fill');
+        return $r('sys.symbol.rectangle_4_group_fill');
       case FoundationKnowledgeIcon.FACILITY:
-        return $r('sys.symbol.building');
+        return $r('sys.symbol.local_and_rectangle_fill');
       case FoundationKnowledgeIcon.GROUP:
-        return $r('sys.symbol.person_2');
+        return $r('sys.symbol.person_3_fill');
       case FoundationKnowledgeIcon.HISTORY:
-        return $r('sys.symbol.clock_fill');
+        return $r('sys.symbol.clock_arrow_2_circlepath_fill');
       default:
-        return $r('sys.symbol.company_fill');
+        return $r('sys.symbol.lock_shield_fill');
     }
   }
 

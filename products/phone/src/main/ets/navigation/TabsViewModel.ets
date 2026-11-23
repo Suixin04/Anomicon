@@ -90,7 +90,7 @@ export class TabsViewModel {
         },
         {
           content: {
-            icon: $r('sys.symbol.puzzle'),
+            icon: $r('sys.symbol.viewfinder_3D'),
             label: '三维档案馆',
             action: archive3DAction
           }

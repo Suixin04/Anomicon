@@ -127,8 +127,11 @@ export class ScpNativeHtmlParser {
       if (footnotes.length > 0) {
         const items = ScpNativeHtmlParser.byClass(footnotes[0], 'footnote-footer');
         for (let index: number = 0; index < items.length; index++) {
-          const itemBlocks: NativeBlock[] = [];
-          ScpNativeHtmlParser.walkBlocks(items[index], itemBlocks, out.images, out.warnings);
+          const itemBlocks = ScpNativeHtmlParser.parseFootnoteBlocks(
+            items[index],
+            out.images,
+            out.warnings
+          );
           const itemId = ScpNativeHtmlParser.attr(items[index], 'id')
             .replace(/^footnote-/i, '');
           out.footnotes.push({ id: itemId, index: index + 1, blocks: itemBlocks });
@@ -449,13 +452,19 @@ export class ScpNativeHtmlParser {
         const link = ScpNativeHtmlParser.descendantsByTag(current, 'a');
         const footnote = link.length > 0 ? link[0] : current;
         const id = ScpNativeHtmlParser.attr(footnote, 'id').replace(/^footnoteref-/i, '');
-        append('footnote', ScpNativeHtmlParser.textContent(footnote).trim(), '', id);
+        const label = ScpNativeHtmlParser.normalizeFootnoteRefLabel(
+          ScpNativeHtmlParser.textContent(footnote)
+        );
+        append('footnote', label, '', id);
         return;
       }
       if (current.tag === 'a') {
         if (currentClass.indexOf(' footnoteref ') >= 0) {
           const id = ScpNativeHtmlParser.attr(current, 'id').replace(/^footnoteref-/i, '');
-          append('footnote', ScpNativeHtmlParser.textContent(current).trim(), '', id);
+          const label = ScpNativeHtmlParser.normalizeFootnoteRefLabel(
+            ScpNativeHtmlParser.textContent(current)
+          );
+          append('footnote', label, '', id);
           return;
         }
         const href = ScpNativeHtmlParser.attr(current, 'href');
@@ -573,17 +582,130 @@ export class ScpNativeHtmlParser {
     ScpNativeHtmlParser.warning(warnings, `unsupported:${node.tag}`);
   }
 
+  private static normalizeFootnoteRefLabel(raw: string): string {
+    return raw.trim().replace(/^\[+|\]+$/g, '').trim();
+  }
+
+  private static isFootnoteBacklink(node: HtmlNode): boolean {
+    if (node.tag !== 'a') {
+      return false;
+    }
+    const onclick = ScpNativeHtmlParser.attr(node, 'onclick').toLowerCase();
+    if (onclick.indexOf('scrolltoreference') >= 0) {
+      return true;
+    }
+    const href = ScpNativeHtmlParser.attr(node, 'href').trim().toLowerCase();
+    const label = ScpNativeHtmlParser.textContent(node).trim();
+    return href === 'javascript:;' && /^\[?\d+\]?\.?$/.test(label);
+  }
+
+  private static isFootnoteBlockTag(tag: string): boolean {
+    if (/^h[1-6]$/.test(tag)) {
+      return true;
+    }
+    return tag === 'p' || tag === 'div' || tag === 'section' || tag === 'article' ||
+      tag === 'blockquote' || tag === 'ul' || tag === 'ol' || tag === 'table' ||
+      tag === 'pre' || tag === 'hr' || tag === 'iframe' || tag === 'audio' ||
+      tag === 'video' || tag === 'canvas' || tag === 'svg' || tag === 'object' ||
+      tag === 'math';
+  }
+
+  /**
+   * Parse one `.footnote-footer` container while stripping Wikidot's leading
+   * backlink anchor and keeping inline siblings in a single paragraph block.
+   */
+  private static parseFootnoteBlocks(
+    item: HtmlNode,
+    images: NativeImage[],
+    warnings: string[]
+  ): NativeBlock[] {
+    const blocks: NativeBlock[] = [];
+    let inlineNodes: HtmlNode[] = [];
+    let seenContent = false;
+    let strippedBacklink = false;
+
+    const flushInline = (): void => {
+      if (inlineNodes.length === 0) {
+        return;
+      }
+      const wrapper = new HtmlNode('span');
+      for (let index: number = 0; index < inlineNodes.length; index++) {
+        wrapper.children.push(inlineNodes[index]);
+      }
+      const spans = ScpNativeHtmlParser.inlineSpans(wrapper, images, warnings);
+      if (spans.length > 0) {
+        blocks.push({ k: 'paragraph', spans: spans });
+      }
+      inlineNodes = [];
+    };
+
+    for (let index: number = 0; index < item.children.length; index++) {
+      const child = item.children[index];
+      if (!seenContent && child.tag === '#text') {
+        if (child.text.trim().length === 0) {
+          continue;
+        }
+        let text = child.text;
+        if (strippedBacklink) {
+          text = text.replace(/^\s*[.．、:]\s*/, '');
+          strippedBacklink = false;
+          if (text.trim().length === 0) {
+            continue;
+          }
+        }
+        const cleaned = new HtmlNode('#text');
+        cleaned.text = text;
+        seenContent = true;
+        inlineNodes.push(cleaned);
+        continue;
+      }
+      if (!seenContent && ScpNativeHtmlParser.isFootnoteBacklink(child)) {
+        strippedBacklink = true;
+        continue;
+      }
+      if (!seenContent && child.tag === 'br') {
+        continue;
+      }
+      if (ScpNativeHtmlParser.isFootnoteBlockTag(child.tag)) {
+        flushInline();
+        strippedBacklink = false;
+        seenContent = true;
+        ScpNativeHtmlParser.walkBlockChild(child, blocks, images, warnings);
+        continue;
+      }
+      strippedBacklink = false;
+      if (child.tag !== '#text' || child.text.trim().length > 0 || seenContent) {
+        if (child.tag === 'img' || child.tag === 'br' ||
+          ScpNativeHtmlParser.textContent(child).trim().length > 0) {
+          seenContent = true;
+        }
+        inlineNodes.push(child);
+      }
+    }
+    flushInline();
+    return blocks;
+  }
+
   private static walkBlocks(node: HtmlNode, blocks: NativeBlock[], images: NativeImage[], warnings: string[]): void {
     for (let index: number = 0; index < node.children.length; index++) {
-      const child = node.children[index];
+      ScpNativeHtmlParser.walkBlockChild(node.children[index], blocks, images, warnings);
+    }
+  }
+
+  private static walkBlockChild(
+    child: HtmlNode,
+    blocks: NativeBlock[],
+    images: NativeImage[],
+    warnings: string[]
+  ): void {
       if (child.tag === '#text') {
         if (child.text.trim().length > 0) {
           blocks.push({ k: 'paragraph', spans: [{ s: 'plain', t: child.text }] });
         }
-        continue;
+        return;
       }
       if (ScpNativeHtmlParser.hasNoiseId(child)) {
-        continue;
+        return;
       }
       const classNames = ScpNativeHtmlParser.classes(child);
       let skipped = false;
@@ -594,12 +716,12 @@ export class ScpNativeHtmlParser {
         }
       }
       if (skipped || child.tag === 'style' || child.tag === 'script' || child.tag === 'noscript') {
-        continue;
+        return;
       }
       if (classNames.indexOf(' list-pages-box ') >= 0) {
         ScpNativeHtmlParser.walkBlocks(child, blocks, images, warnings);
         ScpNativeHtmlParser.warning(warnings, 'compat:list-pages-box-content');
-        continue;
+        return;
       }
       if (child.tag === 'ul' || child.tag === 'ol') {
         ScpNativeHtmlParser.walkList(child, blocks, images, warnings, 0);
@@ -671,7 +793,6 @@ export class ScpNativeHtmlParser {
           blocks.push({ k: 'paragraph', spans: spans });
         }
       }
-    }
   }
 
   private static hasReadableBlocks(blocks: NativeBlock[]): boolean {

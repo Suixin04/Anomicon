@@ -283,7 +283,7 @@ export struct SettingsPage {
         .color($r('sys.color.comp_divider'))
 
       Row({ space: 12 }) {
-        this.settingIcon($r('sys.symbol.hand_tap'))
+        this.settingIcon($r('sys.symbol.hand_tap_wave_2'))
         Text('触感反馈')
           .fontSize(AppTypography.BODY_L)
           .fontWeight(FontWeight.Medium)
@@ -303,7 +303,7 @@ export struct SettingsPage {
         .color($r('sys.color.comp_divider'))
 
       Row({ space: 12 }) {
-        this.settingIcon($r('sys.symbol.wand_and_stars'))
+        this.settingIcon($r('sys.symbol.square_stack_3d'))
         Text('沉浸光感')
           .fontSize(AppTypography.BODY_L)
           .fontWeight(FontWeight.Medium)
@@ -434,7 +434,7 @@ export struct SettingsPage {
   private lineHeightCard() {
     Column({ space: 14 }) {
       SettingsSliderHeader({
-        icon: $r('sys.symbol.line_3_horizontal'),
+        icon: $r('sys.symbol.text_arrow_up_and_down'),
         title: '阅读行距',
         value: this.lineHeightDraft,
         fractionDigits: 3,
@@ -533,7 +533,7 @@ export struct SettingsPage {
 
       this.divider()
       this.informationRow(
-        $r('sys.symbol.law'),
+        $r('sys.symbol.doc_text_badge_checkmark'),
         '内容来源与许可',
         'CC BY-SA 3.0 授权使用',
         () => this.openPage(SettingsNavigationTarget.CONTENT_LICENSE),

@@ -700,7 +700,7 @@ export struct ArticleNativeRenderer {
           .fontColor($r('sys.color.font'))
           .width('100%')
         ForEach(this.footnoteRows, (row: ArticleFootnoteRowState) => {
-          Row() {
+          Row({ space: 6 }) {
             Text(`${row.footnote.index}.`)
               .fontSize(this.fontSize)
               .fontWeight(FontWeight.Bold)

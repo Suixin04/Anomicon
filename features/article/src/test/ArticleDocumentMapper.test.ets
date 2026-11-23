@@ -264,5 +264,51 @@ export default function articleDocumentMapperTest(): void {
       expect(document.tags.length).assertEqual(1);
       expect(document.tags[0]).assertEqual('搞笑');
     });
+
+    it('strips Wikidot footnote backlink numbering and keeps inline spans together', 0, () => {
+      const html = '<div id="page-title">SCP-049</div>' +
+        '<div id="page-content"><p>正文中引用<sup class="footnoteref">' +
+        '<a id="footnoteref-1" href="javascript:;">[1]</a></sup>。</p>' +
+        '<div class="footnotes-footer"><div class="footnote-footer" id="footnote-1">' +
+        '<a href="javascript:;" onclick="WIKIDOT.page.utils.scrollToReference(\'footnoteref-1\')">1</a>' +
+        '. 脚注<em>正文</em>内容</div></div></div>';
+      const payload = ScpNativeHtmlParser.parse(html);
+      expect(payload.ok).assertTrue();
+      const document = createArticleDocumentParser().parse(
+        JSON.stringify(payload),
+        'https://scp-wiki-cn.wikidot.com/scp-049',
+        1_700_000_000_000
+      );
+      expect(document.blocks[0].spans[1].text).assertEqual('1');
+      expect(document.footnotes.length).assertEqual(1);
+      expect(document.footnotes[0].blocks.length).assertEqual(1);
+      expect(document.footnotes[0].blocks[0].spans.length).assertEqual(3);
+      expect(document.footnotes[0].blocks[0].spans[0].text).assertEqual('脚注');
+      expect(document.footnotes[0].blocks[0].spans[1].text).assertEqual('正文');
+      expect(document.footnotes[0].blocks[0].spans[2].text).assertEqual('内容');
+    });
+
+    it('deduplicates legacy cached footnote numbering without harming plain numbers', 0, () => {
+      const parser = createArticleDocumentParser();
+      const payload = '{"parserVersion":5,"ok":true,"error":"","title":"SCP-049",' +
+        '"rating":"","pageVersion":"","tags":[],"images":[],' +
+        '"blocks":[{"k":"paragraph","spans":[{"s":"footnote","t":"[1]","r":"1"}]}],' +
+        '"footnotes":[' +
+        '{"id":"1","index":1,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"1"}]},{"k":"paragraph","spans":[{"s":"plain","t":". 旧缓存拆分脚注"}]}]},' +
+        '{"id":"2","index":2,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"2. 旧缓存同行脚注"}]}]},' +
+        '{"id":"3","index":3,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"2024年记录不应被裁掉"}]}]}' +
+        '],"warnings":[]}';
+      const document = parser.parse(
+        payload,
+        'https://scp-wiki-cn.wikidot.com/scp-049',
+        1_700_000_000_000
+      );
+      expect(document.blocks[0].spans[0].text).assertEqual('1');
+      expect(document.footnotes.length).assertEqual(3);
+      expect(document.footnotes[0].blocks.length).assertEqual(1);
+      expect(document.footnotes[0].blocks[0].spans[0].text).assertEqual('旧缓存拆分脚注');
+      expect(document.footnotes[1].blocks[0].spans[0].text).assertEqual('旧缓存同行脚注');
+      expect(document.footnotes[2].blocks[0].spans[0].text).assertEqual('2024年记录不应被裁掉');
+    });
   });
 }

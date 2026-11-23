@@ -202,7 +202,7 @@ export struct ScpCatalogCard {
             .layoutWeight(1)
           if (this.show3DModel) {
             Row({ space: 3 }) {
-              SymbolGlyph($r('sys.symbol.puzzle'))
+              SymbolGlyph($r('sys.symbol.viewfinder_3D'))
                 .fontSize(12)
                 .fontColor(['#FFFFFF']);
               Text('3D')
