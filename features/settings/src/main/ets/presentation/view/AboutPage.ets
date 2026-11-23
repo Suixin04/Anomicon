@@ -87,7 +87,7 @@ export struct AboutPage {
               .fontWeight(FontWeight.Medium)
               .fontColor($r('sys.color.font'))
             AppBodyText({
-              content: '“格异录”与SCP Wiki、SCP基金会虚构设定及相关创作者不存在隶属、授权背书或认可关系。',
+              content: '格异录是一款非官方社区阅读应用，与 SCP Wiki 不存在隶属、合作或认可关系。应用内呈现的条目文本与模型素材均归各自创作者所有。',
               color: $r('sys.color.font_secondary')
             })
           }

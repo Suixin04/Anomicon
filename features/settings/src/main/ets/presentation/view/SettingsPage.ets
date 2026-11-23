@@ -355,7 +355,7 @@ export struct SettingsPage {
         .fontWeight(FontWeight.Medium)
         .fontColor($r('sys.color.font_secondary'))
       ReadingBodyText({
-        content: '项目应被妥善收容于指定区域。',
+        content: '项目须始终收容于上锁的标准收容室内。',
         fontSize: this.fontSizeDraft,
         lineHeightMultiple: this.lineHeightDraft,
         color: $r('sys.color.font_primary'),
@@ -376,12 +376,12 @@ export struct SettingsPage {
   @Builder
   private lineHeightPreview() {
     Column({ space: 4 }) {
-      Text('档案正文 · 行距预览')
+      Text('观测协议 · 节选')
         .fontSize(AppTypography.CAPTION_L)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('sys.color.font_secondary'))
       ReadingBodyText({
-        content: '保持直接视线接触。\n未经授权不得进入收容区域。',
+        content: '进入收容室的人员不得少于三人，\n且须在离开前始终保持直接视线接触。',
         fontSize: this.fontSizeDraft,
         lineHeightMultiple: this.lineHeightDraft,
         color: $r('sys.color.font_primary'),

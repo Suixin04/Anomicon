@@ -174,7 +174,7 @@ struct Scp3DArchiveGalleryPage {
   private statusLabel(entry: Scp3DAssetManifestEntry): string {
     switch (this.currentState(entry)) {
       case Scp3DArchiveInstallState.BUNDLED:
-        return '随应用内置';
+        return '已内置';
       case Scp3DArchiveInstallState.READY:
         return '已下载';
       case Scp3DArchiveInstallState.QUEUED:

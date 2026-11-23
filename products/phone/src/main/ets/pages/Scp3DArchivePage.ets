@@ -156,13 +156,13 @@ struct Scp3DArchivePage {
 
     const route: Scp3DArchiveRouteParams | undefined = parseScp3DArchiveRoute(param);
     if (route === undefined || route.content.kind !== LibraryContentKind.SCP) {
-      this.errorMessage = '三维档案参数无效，请从 SCP 对象文章页重新进入。';
+      this.errorMessage = '三维档案参数无效，请从 SCP 档案页重新进入。';
       return;
     }
     const content = route.content;
     const resolved = resolveScp3DModelAsset(content.id, content.title);
     if (resolved === undefined) {
-      this.errorMessage = '此 SCP 对象暂无三维模型。';
+      this.errorMessage = '该项目暂无三维档案。';
       return;
     }
     this.routeResolved = true;
@@ -224,7 +224,7 @@ struct Scp3DArchivePage {
       const message = error instanceof Error ? error.message : '';
       this.errorMessage = message.indexOf('尚未下载') >= 0 ||
         message.indexOf('未安装') >= 0 ?
-        '此模型尚未下载，请先在三维档案馆安装。' :
+        '该模型尚未下载，请先前往三维档案馆获取。' :
         '三维模型暂时无法加载，请稍后重试。';
     } finally {
       this.sceneLoadHint.end();
@@ -531,19 +531,52 @@ struct Scp3DArchivePage {
     return `${(this.asset.byteLength / 1024).toFixed(0)} KB`;
   }
 
+  private stageObjectClassLabel(): string {
+    return this.asset === undefined ? '' : this.asset.objectClass.trim().toUpperCase();
+  }
+
+  private stageBadgeTextColor(objectClass: string): string {
+    if (objectClass === 'SAFE') {
+      return '#D6F5E8';
+    }
+    if (objectClass === 'EUCLID') {
+      return '#FBE7BE';
+    }
+    if (objectClass === 'KETER') {
+      return '#FFDCE0';
+    }
+    return '#EAF2FF';
+  }
+
+  private stageBadgeBackgroundColor(objectClass: string): string {
+    if (objectClass === 'SAFE') {
+      return '#1E4D3B';
+    }
+    if (objectClass === 'EUCLID') {
+      return '#5A441D';
+    }
+    if (objectClass === 'KETER') {
+      return '#66262C';
+    }
+    return '#314F86';
+  }
+
   @Builder
   private stageBadge() {
-    Row() {
-      Text('SCP OBJECT')
-        .fontSize(10)
-        .fontWeight(FontWeight.Bold)
-        .fontColor('#EAF2FF')
-        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
-        .backgroundColor('#314F86')
-        .borderRadius(8);
+    if (this.stageObjectClassLabel().length > 0) {
+      Row() {
+        Text(this.stageObjectClassLabel())
+          .fontSize(10)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(this.stageBadgeTextColor(this.stageObjectClassLabel()))
+          .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+          .backgroundColor(this.stageBadgeBackgroundColor(this.stageObjectClassLabel()))
+          .borderRadius(8)
+          .accessibilityText(`项目等级，${this.stageObjectClassLabel()}`);
+      }
+      .width('100%')
+      .padding({ left: 16, right: 16, top: 14 });
     }
-    .width('100%')
-    .padding({ left: 16, right: 16, top: 14 });
   }
 
   @Builder
@@ -577,7 +610,7 @@ struct Scp3DArchivePage {
         .width(34)
         .height(34)
         .color('#8FB4FF');
-      Text('正在载入三维场景')
+      Text('正在载入三维档案')
         .fontSize(AppTypography.SUBTITLE_S)
         .fontColor('#EAF0FF');
     }
@@ -609,7 +642,7 @@ struct Scp3DArchivePage {
           .backgroundColor('#3E65B2')
           .onClick(() => this.retryLoad());
       } else {
-        Text('请返回文章页重新进入三维档案')
+        Text('请返回档案页重新进入三维档案')
           .fontSize(AppTypography.BODY_S)
           .fontColor('#AAB9D3');
       }
@@ -786,7 +819,7 @@ struct Scp3DArchivePage {
               .fontSize(AppTypography.SUBTITLE_M)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('sys.color.font'));
-            Text(`对象等级 · ${this.asset.objectClass}`)
+            Text(`项目等级 · ${this.asset.objectClass}`)
               .fontSize(AppTypography.CAPTION_L)
               .fontColor($r('sys.color.font_tertiary'));
           }
@@ -808,15 +841,15 @@ struct Scp3DArchivePage {
         Divider()
           .strokeWidth(0.5)
           .color($r('sys.color.comp_divider'));
-        this.metadataSectionLabel('资源');
+        this.metadataSectionLabel('文件信息');
         this.metadataRow('格式', this.asset.format.toUpperCase());
         this.metadataRow('大小', this.assetSizeLabel());
-        this.metadataRow('档案版本', this.asset.version);
+        this.metadataRow('版本', this.asset.version);
         Divider()
           .strokeWidth(0.5)
           .color($r('sys.color.comp_divider'));
-        this.metadataSectionLabel('渲染');
-        this.metadataRow('几何预算', `${this.asset.estimatedTriangleCount} 三角面`);
+        this.metadataSectionLabel('模型规格');
+        this.metadataRow('网格面数', `${this.asset.estimatedTriangleCount} 三角面`);
       }
       .width('100%')
       .padding(18)

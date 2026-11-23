@@ -123,7 +123,7 @@ export struct ExploreHome {
     })
     ExploreMixedSection({
       title: '最近更新',
-      description: '融合翻译主站与原创内容，按发布时间排列',
+      description: '按归档时间同步主站译文与中文原创',
       items: this.viewModel.recentItems,
       loading: this.viewModel.recentLoading,
       error: this.viewModel.recentError,
@@ -135,7 +135,7 @@ export struct ExploreHome {
     })
     ExploreMixedSection({
       title: '轻松一下',
-      description: '每天混合推荐搞笑 SCP 与故事',
+      description: '每日轮换搞笑 SCP 与轻松故事',
       items: this.viewModel.jokeItems,
       loading: this.viewModel.jokeLoading,
       error: this.viewModel.jokeError,

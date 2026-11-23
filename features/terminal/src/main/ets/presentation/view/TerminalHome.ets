@@ -306,7 +306,7 @@ export struct TerminalHome {
           this.emptyState(
             $r('sys.symbol.star'),
             '还没有收藏',
-            '阅读档案或故事时，可通过右上角菜单加入收藏。'
+            '阅读档案或故事时，可在右上角菜单加入收藏。'
           )
         }
         .width('100%')
@@ -368,7 +368,7 @@ export struct TerminalHome {
               this.emptyState(
                 $r('sys.symbol.clock'),
                 '暂无阅读记录',
-                '打开任意档案、故事或手册后，最近浏览会显示在这里。'
+                '调阅任意档案、故事或手册后，记录将留存于此。'
               )
             } else {
               TerminalReadingHistoryList({
@@ -395,7 +395,7 @@ export struct TerminalHome {
   private personalLibrary() {
     Column({ space: 20 }) {
       Column() {
-        this.sectionHeader('个人资料库', '收藏、阅读进度与近期访问都保存在本地')
+        this.sectionHeader('个人资料库', '收藏、阅读进度与调阅记录均保存在本地')
       }
       .width('100%')
       .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
@@ -497,7 +497,7 @@ export struct TerminalHome {
   @Builder
   private foundationManual() {
     Column({ space: 18 }) {
-      this.sectionHeader('基金会手册', '从基本设定、制度与组织开始认识基金会')
+      this.sectionHeader('基金会手册', '从核心设定、分级制度与组织架构开始了解基金会')
       ForEach(FOUNDATION_KNOWLEDGE_SECTIONS, (section: FoundationKnowledgeSection) => {
         this.knowledgeGroup(section)
       }, (section: FoundationKnowledgeSection) => section.id)

@@ -179,7 +179,7 @@ export struct ExploreTopRatedSection {
 
   build() {
     Column({ space: 12 }) {
-      ExploreSectionHeading({ title: '热门原创', description: 'SCP 中文主站高分内容' })
+      ExploreSectionHeading({ title: '热门原创', description: '中文分部高评分原创档案' })
 
       if (this.entries.length > 0) {
         Column() {

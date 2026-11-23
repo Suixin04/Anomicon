@@ -39,14 +39,14 @@ function titleSeriesDescriptor(seriesId: string): ScpSeriesDescriptor | undefine
   if (seriesId.toLowerCase() === 'scp-joke-cn') {
     return new ScpSeriesDescriptor(
       'scp-joke-cn',
-      '原创笑话 SCP',
+      '原创搞笑 SCP',
       `${WIKI_BASE_URL}joke-scps-cn`
     );
   }
   if (seriesId.toLowerCase() === 'scp-joke') {
     return new ScpSeriesDescriptor(
       'scp-joke',
-      '笑话 SCP',
+      '搞笑 SCP',
       `${WIKI_BASE_URL}joke-scps`
     );
   }

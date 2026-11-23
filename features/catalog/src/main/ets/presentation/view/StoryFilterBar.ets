@@ -41,12 +41,12 @@ export struct StoryFilterBar {
 
   build() {
     Column({ space: 8 }) {
-      Search({ placeholder: '搜索故事标题或路径', value: this.state.query })
+      Search({ placeholder: '搜索故事标题或别名', value: this.state.query })
         .height(40)
         .margin({ left: 16, right: 16 })
         .systemMaterial(this.material)
         .placeholderColor($r('sys.color.font_secondary'))
-        .accessibilityText('搜索故事标题或路径')
+        .accessibilityText('搜索故事标题或别名')
         .onChange((value: string) => this.state.setQuery(value))
 
       Scroll(this.letterScroller) {

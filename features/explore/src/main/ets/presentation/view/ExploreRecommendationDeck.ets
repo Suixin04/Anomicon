@@ -195,7 +195,7 @@ struct ExploreRecommendationCard {
     if (this.row.recommendation.preview.description.length > 0) {
       return this.row.recommendation.preview.description;
     }
-    return '来自 SCP 中文主站的推荐档案。划走卡牌，继续发现下一项异常。';
+    return '收录自 SCP 中文主站。轻划切走卡片，继续调阅下一份档案。';
   }
 
   private previewSource(): string {
@@ -569,16 +569,16 @@ export struct ExploreRecommendationDeck {
 
   private unavailableTitle(): string {
     if (this.refreshing) {
-      return '正在重新获取推荐';
+      return '正在调阅新一批档案…';
     }
-    return this.error.length > 0 ? '今日推荐暂时离线' : '今天还没有可用推荐';
+    return this.error.length > 0 ? '暂无法连接档案库' : '今日暂未获取到推荐';
   }
 
   private unavailableDescription(): string {
     if (this.refreshing) {
-      return '正在重新生成编号并验证可用档案';
+      return '请稍候，正在从主站调阅档案';
     }
-    return this.error.length > 0 ? this.error : '可以重新生成一组编号并从主站验证';
+    return this.error.length > 0 ? this.error : '点按下方按钮，重新从主站调阅一组档案';
   }
 
   private unavailableAccessibilityText(): string {
@@ -586,7 +586,7 @@ export struct ExploreRecommendationDeck {
       return '正在重新加载今日推荐';
     }
     return this.error.length > 0 ?
-      `今日推荐加载失败，${this.error}` : '今天还没有可用推荐';
+      `今日推荐加载失败，${this.error}` : '今日暂未获取到推荐';
   }
 
   private showSkeleton(): boolean {
@@ -666,7 +666,7 @@ export struct ExploreRecommendationDeck {
           .maxLines(3)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (this.error.length > 0 && !this.refreshing) {
-          Text('网络恢复后，再试一次即可继续发现档案')
+          Text('网络恢复后，重试即可继续调阅')
             .fontSize(AppTypography.CAPTION_L)
             .fontColor($r('sys.color.font_tertiary'))
             .textAlign(TextAlign.Center)
@@ -686,7 +686,7 @@ export struct ExploreRecommendationDeck {
               .fontSize(17)
               .fontColor([$r('sys.color.icon_on_primary')])
           }
-          Text(this.refreshing ? '正在重试' : '重新尝试')
+          Text(this.refreshing ? '正在重试' : '重试')
             .fontSize(AppTypography.BODY_M)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('sys.color.font_on_primary'))
@@ -787,7 +787,7 @@ export struct ExploreRecommendationDeck {
             .fontSize(AppTypography.TITLE_S)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('sys.color.font'))
-          Text('每天随机解析一组主站档案')
+          Text('每日从主站档案库随机调阅一组条目')
             .fontSize(AppTypography.CAPTION_L)
             .fontColor($r('sys.color.font_secondary'))
         }
@@ -821,7 +821,7 @@ export struct ExploreRecommendationDeck {
           SymbolGlyph($r('sys.symbol.swipe'))
             .fontSize(18)
             .fontColor([$r('sys.color.icon_secondary')])
-          Text('左右划走顶牌，点击卡牌阅读')
+          Text('左右滑动切换，点按卡片查阅全文')
             .fontSize(AppTypography.CAPTION_L)
             .fontColor($r('sys.color.font_secondary'))
             .layoutWeight(1)

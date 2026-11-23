@@ -639,10 +639,10 @@ export class ArticleViewModel implements ViewModelLifecycle {
           // parse error.
           this.stale = true;
           this.state = ViewModelLoadState.PARTIAL;
-          this.error = ViewModelErrorInfo.from(error, '正文解析更新失败，正在显示已缓存内容');
+          this.error = ViewModelErrorInfo.from(error, '正文更新失败，当前显示本地缓存');
         } else {
           this.state = ViewModelLoadState.ERROR;
-          this.error = ViewModelErrorInfo.from(error, '解析结果处理失败');
+          this.error = ViewModelErrorInfo.from(error, '正文加载失败');
         }
         this.notifyListeners();
       });
@@ -657,13 +657,13 @@ export class ArticleViewModel implements ViewModelLifecycle {
     this.parsing = false;
     if (this.document === undefined) {
       this.state = ViewModelLoadState.ERROR;
-      this.error = new ViewModelErrorInfo(message || '正文解析失败');
+      this.error = new ViewModelErrorInfo(message || '正文加载失败');
     } else {
       // Extraction failure during a background refresh must not hide the
       // existing document, even when the HTML response itself was fresh.
       this.stale = true;
       this.state = ViewModelLoadState.PARTIAL;
-      this.error = new ViewModelErrorInfo(message || '正文解析更新失败，正在显示已缓存内容');
+      this.error = new ViewModelErrorInfo(message || '正文更新失败，当前显示本地缓存');
     }
     this.notifyListeners();
   }

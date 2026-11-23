@@ -126,11 +126,11 @@ struct LibraryCollectionContent {
   private emptyDescription(): string {
     switch (this.currentMode()) {
       case LibraryCollectionMode.FAVORITES:
-        return '在文章页右上角菜单中即可收藏内容。';
+        return '阅读档案或故事时，可在右上角菜单加入收藏。';
       case LibraryCollectionMode.CONTINUE_READING:
-        return '阅读页面滚动后，上次位置会显示在这里。';
+        return '未读完的档案与故事会自动保留进度，方便随时续读。';
       default:
-        return '打开任意档案、故事或基金会手册后，会在这里留下记录。';
+        return '调阅任意档案、故事或手册后，记录将留存于此。';
     }
   }
 

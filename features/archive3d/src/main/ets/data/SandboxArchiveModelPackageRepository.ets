@@ -166,11 +166,12 @@ export class SandboxArchiveModelPackageRepository implements ArchiveModelPackage
 
     const stagingPath = await this.files.prepareStaging(model);
     const token = `archive3d-${this.ids.generate()}`;
+    const displayId: string = (model.contentId.length > 0 ? model.contentId : model.assetId).toUpperCase();
     const requestConfig: BackgroundDownloadRequest = {
       url: model.location,
       destinationPath: stagingPath,
-      title: `下载 ${model.assetId.toUpperCase()} 三维档案`,
-      description: '完成后可离线查看三维档案',
+      title: `正在下载 ${displayId} 三维档案`,
+      description: '完成后即可离线观察',
       token: token,
       expectedBytes: model.byteLength,
       allowMetered: false

@@ -228,7 +228,7 @@ struct ExploreCollectionContent {
         } else if (this.currentItems().length === 0 && this.currentError().length > 0) {
           ListItem() {
             this.stateView(
-              '载入失败',
+              '加载失败',
               this.currentError(),
               this.viewModel.snapshot.data?.routeError === undefined
             )

@@ -215,7 +215,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
   refreshResearch(): void {
     this.refreshSource('research', async (): Promise<void> => {
       await this.research.reload();
-    }, '研读资料刷新失败');
+    }, '档案阅历刷新失败');
   }
 
   private refreshSource(source: string, operation: () => Promise<void>, fallback: string): void {
@@ -298,7 +298,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
       errors.push(`阅读记录：${this.history.error}`);
     }
     if (this.research.error.length > 0) {
-      errors.push(`研读资料：${this.research.error}`);
+      errors.push(`档案阅历：${this.research.error}`);
     }
     return errors.join('；');
   }

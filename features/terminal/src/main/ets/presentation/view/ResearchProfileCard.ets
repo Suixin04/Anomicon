@@ -215,7 +215,7 @@ export struct ResearchProfileCard {
         ResearchStatisticItem({
           symbol: $r('sys.symbol.clock_fill'),
           value: this.effectiveTime(),
-          label: '计分阅读'
+          label: '有效阅读'
         })
       }
       GridCol({ span: 1 }) {
@@ -250,7 +250,7 @@ export struct ResearchProfileCard {
         .width(22)
         .height(22)
         .color($r('sys.color.icon_secondary'))
-      Text('正在整理本地阅读记录')
+      Text('正在同步本地阅历记录…')
         .fontSize(AppTypography.BODY_M)
         .fontColor($r('sys.color.font_secondary'))
     }
@@ -326,7 +326,7 @@ export struct ResearchProfileCard {
         SymbolGlyph($r('sys.symbol.clock_fill'))
           .fontSize(15)
           .fontColor([$r('sys.color.icon_tertiary')])
-        Text('有效阅读每分钟 1 XP；单篇累计满 1 分钟另计 8 XP，每日最多计分 180 分钟')
+        Text('有效阅读每分钟 +1 XP，单篇满 1 分钟额外 +8 XP，每日计分上限 180 分钟')
           .fontSize(AppTypography.CAPTION_M)
           .fontColor($r('sys.color.font_tertiary'))
           .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
@@ -339,7 +339,7 @@ export struct ResearchProfileCard {
         SymbolGlyph($r('sys.symbol.lock_fill'))
           .fontSize(15)
           .fontColor([$r('sys.color.icon_tertiary')])
-        Text('应用内阅读称号，不等同于基金会安保许可')
+        Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
           .fontSize(AppTypography.CAPTION_M)
           .fontColor($r('sys.color.font_tertiary'))
           .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)

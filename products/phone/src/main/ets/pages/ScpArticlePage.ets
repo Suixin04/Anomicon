@@ -250,7 +250,7 @@ struct ScpArticlePage {
     const content: LibraryContentRef | undefined = parseArticleRouteContent(param);
     if (content === undefined) {
       this.routeResolved = false;
-      this.routeErrorMessage = '档案参数无效';
+      this.routeErrorMessage = '无法定位该档案';
       this.itemId = '';
       this.itemName = '';
       this.contentKind = LibraryContentKind.SCP;
@@ -533,7 +533,7 @@ struct ScpArticlePage {
       const next = !this.completed;
       await this.viewModel.setCompleted(next);
       this.completed = next;
-      this.showToast(next ? '已标记为已读完' : '已取消已读标记');
+      this.showToast(next ? '已标为已读' : '已取消已读标记');
     } catch (error) {
       this.showToast(error instanceof Error ? error.message : '保存完成标记失败');
     }
@@ -595,7 +595,7 @@ struct ScpArticlePage {
       content: {
         icon: this.completed ? $r('sys.symbol.checkmark_circle_fill') :
           $r('sys.symbol.checkmark_circle'),
-        label: this.completed ? '取消已读标记' : '标记为已读完',
+        label: this.completed ? '取消已读标记' : '标为已读',
         action: () => {
           this.toggleCompleted();
         }

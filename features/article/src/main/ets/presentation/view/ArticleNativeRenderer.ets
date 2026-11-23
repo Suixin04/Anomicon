@@ -510,7 +510,7 @@ export struct ArticleNativeRenderer {
       SymbolGlyph($r('sys.symbol.rectangle_on_rectangle'))
         .fontSize(20)
         .fontColor([$r('sys.color.icon_secondary')])
-      Text('嵌入 HTML 内容')
+      Text('嵌入网页组件')
         .fontSize(this.fontSize)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('sys.color.font'))
@@ -557,7 +557,7 @@ export struct ArticleNativeRenderer {
       }
       .width('100%')
     } else {
-      Text('此内容块暂无法在原生阅读器中展示')
+      Text('该部分含特殊排版或交互，建议在浏览器中查看')
         .fontSize(AppTypography.CAPTION_L)
         .fontColor($r('sys.color.font_tertiary'))
         .padding(10)

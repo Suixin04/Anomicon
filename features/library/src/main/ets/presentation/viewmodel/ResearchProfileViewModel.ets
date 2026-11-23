@@ -173,6 +173,6 @@ export class ResearchProfileViewModel implements ResearchActivitySink {
   }
 
   private errorMessage(error: Object): string {
-    return error instanceof Error ? error.message : '研读画像操作失败';
+    return error instanceof Error ? error.message : '档案阅历读取失败';
   }
 }

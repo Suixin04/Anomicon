@@ -52,7 +52,7 @@ export class ExploreContentUseCase {
   private mergeRecent(first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreCombinedSnapshot {
     const items: ExploreContentItem[] = [];
     const seen: Set<string> = new Set();
-    this.appendRecent(items, seen, first.entries, '翻译主站');
+    this.appendRecent(items, seen, first.entries, '主站译文');
     this.appendRecent(items, seen, second.entries, '原创');
     items.sort((left: ExploreContentItem, right: ExploreContentItem): number => {
       if (left.timestamp !== right.timestamp) {
@@ -237,7 +237,7 @@ export class ExploreContentUseCase {
       }
       return new ExploreSourceSnapshot(
         [],
-        error instanceof Error ? error.message : '官网内容加载失败',
+        error instanceof Error ? error.message : '主站档案加载失败',
         ExploreDataOrigin.NETWORK,
         0
       );

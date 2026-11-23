@@ -94,7 +94,7 @@ const OBJECT_CLASSES = new FoundationKnowledgeItem(
 const ESOTERIC_CLASSES = new FoundationKnowledgeItem(
   'esoteric-classes-complete-list',
   '机密分级完整列表',
-  '查阅罕见与叙述式项目等级；这些分级不存在统一高低次序',
+  '查阅非常规与叙事性项目等级，各分级并无固定高低之分',
   FoundationKnowledgeIcon.CLASSIFICATION,
   FoundationKnowledgeSectionId.SYSTEM,
   LibraryContentKind.KNOWLEDGE
@@ -148,7 +148,7 @@ const GROUPS_OF_INTEREST = new FoundationKnowledgeItem(
 const WIKI_COMMUNITY_HISTORY = new FoundationKnowledgeItem(
   'history-of-the-universe-hub',
   'SCP 维基与社群历史',
-  '记录站点与创作社群的发展，并非世界观内基金会历史',
+  '回顾 SCP 维基与创作社群的现实发展历程',
   FoundationKnowledgeIcon.HISTORY,
   FoundationKnowledgeSectionId.COMMUNITY,
   LibraryContentKind.WIKI
