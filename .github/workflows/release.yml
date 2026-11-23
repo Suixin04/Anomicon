@@ -66,8 +66,9 @@ jobs:
         shell: bash
         run: |
           archive="$RUNNER_TEMP/anomicon-source-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.tar.gz"
-          curl --fail --silent --show-error --location --retry 4 --retry-all-errors \
-            --connect-timeout 15 --max-time 240 --output "$archive" \
+          curl --fail --silent --show-error --location --retry 3 --retry-all-errors \
+            --connect-timeout 20 --speed-limit 1024 --speed-time 90 --retry-max-time 1200 \
+            --max-time 900 --output "$archive" \
             "https://codeload.github.com/$GITHUB_REPOSITORY/tar.gz/$GITHUB_SHA"
           source_dir="$RUNNER_TEMP/anomicon-src-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           mkdir "$source_dir"
