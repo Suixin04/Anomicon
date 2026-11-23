@@ -1,7 +1,7 @@
 {
   "name": "phone",
   "version": "1.0.0",
-  "description": "Anomicon phone product Entry HAP.",
+  "description": "Anomicon HarmonyOS multi-device Entry HAP (phone, tablet, and 2in1).",
   "main": "",
   "author": "",
   "license": "Apache-2.0",

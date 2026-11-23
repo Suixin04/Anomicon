@@ -9,11 +9,13 @@ import {
   createLibraryContentRef
 } from 'library';
 import {
+  adaptivePageMarginForWidth,
   pageContentTop,
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_BOTTOM_SPACE,
   PHONE_TAB_CONTENT_MAX_WIDTH,
-  PHONE_TAB_CONTENT_TOP_GAP
+  PHONE_TAB_CONTENT_TOP_GAP,
+  WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 import { ExploreCollectionMode } from '../../domain/ExploreContracts';
 import { ExploreHomeViewModel } from '../viewmodel/ExploreHomeViewModel';
@@ -21,7 +23,6 @@ import { ExploreHeroAnchor } from './ExploreViewContracts';
 
 const SECTION_SPACE: number = 24;
 const EXPLORE_TWO_COLUMN_MIN_WIDTH: number = 840;
-const EXPLORE_WIDE_CONTENT_MAX_WIDTH: number = 1120;
 
 /**
  * Explore View：只投影 ViewModel 状态并发出用户事件。
@@ -40,6 +41,7 @@ export struct ExploreHome {
   @Param active: boolean = false;
   @Param recommendationSkeletonAnimated: boolean = true;
   @Local private sideBySide: boolean = false;
+  @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
 
   aboutToAppear(): void {
     if (this.active) {
@@ -113,7 +115,7 @@ export struct ExploreHome {
   }
 
   @Builder
-  private secondarySections() {
+  private topRatedSection() {
     ExploreTopRatedSection({
       entries: this.viewModel.topRatedEntries,
       loading: this.viewModel.topRatedLoading,
@@ -121,6 +123,10 @@ export struct ExploreHome {
       onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content),
       onRetry: () => this.retryTopRated()
     })
+  }
+
+  @Builder
+  private recentSection() {
     ExploreMixedSection({
       title: '最近更新',
       description: '按归档时间同步主站译文与中文原创',
@@ -133,6 +139,10 @@ export struct ExploreHome {
       onOpenCollection: (mode: ExploreCollectionMode) => this.onOpenCollection(mode),
       onRetry: () => this.retryRecent()
     })
+  }
+
+  @Builder
+  private jokeSection() {
     ExploreMixedSection({
       title: '轻松一下',
       description: '每日轮换搞笑 SCP 与轻松故事',
@@ -151,23 +161,30 @@ export struct ExploreHome {
     Column() {
       Scroll(this.scroller) {
         Flex({ direction: this.sideBySide ? FlexDirection.Row : FlexDirection.Column, alignItems: ItemAlign.Start }) {
-          Column() {
+          Column({ space: SECTION_SPACE }) {
             this.recommendationSection()
+            if (this.sideBySide) {
+              this.jokeSection()
+            }
           }
-          .width(this.sideBySide ? '42%' : '100%')
+          .width(this.sideBySide ? '44%' : '100%')
           .margin({ bottom: this.sideBySide ? 0 : SECTION_SPACE })
 
           Column({ space: SECTION_SPACE }) {
-            this.secondarySections()
+            this.topRatedSection()
+            this.recentSection()
+            if (!this.sideBySide) {
+              this.jokeSection()
+            }
           }
-          .width(this.sideBySide ? '58%' : '100%')
+          .width(this.sideBySide ? '56%' : '100%')
           .padding({ left: this.sideBySide ? SECTION_SPACE : 0 })
         }
         .width('100%')
-        .constraintSize({ maxWidth: this.sideBySide ? EXPLORE_WIDE_CONTENT_MAX_WIDTH : PHONE_TAB_CONTENT_MAX_WIDTH })
+        .constraintSize({ maxWidth: this.sideBySide ? WIDE_CONTENT_MAX_WIDTH : PHONE_TAB_CONTENT_MAX_WIDTH })
         .padding({
-          left: PHONE_PAGE_MARGIN,
-          right: PHONE_PAGE_MARGIN,
+          left: this.horizontalMargin,
+          right: this.horizontalMargin,
           top: pageContentTop() + PHONE_TAB_CONTENT_TOP_GAP,
           bottom: PHONE_TAB_CONTENT_BOTTOM_SPACE
         })
@@ -179,7 +196,8 @@ export struct ExploreHome {
       .width('100%')
       .onAreaChange((_oldArea: Area, newArea: Area): void => {
         const measuredWidth = Number(newArea.width);
-        if (measuredWidth > 0) {
+        if (Number.isFinite(measuredWidth) && measuredWidth > 0) {
+          this.horizontalMargin = adaptivePageMarginForWidth(measuredWidth);
           this.sideBySide = measuredWidth >= EXPLORE_TWO_COLUMN_MIN_WIDTH;
         }
       })

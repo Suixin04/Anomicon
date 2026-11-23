@@ -6,19 +6,30 @@ import { FrameCallback, uiMaterial } from '@kit.ArkUI';
 import {
   HideMode,
   HdsNavDestination,
+  HdsNavigationMenuContentOptions,
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
 import {
   accentPillBackgroundColor,
   accentPillForegroundColor,
+  adaptivePageMarginForWidth,
   AppTypography,
+  ARCHIVE_3D_WORKBENCH_MIN_WIDTH,
   badgeInfoBackgroundColor,
   badgeInfoForegroundColor,
   badgeWarningForegroundColor,
-  PHONE_PAGE_MARGIN,
+  createAppBackIcon,
   createAppTitleBarStyle,
+  isDetailFullscreen,
   pageContentTop,
-  uiImmersiveMaterialSupported
+  popNavigationDestination,
+  setDetailFullscreen,
+  shouldUseCenterSheet,
+  supportsSplitNavigation,
+  uiImmersiveMaterialSupported,
+  WIDE_CONTENT_MAX_WIDTH,
+  windowHeightVp,
+  windowWidthVp
 } from 'anomiconbasic';
 import { SettingsViewModel } from 'settings';
 import {
@@ -84,6 +95,7 @@ export function Scp3DArchivePageBuilder(
 @ComponentV2
 struct Scp3DArchivePage {
   private readonly scroller: Scroller = new Scroller();
+  private pageStack: NavPathStack | undefined = undefined;
   /** GLB parsing and Scene construction are local-file processing work. */
   private readonly sceneLoadHint: FastPerformanceHintScope =
     new FastPerformanceHintScope(
@@ -131,6 +143,8 @@ struct Scp3DArchivePage {
   @Local private errorMessage: string = '';
   @Local private autoRotate: boolean = false;
   @Local private creditsVisible: boolean = false;
+  @Local private paneWidth: number = 0;
+  @Local private paneHeight: number = 0;
   @Param resolveSceneSource: Scp3DArchiveSceneSourceResolver | undefined = undefined;
   @Param settings: SettingsViewModel | undefined = undefined;
 
@@ -144,10 +158,48 @@ struct Scp3DArchivePage {
     return this.settings?.immersiveMaterialEnabled ?? true;
   }
 
+  private resolvedWidth(): number {
+    return this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+  }
+
+  private horizontalMargin(): number {
+    return adaptivePageMarginForWidth(this.resolvedWidth());
+  }
+
+  private workbenchMode(): boolean {
+    return this.resolvedWidth() >= ARCHIVE_3D_WORKBENCH_MIN_WIDTH;
+  }
+
+  private workbenchViewerHeight(): number {
+    const height = this.paneHeight > 0 ? this.paneHeight : windowHeightVp();
+    return Math.max(400, Math.min(540, Math.round(height - pageContentTop() - 124)));
+  }
+
+  private archiveMenuOptions(): HdsNavigationMenuContentOptions | undefined {
+    if (!supportsSplitNavigation(windowWidthVp())) {
+      return undefined;
+    }
+    const fullscreen = isDetailFullscreen();
+    return {
+      maxCount: 1,
+      value: [{
+        content: {
+          icon: fullscreen ?
+            $r('sys.symbol.arrow_down_right_and_arrow_up_left') :
+            $r('sys.symbol.arrow_up_left_and_arrow_down_right'),
+          label: fullscreen ? '恢复分栏' : '全屏展开',
+          action: () => {
+            setDetailFullscreen(!fullscreen);
+          }
+        }
+      }]
+    };
+  }
+
   private creditsSheetOptions(): SheetOptions {
+    const useCenter = shouldUseCenterSheet(windowWidthVp());
     const options: SheetOptions = {
-      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-      preferType: SheetType.BOTTOM,
+      preferType: useCenter ? SheetType.CENTER : SheetType.BOTTOM,
       dragBar: true,
       showClose: true,
       title: { title: '资源来源与许可', subtitle: this.contentId },
@@ -159,6 +211,11 @@ struct Scp3DArchivePage {
         this.creditsVisible = false;
       }
     };
+    if (useCenter) {
+      options.height = SheetSize.FIT_CONTENT;
+    } else {
+      options.detents = [SheetSize.MEDIUM, SheetSize.LARGE];
+    }
     if (this.isMaterialEnabled()) {
       if (uiImmersiveMaterialSupported()) {
         options.systemMaterial = this.sheetMaterial;
@@ -814,7 +871,7 @@ struct Scp3DArchivePage {
       }
     }
     .width('100%')
-    .height(VIEWER_HEIGHT)
+    .height(this.workbenchMode() ? this.workbenchViewerHeight() : VIEWER_HEIGHT)
     .backgroundColor('#0A1221')
     .borderRadius(24)
     .clip(true)
@@ -866,10 +923,17 @@ struct Scp3DArchivePage {
             .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT);
         }
         .width('100%')
-        .padding({ left: 20, right: 20, top: 4, bottom: 28 });
+        .padding({
+          left: adaptivePageMarginForWidth(windowWidthVp()),
+          right: adaptivePageMarginForWidth(windowWidthVp()),
+          top: 4,
+          bottom: 28
+        });
       }
       .width('100%')
-      .height('100%')
+      .constraintSize({
+        maxHeight: shouldUseCenterSheet(windowWidthVp()) ? 520 : 680
+      })
       .align(Alignment.Top)
       .scrollBar(BarState.Off);
     }
@@ -957,41 +1021,99 @@ struct Scp3DArchivePage {
       // a short/temporarily empty document can be measured at intrinsic height
       // and centered inside the available page surface.
       Stack({ alignContent: Alignment.Top }) {
-        Scroll(this.scroller) {
-          Column({ space: 16 }) {
-            this.viewerStage();
-            if (!this.loading && this.errorMessage.length === 0 && this.sceneReady) {
-              // Keep controls in normal document flow below the observation
-              // surface. This is more reliable than aligning a child inside a
-              // Component3D Stack and leaves the gesture surface unobstructed.
-              this.stageControls();
+        if (this.workbenchMode()) {
+          Column() {
+            Row({ space: 20 }) {
+              Column({ space: 14 }) {
+                this.viewerStage();
+                if (!this.loading && this.errorMessage.length === 0 && this.sceneReady) {
+                  this.stageControls();
+                }
+              }
+              .width('60%')
+              .alignItems(HorizontalAlign.Center);
+
+              Scroll(this.scroller) {
+                Column() {
+                  this.archiveInfo();
+                }
+                .width('100%')
+                .padding({ bottom: 24 });
+              }
+              .width('40%')
+              .height('100%')
+              .align(Alignment.Top)
+              .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+              .scrollBar(BarState.Off);
             }
-            this.archiveInfo();
+            .width('100%')
+            .layoutWeight(1)
+            .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+            .alignItems(VerticalAlign.Top)
+            .padding({
+              left: this.horizontalMargin(),
+              right: this.horizontalMargin(),
+              top: pageContentTop() + 4,
+              bottom: 24
+            });
           }
-          .width('100%')
-          .constraintSize({ maxWidth: 640 })
-          .padding({
-            left: PHONE_PAGE_MARGIN,
-            right: PHONE_PAGE_MARGIN,
-            // HDS title/status bars are visual overlays here. Keep the model
-            // and metadata below them while the page background reaches them.
-            top: pageContentTop(),
-            bottom: 34
+          .width(LayoutPolicy.matchParent)
+          .height(LayoutPolicy.matchParent)
+          .alignItems(HorizontalAlign.Center)
+          .background($r('sys.color.background_secondary'), {
+            ignoresLayoutSafeAreaEdges: [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]
           });
+        } else {
+          Scroll(this.scroller) {
+            Column() {
+              Column({ space: 16 }) {
+                this.viewerStage();
+                if (!this.loading && this.errorMessage.length === 0 && this.sceneReady) {
+                  // Keep controls in normal document flow below the observation
+                  // surface. This is more reliable than aligning a child inside a
+                  // Component3D Stack and leaves the gesture surface unobstructed.
+                  this.stageControls();
+                }
+                this.archiveInfo();
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: 680 })
+              .padding({
+                left: this.horizontalMargin(),
+                right: this.horizontalMargin(),
+                // HDS title/status bars are visual overlays here. Keep the model
+                // and metadata below them while the page background reaches them.
+                top: pageContentTop(),
+                bottom: 34
+              });
+            }
+            .width('100%')
+            .alignItems(HorizontalAlign.Center);
+          }
+          .width(LayoutPolicy.matchParent)
+          .height(LayoutPolicy.matchParent)
+          .align(Alignment.Top)
+          .clip(false)
+          .background($r('sys.color.background_secondary'), {
+            ignoresLayoutSafeAreaEdges: [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]
+          })
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Off);
         }
-        .width(LayoutPolicy.matchParent)
-        .height(LayoutPolicy.matchParent)
-        .align(Alignment.Top)
-        .clip(false)
-        .background($r('sys.color.background_secondary'), {
-          ignoresLayoutSafeAreaEdges: [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]
-        })
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .scrollBar(BarState.Off);
       }
       .width(LayoutPolicy.matchParent)
       .height(LayoutPolicy.matchParent)
       .clip(false)
+      .onAreaChange((_oldArea: Area, newArea: Area): void => {
+        const width = Number(newArea.width);
+        const height = Number(newArea.height);
+        if (Number.isFinite(width) && width > 0) {
+          this.paneWidth = width;
+        }
+        if (Number.isFinite(height) && height > 0) {
+          this.paneHeight = height;
+        }
+      })
       .bindSheet(this.creditsVisible, this.creditsSheet(), this.creditsSheetOptions());
     }
     .titleBar({
@@ -1004,7 +1126,10 @@ struct Scp3DArchivePage {
           mainTitle: '三维档案',
           subTitle: this.contentId
         },
-        backIcon: { label: '返回', componentId: 'scp3dArchiveBackButton' }
+        backIcon: createAppBackIcon('scp3dArchiveBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        }),
+        menu: this.archiveMenuOptions()
       },
       style: createAppTitleBarStyle(this.isMaterialEnabled())
     })
@@ -1018,6 +1143,7 @@ struct Scp3DArchivePage {
       hideRatio: 1.5
     })
     .onReady((context: NavDestinationContext) => {
+      this.pageStack = context.pathStack;
       this.applyRouteParam(context.pathInfo.param as Object | null | undefined);
     })
     .onShown(() => {

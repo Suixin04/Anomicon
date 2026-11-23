@@ -1,10 +1,14 @@
 import {
+  adaptiveListLanesForWidth,
+  adaptivePageMarginForWidth,
   AppTypography,
   CARD_PRESS_MODIFIER,
   PHONE_PAGE_MARGIN,
   pageContentTop,
+  SkeletonBlock,
   ViewModelLoadState,
-  SkeletonBlock
+  WIDE_CONTENT_MAX_WIDTH,
+  windowWidthVp
 } from 'anomiconbasic';
 import {
   LibraryCollectionItem,
@@ -17,8 +21,7 @@ import {
 import { LibraryCollectionVM } from '../viewmodel/LibraryCollectionVM';
 import { LibraryCollectionViewContract } from './LibraryViewContracts';
 
-const CONTENT_MAX_WIDTH: number = 680;
-const ROW_SPACE: number = 8;
+const ROW_SPACE: number = 10;
 
 /** Feature export: product passes a narrow contract, not services. */
 @Builder
@@ -41,6 +44,25 @@ struct LibraryCollectionContent {
   @Require @Param viewModel: LibraryCollectionVM;
   @Require @Param scroller: Scroller;
   @Require @Param onOpenContent: (content: LibraryContentRef) => void;
+  @Local private paneWidth: number = 0;
+
+  private horizontalMargin(): number {
+    const width = this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+    return width > 0 ? adaptivePageMarginForWidth(width) : PHONE_PAGE_MARGIN;
+  }
+
+  private hasItems(): boolean {
+    const loadingEmpty = this.isLoading() && this.currentItems().length === 0 && this.currentError().length === 0;
+    return !loadingEmpty && this.currentItems().length > 0;
+  }
+
+  private listLanes(): number {
+    if (!this.hasItems()) {
+      return 1;
+    }
+    const width = this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+    return adaptiveListLanesForWidth(width, 680);
+  }
 
   private currentMode(): LibraryCollectionMode {
     return this.viewModel.snapshot.data?.mode ?? LibraryCollectionMode.RECENT;
@@ -294,12 +316,6 @@ struct LibraryCollectionContent {
   build() {
     Stack({ alignContent: Alignment.Top }) {
       List({ scroller: this.scroller, space: ROW_SPACE }) {
-        ListItem() {
-          Column()
-            .width('100%')
-            .height(pageContentTop() + 8)
-        }
-
         if (this.isLoading() && this.currentItems().length === 0 && this.currentError().length === 0) {
           ListItem() {
             this.loadingView()
@@ -318,11 +334,6 @@ struct LibraryCollectionContent {
             this.stateView(this.stateIcon(), this.pageTitle(), this.emptyDescription(), false)
           }
         } else {
-          if (this.currentError().length > 0) {
-            ListItem() {
-              this.partialErrorView()
-            }
-          }
           Repeat<LibraryCollectionItem>(this.currentItems())
             .each((row: RepeatItem<LibraryCollectionItem>) => {
               ListItem() {
@@ -332,22 +343,38 @@ struct LibraryCollectionContent {
             .key((item: LibraryCollectionItem) => item.content.key)
             .virtualScroll()
         }
-
-        ListItem() {
-          Column()
-            .width('100%')
-            .height(48)
-        }
       }
+      .lanes(this.listLanes(), 12)
+      .contentStartOffset(pageContentTop() + 8 + (this.hasItems() && this.currentError().length > 0 ? 52 : 0))
+      .contentEndOffset(48)
       .width('100%')
-      .constraintSize({ maxWidth: CONTENT_MAX_WIDTH })
+      .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
       .height('100%')
-      .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+      .padding({ left: this.horizontalMargin(), right: this.horizontalMargin() })
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+
+      if (this.hasItems() && this.currentError().length > 0) {
+        Column() {
+          this.partialErrorView()
+        }
+        .width('100%')
+        .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+        .padding({
+          left: this.horizontalMargin(),
+          right: this.horizontalMargin(),
+          top: pageContentTop() + 8
+        })
+      }
     }
     .width('100%')
     .height('100%')
     .backgroundColor($r('sys.color.background_secondary'))
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const width = Number(newArea.width);
+      if (Number.isFinite(width) && width > 0) {
+        this.paneWidth = width;
+      }
+    })
   }
 }

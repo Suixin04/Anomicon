@@ -4,7 +4,7 @@ import {
   ContentLicensePageBuilder as SettingsContentLicensePageBuilder
 } from 'settings';
 
-/** Thin phone adapter that supplies product-specific licence copy and links. */
+/** Thin product adapter that supplies product-specific licence copy and links. */
 @Builder
 export function ContentLicensePageBuilder() {
   SettingsContentLicensePageBuilder(new ContentLicenseContent(
@@ -13,10 +13,15 @@ export function ContentLicensePageBuilder() {
     '各 SCP 条目与衍生素材的授权可能因来源而异，请以具体页面及原始出处说明为准。',
     [
       new ContentLicenseLink('SCP Wiki', 'https://scp-wiki.wikidot.com/'),
+      new ContentLicenseLink('SCP 基金会中文 Wiki', 'https://scp-wiki-cn.wikidot.com/'),
       new ContentLicenseLink('SCP 官方许可指南', 'https://scp-foundation.net/licensing-guide'),
       new ContentLicenseLink(
-        'SCP 三维模型来源',
+        'SCP 三维模型来源（scp-unity-assets）',
         'https://github.com/Yni-Viar/scp-unity-assets/tree/7fda38944f51db7ee3aeb4d9e5ca821263153da5'
+      ),
+      new ContentLicenseLink(
+        'SCP 三维模型扩展来源（scp-assets）',
+        'https://github.com/Yni-Viar/scp-assets/tree/1265487d1978b60398ab71f366bc5a1ba4ce1d0d'
       ),
       new ContentLicenseLink(
         '三维模型许可声明',

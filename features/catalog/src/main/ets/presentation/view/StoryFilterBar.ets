@@ -3,7 +3,9 @@ import { TaleFilterState } from '../TaleFilterState';
 import {
   accentPillBackgroundColor,
   accentPillForegroundColor,
-  AppTypography
+  AppTypography,
+  PHONE_PAGE_MARGIN,
+  WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 
 const ALPHABET: string[] = [
@@ -17,6 +19,7 @@ export struct StoryFilterBar {
   @Require @Param state: TaleFilterState;
   @Require @Param hapticEnabled: boolean;
   @Param materialEnabled: boolean = true;
+  @Param horizontalMargin: number = PHONE_PAGE_MARGIN;
   @Param onHaptic: ((enabled: boolean) => void) | undefined = undefined;
   private readonly letterScroller: Scroller = new Scroller();
   private readonly searchMaterial: uiMaterial.ImmersiveMaterial = new uiMaterial.ImmersiveMaterial({
@@ -62,31 +65,36 @@ export struct StoryFilterBar {
   }
 
   build() {
-    Column({ space: 8 }) {
-      Search({ placeholder: '搜索故事标题或别名', value: this.state.query })
-        .height(40)
-        .margin({ left: 16, right: 16 })
-        .backgroundColor(this.materialEnabled ?
-          Color.Transparent : $r('sys.color.comp_background_primary'))
-        .systemMaterial(this.materialEnabled ? this.searchMaterial : undefined)
-        .placeholderColor($r('sys.color.font_secondary'))
-        .accessibilityText('搜索故事标题或别名')
-        .onChange((value: string) => this.state.setQuery(value))
+    Column() {
+      Column({ space: 8 }) {
+        Search({ placeholder: '搜索故事标题或别名', value: this.state.query })
+          .height(40)
+          .margin({ left: this.horizontalMargin, right: this.horizontalMargin })
+          .backgroundColor(this.materialEnabled ?
+            Color.Transparent : $r('sys.color.comp_background_primary'))
+          .systemMaterial(this.materialEnabled ? this.searchMaterial : undefined)
+          .placeholderColor($r('sys.color.font_secondary'))
+          .accessibilityText('搜索故事标题或别名')
+          .onChange((value: string) => this.state.setQuery(value))
 
-      Scroll(this.letterScroller) {
-        Row({ space: 6 }) {
-          this.letterItem('全部', '')
-          ForEach(ALPHABET, (letter: string) => {
-            this.letterItem(letter, letter)
-          }, (letter: string) => letter)
+        Scroll(this.letterScroller) {
+          Row({ space: 6 }) {
+            this.letterItem('全部', '')
+            ForEach(ALPHABET, (letter: string) => {
+              this.letterItem(letter, letter)
+            }, (letter: string) => letter)
+          }
+          .padding({ left: this.horizontalMargin, right: this.horizontalMargin })
         }
-        .padding({ left: 16, right: 16 })
+        .scrollable(ScrollDirection.Horizontal)
+        .scrollBar(BarState.Off)
+        .edgeEffect(EdgeEffect.Spring)
+        .width('100%')
       }
-      .scrollable(ScrollDirection.Horizontal)
-      .scrollBar(BarState.Off)
-      .edgeEffect(EdgeEffect.Spring)
       .width('100%')
+      .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Center)
   }
 }

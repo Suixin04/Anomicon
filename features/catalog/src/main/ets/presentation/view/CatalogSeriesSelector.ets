@@ -8,6 +8,7 @@ import {
   ChipV2Size,
   uiMaterial
 } from '@kit.ArkUI';
+import { PHONE_PAGE_MARGIN } from 'anomiconbasic';
 import {
   ALL_SERIES_ID,
   ALL_SERIES_LABEL,
@@ -46,13 +47,14 @@ export struct CatalogSeriesSelector {
   @Require @Param selectedSeriesId: string;
   @Param includeAll: boolean = false;
   @Param materialEnabled: boolean = true;
+  @Param horizontalMargin: number = PHONE_PAGE_MARGIN;
   @Event onSelect: (seriesId: string) => void = (_seriesId: string): void => {};
 
   @Local private items: ChipGroupV2Items = createSeriesItems(false);
-  private readonly itemSpace: ChipGroupV2Space = new ChipGroupV2Space({
+  @Local private itemSpace: ChipGroupV2Space = new ChipGroupV2Space({
     itemSpace: 8,
-    startSpace: 16,
-    endSpace: 16
+    startSpace: PHONE_PAGE_MARGIN,
+    endSpace: PHONE_PAGE_MARGIN
   });
   private readonly verticalPadding: ChipGroupV2Padding = new ChipGroupV2Padding({
     top: 2,
@@ -83,6 +85,20 @@ export struct CatalogSeriesSelector {
 
   aboutToAppear(): void {
     this.items = createSeriesItems(this.includeAll);
+    this.updateHorizontalSpace();
+  }
+
+  @Monitor('horizontalMargin')
+  onHorizontalMarginChange(): void {
+    this.updateHorizontalSpace();
+  }
+
+  private updateHorizontalSpace(): void {
+    this.itemSpace = new ChipGroupV2Space({
+      itemSpace: 8,
+      startSpace: this.horizontalMargin,
+      endSpace: this.horizontalMargin
+    });
   }
 
   private selectedIndexes(): number[] {

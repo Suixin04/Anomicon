@@ -16,20 +16,21 @@ import { ReadingHistoryEntry } from 'library';
 import { ResearchProgress } from 'library';
 import { LibraryCollectionMode } from 'library';
 import {
+  adaptivePageMarginForWidth,
   AppTypography,
   materialCardBorderColor,
   materialCardSurfaceColor,
   pageContentTop,
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_MAX_WIDTH,
-  ROW_PRESS_MODIFIER
+  ROW_PRESS_MODIFIER,
+  WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 import { TerminalViewModel } from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
 
 const SECTION_SPACE: number = 28;
 const TERMINAL_TWO_COLUMN_MIN_WIDTH: number = 840;
-const TERMINAL_WIDE_CONTENT_MAX_WIDTH: number = 1120;
 
 /**
  * 终端首页：档案阅历、个人资料库与基金会手册。
@@ -46,6 +47,7 @@ export struct TerminalHome {
   @Require @Param viewModel: TerminalViewModel;
   @Require @Param settings: SettingsViewModel;
   @Local private sideBySide: boolean = false;
+  @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
 
   private isImmersiveMaterialEnabled(): boolean {
     return this.settings.immersiveMaterialEnabled;
@@ -280,6 +282,10 @@ export struct TerminalHome {
     .borderRadius(12)
   }
 
+  private leftPaneRightMargin(): number {
+    return this.sideBySide ? 0 : this.horizontalMargin;
+  }
+
   @Builder
   private favoritesPreview() {
     Column({ space: 12 }) {
@@ -293,14 +299,14 @@ export struct TerminalHome {
         })
       }
       .width('100%')
-      .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+      .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
 
       if (this.favoriteLoading && this.favoriteCount === 0) {
         Column() {
           this.loadingState('正在读取收藏…')
         }
         .width('100%')
-        .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+        .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
       } else if (this.favoriteError.length > 0 && this.favoriteCount === 0) {
         Column() {
           TerminalErrorState({
@@ -309,7 +315,7 @@ export struct TerminalHome {
           })
         }
         .width('100%')
-        .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+        .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
       } else if (this.favoriteCount === 0) {
         Column() {
           this.emptyState(
@@ -319,13 +325,14 @@ export struct TerminalHome {
           )
         }
         .width('100%')
-        .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+        .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
       } else {
         Column({ space: 8 }) {
           Scroll() {
             TerminalFavoriteCards({
               entries: this.favoriteEntries,
               materialEnabled: this.isImmersiveMaterialEnabled(),
+              horizontalPadding: this.horizontalMargin,
               onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content)
             })
           }
@@ -334,7 +341,11 @@ export struct TerminalHome {
           .scrollBar(this.sideBySide ? BarState.Auto : BarState.Off)
           .edgeEffect(EdgeEffect.Spring)
           if (this.favoriteError.length > 0) {
-            this.partialError(this.favoriteError, () => this.retryFavorites())
+            Column() {
+              this.partialError(this.favoriteError, () => this.retryFavorites())
+            }
+            .width('100%')
+            .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
           }
         }
         .width('100%')
@@ -407,7 +418,7 @@ export struct TerminalHome {
         this.sectionHeader('个人资料库', '收藏、阅读进度与调阅记录均保存在本地')
       }
       .width('100%')
-      .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+      .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
 
       this.favoritesPreview()
 
@@ -415,7 +426,7 @@ export struct TerminalHome {
         this.readingHistoryPreview()
       }
       .width('100%')
-      .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+      .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -544,7 +555,7 @@ export struct TerminalHome {
           })
         }
         .width('100%')
-        .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+        .padding({ left: this.horizontalMargin, right: this.horizontalMargin })
 
         Flex({ direction: this.sideBySide ? FlexDirection.Row : FlexDirection.Column, alignItems: ItemAlign.Start }) {
           Column() {
@@ -557,7 +568,7 @@ export struct TerminalHome {
             this.foundationManual()
           }
           .width(this.sideBySide ? '44%' : '100%')
-          .padding({ left: this.sideBySide ? SECTION_SPACE : PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+          .padding({ left: this.sideBySide ? SECTION_SPACE : this.horizontalMargin, right: this.horizontalMargin })
         }
         .width('100%')
 
@@ -566,7 +577,7 @@ export struct TerminalHome {
           .height(136)
       }
       .width('100%')
-      .constraintSize({ maxWidth: this.sideBySide ? TERMINAL_WIDE_CONTENT_MAX_WIDTH : PHONE_TAB_CONTENT_MAX_WIDTH })
+      .constraintSize({ maxWidth: this.sideBySide ? WIDE_CONTENT_MAX_WIDTH : PHONE_TAB_CONTENT_MAX_WIDTH })
       .padding({
         top: pageContentTop() + 12,
         bottom: 24
@@ -579,7 +590,8 @@ export struct TerminalHome {
     .height('100%')
     .onAreaChange((_oldArea: Area, newArea: Area): void => {
       const viewportWidth = Number(newArea.width);
-      if (viewportWidth > 0) {
+      if (Number.isFinite(viewportWidth) && viewportWidth > 0) {
+        this.horizontalMargin = adaptivePageMarginForWidth(viewportWidth);
         this.sideBySide = viewportWidth >= TERMINAL_TWO_COLUMN_MIN_WIDTH;
       }
     })

@@ -4,7 +4,7 @@ import { FrameCallback, window } from '@kit.ArkUI';
 import { ThemeMode } from 'settings';
 import { AppLifecycleCoordinator } from '../composition/AppLifecycleCoordinator';
 import { notifyStartingWindowReleased } from '../startup/StartupCoordinator';
-import { updateWindowAvoidArea } from 'anomiconbasic';
+import { updateWindowAvoidArea, updateWindowLayoutSize } from 'anomiconbasic';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'AnomiconAbility';
@@ -31,6 +31,7 @@ export default class EntryAbility extends UIAbility {
   private readonly lifecycle: AppLifecycleCoordinator = new AppLifecycleCoordinator();
   private avoidAreaWindow: window.Window | undefined = undefined;
   private avoidAreaCallback: ((options: window.AvoidAreaOptions) => void) | undefined = undefined;
+  private windowSizeCallback: ((size: window.Size) => void) | undefined = undefined;
 
   onCreate(_want: Want, _launchParam: AbilityConstant.LaunchParam): void {
     hilog.info(DOMAIN, TAG, '%{public}s', 'Ability onCreate');
@@ -138,6 +139,11 @@ export default class EntryAbility extends UIAbility {
         }
         const avoidArea = mainWindow.getWindowAvoidArea(window.AvoidAreaType.TYPE_SYSTEM);
         updateWindowAvoidArea(uiContext.px2vp(Number(avoidArea.topRect.height)));
+        const rect = mainWindow.getWindowProperties().windowRect;
+        updateWindowLayoutSize(
+          uiContext.px2vp(Number(rect.width)),
+          uiContext.px2vp(Number(rect.height))
+        );
       };
       apply();
       const callback = (options: window.AvoidAreaOptions): void => {
@@ -146,9 +152,19 @@ export default class EntryAbility extends UIAbility {
           updateWindowAvoidArea(uiContext.px2vp(Number(options.area.topRect.height)));
         }
       };
+      const sizeCallback = (size: window.Size): void => {
+        if (lifecycle.isCurrentAbility(this.context)) {
+          updateWindowLayoutSize(
+            uiContext.px2vp(Number(size.width)),
+            uiContext.px2vp(Number(size.height))
+          );
+        }
+      };
       mainWindow.on('avoidAreaChange', callback);
+      mainWindow.on('windowSizeChange', sizeCallback);
       this.avoidAreaWindow = mainWindow;
       this.avoidAreaCallback = callback;
+      this.windowSizeCallback = sizeCallback;
     } catch (error) {
       const businessError = error as BusinessError;
       hilog.warn(DOMAIN, TAG, 'Read window avoid area failed: %{public}s', businessError.message);
@@ -219,15 +235,26 @@ export default class EntryAbility extends UIAbility {
   }
 
   private releaseWindowAvoidAreaListener(): void {
-    if (this.avoidAreaWindow !== undefined && this.avoidAreaCallback !== undefined) {
-      try {
-        this.avoidAreaWindow.off('avoidAreaChange', this.avoidAreaCallback);
-      } catch (error) {
-        const businessError = error as BusinessError;
-        hilog.warn(DOMAIN, TAG, 'Release window avoid area listener failed: %{public}s', businessError.message);
+    if (this.avoidAreaWindow !== undefined) {
+      if (this.avoidAreaCallback !== undefined) {
+        try {
+          this.avoidAreaWindow.off('avoidAreaChange', this.avoidAreaCallback);
+        } catch (error) {
+          const businessError = error as BusinessError;
+          hilog.warn(DOMAIN, TAG, 'Release window avoid area listener failed: %{public}s', businessError.message);
+        }
+      }
+      if (this.windowSizeCallback !== undefined) {
+        try {
+          this.avoidAreaWindow.off('windowSizeChange', this.windowSizeCallback);
+        } catch (error) {
+          const businessError = error as BusinessError;
+          hilog.warn(DOMAIN, TAG, 'Release window size listener failed: %{public}s', businessError.message);
+        }
       }
     }
     this.avoidAreaWindow = undefined;
     this.avoidAreaCallback = undefined;
+    this.windowSizeCallback = undefined;
   }
 }

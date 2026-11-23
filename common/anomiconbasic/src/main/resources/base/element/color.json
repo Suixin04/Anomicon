@@ -2,7 +2,7 @@
   "color": [
     {
       "name": "navigation_bar_scroll_background",
-      "value": "#66000000"
+      "value": "#00000000"
     },
     {
       "name": "material_card_surface",

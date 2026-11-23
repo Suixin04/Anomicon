@@ -1,6 +1,11 @@
-import { AppTypography, materialCardBorderColor, materialCardSurfaceColor } from 'anomiconbasic';
+import {
+  AppTypography,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
+  WIDE_CONTENT_MAX_WIDTH
+} from 'anomiconbasic';
 
-const PROFILE_CARD_MAX_WIDTH: number = 680;
+const PROFILE_WIDE_BANNER_MIN_WIDTH: number = 740;
 const STATISTICS_WIDE_BREAKPOINT: string = '520vp';
 
 /** 动态统计格必须是组件；多参数 @Builder 会把 value 固定为首次构建值。 */
@@ -61,7 +66,9 @@ export struct ResearchProfileCard {
   @Require @Param error: string;
   @Require @Param notice: string;
   @Require @Param materialEnabled: boolean;
+  @Param maxWidth: number = WIDE_CONTENT_MAX_WIDTH;
   @Event onRetry: () => void;
+  @Local private wideBanner: boolean = false;
 
   private normalizedInteger(value: number, minimum: number = 0): number {
     if (!Number.isFinite(value)) {
@@ -286,12 +293,30 @@ export struct ResearchProfileCard {
 
   @Builder
   private profileContent() {
-    Column({ space: 18 }) {
-      this.cardHeader()
-      this.progressSection()
-      this.statistics()
+    if (this.wideBanner) {
+      Row({ space: 24 }) {
+        Column({ space: 18 }) {
+          this.cardHeader()
+          this.progressSection()
+        }
+        .width('42%')
+        .alignItems(HorizontalAlign.Start)
+
+        Column() {
+          this.statistics()
+        }
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+    } else {
+      Column({ space: 18 }) {
+        this.cardHeader()
+        this.progressSection()
+        this.statistics()
+      }
+      .width('100%')
     }
-    .width('100%')
   }
 
   @Builder
@@ -321,35 +346,67 @@ export struct ResearchProfileCard {
 
   @Builder
   private disclaimer() {
-    Column({ space: 8 }) {
-      Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.clock_fill'))
-          .fontSize(15)
-          .fontColor([$r('sys.color.icon_tertiary')])
-        Text('有效阅读每分钟 +1 XP，单篇满 1 分钟额外 +8 XP，每日计分上限 180 分钟')
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_tertiary'))
-          .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-          .layoutWeight(1)
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
+    if (this.wideBanner) {
+      Row({ space: 24 }) {
+        Row({ space: 8 }) {
+          SymbolGlyph($r('sys.symbol.clock_fill'))
+            .fontSize(15)
+            .fontColor([$r('sys.color.icon_tertiary')])
+          Text('有效阅读每分钟 +1 XP，单篇满 1 分钟额外 +8 XP，每日计分上限 180 分钟')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+            .layoutWeight(1)
+        }
+        .layoutWeight(1)
+        .alignItems(VerticalAlign.Center)
 
-      Row({ space: 8 }) {
-        SymbolGlyph($r('sys.symbol.lock_fill'))
-          .fontSize(15)
-          .fontColor([$r('sys.color.icon_tertiary')])
-        Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_tertiary'))
-          .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-          .layoutWeight(1)
+        Row({ space: 8 }) {
+          SymbolGlyph($r('sys.symbol.lock_fill'))
+            .fontSize(15)
+            .fontColor([$r('sys.color.icon_tertiary')])
+          Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+            .layoutWeight(1)
+        }
+        .layoutWeight(1)
+        .alignItems(VerticalAlign.Center)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
+    } else {
+      Column({ space: 8 }) {
+        Row({ space: 8 }) {
+          SymbolGlyph($r('sys.symbol.clock_fill'))
+            .fontSize(15)
+            .fontColor([$r('sys.color.icon_tertiary')])
+          Text('有效阅读每分钟 +1 XP，单篇满 1 分钟额外 +8 XP，每日计分上限 180 分钟')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Row({ space: 8 }) {
+          SymbolGlyph($r('sys.symbol.lock_fill'))
+            .fontSize(15)
+            .fontColor([$r('sys.color.icon_tertiary')])
+          Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
     }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
   }
 
   build() {
@@ -372,12 +429,18 @@ export struct ResearchProfileCard {
       this.disclaimer()
     }
     .width('100%')
-    .constraintSize({ maxWidth: PROFILE_CARD_MAX_WIDTH })
+    .constraintSize({ maxWidth: this.maxWidth })
     .padding(20)
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
     .border(this.materialEnabled ?
       { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(24)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const width = Number(newArea.width);
+      if (Number.isFinite(width) && width > 0) {
+        this.wideBanner = width >= PROFILE_WIDE_BANNER_MIN_WIDTH;
+      }
+    })
   }
 }

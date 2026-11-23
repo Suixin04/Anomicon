@@ -23,7 +23,7 @@ import {
 } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import { FastPerformanceHintScope } from '../composition/FastPerformanceHints';
-import { createAppTitleBarStyle } from 'anomiconbasic';
+import { createAppBackIcon, createAppTitleBarStyle, popNavigationDestination } from 'anomiconbasic';
 import { SettingsViewModel } from 'settings';
 
 @Builder
@@ -112,7 +112,11 @@ struct ScpSearchPage {
       enableComponentSafeArea: false,
       content: {
         title: { mainTitle: '搜索' },
-        backIcon: { label: '返回', componentId: 'searchBackButton' },
+        backIcon: createAppBackIcon('searchBackButton', (): void => {
+          popNavigationDestination(this.pageStack, (): void => {
+            this.searchState.clear();
+          });
+        }),
         bottomBuilder: {
           builder: (): void => this.searchHeaderBuilder(),
           height: CATALOG_SEARCH_HEADER_HEIGHT

@@ -9,6 +9,7 @@ import {
   CARD_PRESS_MODIFIER,
   materialCardBorderColor,
   materialCardSurfaceColor,
+  PHONE_PAGE_MARGIN,
   ROW_PRESS_MODIFIER
 } from 'anomiconbasic';
 
@@ -46,6 +47,7 @@ function kindLabelFor(kind: LibraryContentKind): string {
 export struct TerminalFavoriteCards {
   @Require @Param entries: LibraryFavorite[];
   @Require @Param materialEnabled: boolean;
+  @Param horizontalPadding: number = PHONE_PAGE_MARGIN;
   @Event onOpenContent: (content: LibraryContentRef) => void;
 
   private displayId(content: LibraryContentRef): string {
@@ -128,7 +130,7 @@ export struct TerminalFavoriteCards {
     .constraintSize({ minWidth: '100%' })
     .justifyContent(FlexAlign.Start)
     .alignSelf(ItemAlign.Start)
-    .padding({ left: 16, right: 16 })
+    .padding({ left: this.horizontalPadding, right: this.horizontalPadding })
   }
 }
 

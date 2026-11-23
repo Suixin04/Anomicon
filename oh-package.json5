@@ -1,6 +1,6 @@
 {
   "modelVersion": "26.0.0",
-  "description": "Please describe the basic information.",
+  "description": "Anomicon (格异录) — HarmonyOS multi-device unofficial SCP Chinese reader and 3D archive app.",
   "dependencies": {
   },
   "devDependencies": {

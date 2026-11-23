@@ -7,6 +7,8 @@ import {
 import {
   accentPillBackgroundColor,
   accentPillForegroundColor,
+  adaptiveListLanesForWidth,
+  adaptivePageMarginForWidth,
   AppTypography,
   badgeDangerBackgroundColor,
   badgeDangerForegroundColor,
@@ -14,10 +16,14 @@ import {
   badgeInfoForegroundColor,
   badgeWarningBackgroundColor,
   badgeWarningForegroundColor,
+  BREAKPOINT_MD_MIN_WIDTH,
   CARD_PRESS_MODIFIER,
-  PHONE_PAGE_MARGIN,
+  createAppBackIcon,
   createAppTitleBarStyle,
-  pageContentTop
+  pageContentTop,
+  popNavigationDestination,
+  WIDE_CONTENT_MAX_WIDTH,
+  windowWidthVp
 } from 'anomiconbasic';
 import { SettingsViewModel } from 'settings';
 import {
@@ -115,7 +121,20 @@ struct Scp3DArchiveGalleryPage {
     Scp3DArchiveGalleryFilter.ALL;
   @Local private stateVersion: number = 0;
   @Local private activeActionAssetId: string = '';
+  @Local private paneWidth: number = 0;
   private readonly liveStates: Map<string, Scp3DArchiveInstallState> = new Map();
+
+  private resolvedWidth(): number {
+    return this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+  }
+
+  private horizontalMargin(): number {
+    return adaptivePageMarginForWidth(this.resolvedWidth());
+  }
+
+  private columnCount(): number {
+    return adaptiveListLanesForWidth(this.resolvedWidth(), 680);
+  }
   private readonly stateUnsubscribers: Array<() => void> = [];
   private readonly filterChipMaterial: uiMaterial.ImmersiveMaterial =
     new uiMaterial.ImmersiveMaterial({
@@ -319,30 +338,47 @@ struct Scp3DArchiveGalleryPage {
 
   @Builder
   private filterBar() {
-    Row({ space: 8 }) {
-      ForEach(FILTER_VALUES, (filter: Scp3DArchiveGalleryFilter, index: number) => {
-        Button(`${FILTER_LABELS[index]} ${this.countFor(filter)}`, {
-          type: ButtonType.Capsule,
-          stateEffect: false
-        })
-          .layoutWeight(1)
-          .height(36)
-          .fontSize(AppTypography.CAPTION_L)
-          .fontWeight(this.isFilterSelected(filter) ? FontWeight.Medium : FontWeight.Regular)
-          .fontColor(this.isFilterSelected(filter) ?
-            accentPillForegroundColor() : $r('sys.color.font_secondary'))
-          .backgroundColor(this.isFilterSelected(filter) ?
-            accentPillBackgroundColor() :
-            (this.isMaterialEnabled() ? Color.Transparent : $r('sys.color.comp_background_tertiary')))
-          .systemMaterial(!this.isFilterSelected(filter) && this.isMaterialEnabled() ?
-            this.filterChipMaterial : undefined)
-          .onClick(() => this.selectFilter(filter))
-          .accessibilityText(`${FILTER_LABELS[index]}，${this.countFor(filter)} 个`);
-      }, (filter: Scp3DArchiveGalleryFilter) => filter);
+    Row() {
+      Row() {
+        Row({ space: 8 }) {
+          ForEach(FILTER_VALUES, (filter: Scp3DArchiveGalleryFilter, index: number) => {
+            Button(`${FILTER_LABELS[index]} ${this.countFor(filter)}`, {
+              type: ButtonType.Capsule,
+              stateEffect: false
+            })
+              .layoutWeight(1)
+              .height(36)
+              .fontSize(AppTypography.CAPTION_L)
+              .fontWeight(this.isFilterSelected(filter) ? FontWeight.Medium : FontWeight.Regular)
+              .fontColor(this.isFilterSelected(filter) ?
+                accentPillForegroundColor() : $r('sys.color.font_secondary'))
+              .backgroundColor(this.isFilterSelected(filter) ?
+                accentPillBackgroundColor() :
+                (this.isMaterialEnabled() ? Color.Transparent : $r('sys.color.comp_background_tertiary')))
+              .systemMaterial(!this.isFilterSelected(filter) && this.isMaterialEnabled() ?
+                this.filterChipMaterial : undefined)
+              .onClick(() => this.selectFilter(filter))
+              .accessibilityText(`${FILTER_LABELS[index]}，${this.countFor(filter)} 个`);
+          }, (filter: Scp3DArchiveGalleryFilter) => filter);
+        }
+        .width('100%')
+        .constraintSize({
+          maxWidth: this.resolvedWidth() >= BREAKPOINT_MD_MIN_WIDTH ? 440 : WIDE_CONTENT_MAX_WIDTH
+        });
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+      .justifyContent(FlexAlign.Start)
+      .padding({
+        left: this.horizontalMargin(),
+        right: this.horizontalMargin(),
+        top: 4,
+        bottom: 8
+      });
     }
     .width('100%')
-    .height(GALLERY_FILTER_BAR_HEIGHT)
-    .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, top: 4, bottom: 8 });
+    .justifyContent(FlexAlign.Center)
+    .height(GALLERY_FILTER_BAR_HEIGHT);
   }
 
   @Builder
@@ -473,26 +509,35 @@ struct Scp3DArchiveGalleryPage {
       // intrinsic-height child and vertically centered by HDS.
       Stack({ alignContent: Alignment.Top }) {
         Scroll(this.scroller) {
-          Column({ space: 14 }) {
-            if (this.visibleEntries().length === 0) {
-              this.emptyState();
-            } else {
-              ForEach(this.visibleEntries(), (entry: Scp3DAssetManifestEntry) => {
-                this.archiveCard(entry);
-              }, (entry: Scp3DAssetManifestEntry) => entry.assetId);
+          Column() {
+            Column({ space: 14 }) {
+              if (this.visibleEntries().length === 0) {
+                this.emptyState();
+              } else {
+                GridRow({ columns: this.columnCount(), gutter: { x: 14, y: 14 } }) {
+                  ForEach(this.visibleEntries(), (entry: Scp3DAssetManifestEntry) => {
+                    GridCol({ span: 1 }) {
+                      this.archiveCard(entry);
+                    }
+                  }, (entry: Scp3DAssetManifestEntry) => entry.assetId);
+                }
+                .width('100%');
+              }
             }
+            .width('100%')
+            .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+            .padding({
+              left: this.horizontalMargin(),
+              right: this.horizontalMargin(),
+              // The destination is laid out through the system bars. Keep
+              // interactive content below the status bar, MINI title bar and bottom filter bar;
+              // the surrounding background remains fully immersive.
+              top: pageContentTop() + GALLERY_FILTER_BAR_HEIGHT + 4,
+              bottom: 34
+            });
           }
           .width('100%')
-          .constraintSize({ maxWidth: 640 })
-          .padding({
-            left: PHONE_PAGE_MARGIN,
-            right: PHONE_PAGE_MARGIN,
-            // The destination is laid out through the system bars. Keep
-            // interactive content below the status bar, MINI title bar and bottom filter bar;
-            // the surrounding background remains fully immersive.
-            top: pageContentTop() + GALLERY_FILTER_BAR_HEIGHT + 4,
-            bottom: 34
-          });
+          .alignItems(HorizontalAlign.Center);
         }
         // matchParent is important when the destination ignores a system
         // safe area: percentage sizing can move a component without growing
@@ -513,6 +558,12 @@ struct Scp3DArchiveGalleryPage {
       .clip(false)
       .background($r('sys.color.background_secondary'), {
         ignoresLayoutSafeAreaEdges: [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]
+      })
+      .onAreaChange((_oldArea: Area, newArea: Area): void => {
+        const width = Number(newArea.width);
+        if (Number.isFinite(width) && width > 0) {
+          this.paneWidth = width;
+        }
       });
     }
     .titleBar({
@@ -525,7 +576,9 @@ struct Scp3DArchiveGalleryPage {
           mainTitle: '三维档案馆',
           subTitle: `${this.manifest.length} 个档案`
         },
-        backIcon: { label: '返回', componentId: 'scp3dArchiveGalleryBackButton' },
+        backIcon: createAppBackIcon('scp3dArchiveGalleryBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        }),
         bottomBuilder: {
           builder: (): void => this.filterBarBuilder(),
           height: GALLERY_FILTER_BAR_HEIGHT

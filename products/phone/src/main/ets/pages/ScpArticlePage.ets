@@ -31,9 +31,16 @@ import {
 } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import {
-  PHONE_PAGE_MARGIN,
+  adaptivePageMarginForWidth,
+  createAppBackIcon,
   createAppTitleBarStyle,
-  pageContentTop
+  isDetailFullscreen,
+  pageContentTop,
+  popNavigationDestination,
+  setDetailFullscreen,
+  setPreviewFullscreen,
+  supportsSplitNavigation,
+  windowWidthVp
 } from 'anomiconbasic';
 import { ExternalUrlPolicy } from 'anomiconbasic';
 import {
@@ -141,6 +148,9 @@ struct ScpArticlePage {
   @Local private lineHeightMultiple: number = ReadingSettingsRange.LINE_HEIGHT_DEFAULT;
   @Local private readingPercent: number = 0;
   @Local private completed: boolean = false;
+  @Local private sidePanelAvailable: boolean = false;
+  @Local private sidePanelOpen: boolean = false;
+  @Local private sidePanelLabel: string = '';
 
   aboutToAppear(): void {
     this.viewModelUnsubscribe?.();
@@ -385,6 +395,7 @@ struct ScpArticlePage {
     }
     this.noteReadingInteraction();
     this.previewIndex = Math.max(0, Math.min(Math.floor(index), this.document.images.length - 1));
+    setPreviewFullscreen(true);
     this.getUIContext().animateTo({
       duration: 220,
       curve: Curve.FastOutSlowIn
@@ -394,6 +405,7 @@ struct ScpArticlePage {
   }
 
   private closePreview(): void {
+    setPreviewFullscreen(false);
     this.getUIContext().animateTo({
       duration: 180,
       curve: Curve.EaseOut
@@ -602,7 +614,8 @@ struct ScpArticlePage {
   private articleMenuMaxCount(): number {
     // Every article keeps 收藏 and the explicit completion annotation as
     // first-level actions. Browser and reading settings remain in More.
-    return this.canOpenArchive3D() ? 4 : 3;
+    const baseCount = this.canOpenArchive3D() ? 4 : 3;
+    return baseCount + (supportsSplitNavigation(windowWidthVp()) ? 1 : 0);
   }
 
   private articleMenuItems(): HdsNavigationMenuItemOptions[] {
@@ -637,6 +650,21 @@ struct ScpArticlePage {
         }
       });
     }
+    if (supportsSplitNavigation(windowWidthVp())) {
+      const fullscreen = isDetailFullscreen();
+      items.push({
+        content: {
+          icon: fullscreen ?
+            $r('sys.symbol.arrow_down_right_and_arrow_up_left') :
+            $r('sys.symbol.arrow_up_left_and_arrow_down_right'),
+          label: fullscreen ? '恢复分栏' : '全屏阅读',
+          action: () => {
+            this.hapticService.playSelection(this.settings.hapticEnabled);
+            setDetailFullscreen(!fullscreen);
+          }
+        }
+      });
+    }
     items.push({
       content: {
         icon: $r('sys.symbol.arrow_up_right'),
@@ -662,7 +690,13 @@ struct ScpArticlePage {
       experience: this.research.profile.experience,
       contentReady: this.document !== undefined && !this.loading,
       compactProfile: this.isStoryDetail(),
-      materialEnabled: this.settings.immersiveMaterialEnabled
+      materialEnabled: this.settings.immersiveMaterialEnabled,
+      sidePanelAvailable: this.sidePanelAvailable,
+      sidePanelOpen: this.sidePanelOpen,
+      sidePanelLabel: this.sidePanelLabel,
+      onToggleSidePanel: (): void => {
+        this.sidePanelOpen = !this.sidePanelOpen;
+      }
     })
   }
 
@@ -682,8 +716,8 @@ struct ScpArticlePage {
           .width('100%')
           .height('100%')
           .padding({
-            left: PHONE_PAGE_MARGIN,
-            right: PHONE_PAGE_MARGIN,
+            left: adaptivePageMarginForWidth(windowWidthVp()),
+            right: adaptivePageMarginForWidth(windowWidthVp()),
             top: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
             bottom: 48
           })
@@ -702,8 +736,8 @@ struct ScpArticlePage {
           .width('100%')
           .height('100%')
           .padding({
-            left: PHONE_PAGE_MARGIN,
-            right: PHONE_PAGE_MARGIN,
+            left: adaptivePageMarginForWidth(windowWidthVp()),
+            right: adaptivePageMarginForWidth(windowWidthVp()),
             top: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
             bottom: 48
           })
@@ -724,6 +758,14 @@ struct ScpArticlePage {
             galleryReturnIndex: this.previewIndex,
             galleryReturnEpoch: this.galleryReturnEpoch,
             materialEnabled: this.settings.immersiveMaterialEnabled,
+            sidePanelOpen: this.sidePanelOpen,
+            onSidePanelAvailabilityChange: (available: boolean, label: string): void => {
+              this.sidePanelAvailable = available;
+              this.sidePanelLabel = label;
+            },
+            onSidePanelOpenChange: (open: boolean): void => {
+              this.sidePanelOpen = open;
+            },
             onRetryPartial: () => this.retryArticle(),
             onReadingProgressChange: (percent: number) => this.applyReadingPercent(percent),
             onAnchorJump: () => {
@@ -824,7 +866,9 @@ struct ScpArticlePage {
           builder: (): void => this.readingStatusBuilder(),
           height: ARTICLE_READING_STATUS_HEIGHT
         },
-        backIcon: { label: '返回', componentId: 'articleBackButton' },
+        backIcon: createAppBackIcon('articleBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        }),
         menu: {
           // HDS 当前实现会把“更多”本身计入 maxCount；因此无模型为 3
           // （收藏 + 已读完 + 更多），有模型为 4（再加三维档案）。
@@ -855,6 +899,7 @@ struct ScpArticlePage {
       }
     })
     .onHidden(() => {
+      setPreviewFullscreen(false);
       this.syncLoadingBoost(false);
       if (this.acceptsProgressEvents) {
         this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {
@@ -901,6 +946,7 @@ struct ScpArticlePage {
       }
     })
     .onWillDisappear(() => {
+      setPreviewFullscreen(false);
       this.syncLoadingBoost(false);
       this.acceptsProgressEvents = false;
       this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {

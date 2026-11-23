@@ -1,12 +1,24 @@
 import { LengthMetrics, uiMaterial } from '@kit.ArkUI';
 import {
+  accentPillBackgroundColor,
+  accentPillForegroundColor,
+  adaptivePageMarginForWidth,
   AppTypography,
+  autoOpenArticleSidePanel,
   badgeInfoBackgroundColor,
+  CARD_PRESS_MODIFIER,
   ContentUpdateNotice,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
   objectClassColor,
   PHONE_PAGE_MARGIN,
+  READING_CONTENT_MAX_WIDTH,
+  resolveArticleSidebarWidth,
   ROW_PRESS_MODIFIER,
-  uiImmersiveMaterialSupported
+  shouldUseCenterSheet,
+  supportsArticleSidePanel,
+  uiImmersiveMaterialSupported,
+  windowWidthVp
 } from 'anomiconbasic';
 import { ArticleRelatedTale } from '../../domain/ArticleContracts';
 import {
@@ -412,6 +424,7 @@ export struct ArticleNativeRenderer {
   /** Monotonic token that makes repeated returns to the same index observable. */
   @Param galleryReturnEpoch: number = 0;
   @Param materialEnabled: boolean = true;
+  @Param sidePanelOpen: boolean = false;
 
   @Event onRetryPartial: () => void = () => {};
   @Event onReadingProgressChange: (percent: number) => void = (_percent: number) => {};
@@ -426,6 +439,9 @@ export struct ArticleNativeRenderer {
   @Event onToggleExpanded: (block: ScpContentBlock) => void;
   @Event onOpenRelatedTale: (tale: ArticleRelatedTale) => void;
   @Event onContentLaidOut: () => void;
+  @Event onSidePanelAvailabilityChange: (available: boolean, label: string) => void =
+    (_available: boolean, _label: string): void => {};
+  @Event onSidePanelOpenChange: (open: boolean) => void = (_open: boolean): void => {};
 
   @Local private galleryIndex: number = 0;
   @Local private sectionRows: ArticleSectionRow[] = [];
@@ -437,8 +453,12 @@ export struct ArticleNativeRenderer {
   @Local private highlightOpacity: number = 0;
   @Local private footnoteSheetVisible: boolean = false;
   @Local private activeFootnoteIndex: number = -1;
+  @Local private containerWidth: number = 0;
+  @Local private activeWorkbenchTab: number = 0;
+  @Local private userClosedSidePanel: boolean = false;
   private readonly galleryController: SwiperController = new SwiperController();
   private readonly footnoteSheetScroller: Scroller = new Scroller();
+  private readonly sidePanelScroller: Scroller = new Scroller();
   private readonly footnoteSheetDetents: [SheetSize, SheetSize, SheetSize] =
     [SheetSize.FIT_CONTENT, SheetSize.MEDIUM, SheetSize.LARGE];
   private readonly footnoteSheetMaterial: uiMaterial.ImmersiveMaterial =
@@ -447,6 +467,7 @@ export struct ArticleNativeRenderer {
       applyShadow: true
     });
   private lastDocumentItemId: string = '';
+  private lastNotifiedAvailabilityKey: string = '';
   private viewportHeight: number = 0;
   private visibleStartIndex: number = -1;
   private visibleEndIndex: number = -1;
@@ -459,6 +480,8 @@ export struct ArticleNativeRenderer {
   aboutToAppear(): void {
     this.syncDocumentAndSections();
     this.lastDocumentItemId = this.document.itemId;
+    this.syncWorkbenchTabDefault();
+    this.syncSidePanelAvailability();
   }
 
   aboutToDisappear(): void {
@@ -470,10 +493,13 @@ export struct ArticleNativeRenderer {
   onDocumentChange(): void {
     const sameItem = this.lastDocumentItemId.length > 0 &&
       this.lastDocumentItemId === this.document.itemId;
-    const activeId = (sameItem && this.footnoteSheetVisible) ?
+    const activeId = (sameItem && (this.footnoteSheetVisible || this.sidePanelOpen)) ?
       (this.currentFootnoteRow()?.footnote.id ?? '') : '';
     const previousIndex = this.activeFootnoteIndex;
 
+    if (!sameItem) {
+      this.userClosedSidePanel = false;
+    }
     this.clearHighlightTimer();
     this.highlightedAnchorKey = '';
     this.highlightOpacity = 0;
@@ -484,26 +510,40 @@ export struct ArticleNativeRenderer {
     this.syncDocumentAndSections();
     this.lastDocumentItemId = this.document.itemId;
     this.galleryController.changeIndex(0, false);
+    this.syncWorkbenchTabDefault();
 
-    if (!sameItem || !this.footnoteSheetVisible || this.footnoteRows.length === 0) {
+    if (sameItem && (this.footnoteSheetVisible || this.sidePanelOpen) && this.footnoteRows.length > 0) {
+      const remapped = activeId.length > 0 ?
+        ArticleRenderer.findFootnoteIndex(this.document.footnotes, activeId) : -1;
+      if (remapped >= 0) {
+        this.activeFootnoteIndex = remapped;
+      } else if (previousIndex >= 0) {
+        this.activeFootnoteIndex = Math.max(
+          0,
+          Math.min(previousIndex, this.footnoteRows.length - 1)
+        );
+      }
+    } else if (!sameItem || !this.footnoteSheetVisible || this.footnoteRows.length === 0) {
       this.closeFootnoteSheet();
-      return;
     }
-    const remapped = activeId.length > 0 ?
-      ArticleRenderer.findFootnoteIndex(this.document.footnotes, activeId) : -1;
-    if (remapped >= 0) {
-      this.activeFootnoteIndex = remapped;
-    } else {
-      this.activeFootnoteIndex = Math.max(
-        0,
-        Math.min(previousIndex >= 0 ? previousIndex : 0, this.footnoteRows.length - 1)
-      );
-    }
+    this.syncSidePanelAvailability();
   }
 
   @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody')
   onLayoutInputsChange(): void {
     this.syncDocumentAndSections();
+    this.syncWorkbenchTabDefault();
+    this.syncSidePanelAvailability();
+  }
+
+  @Monitor('sidePanelOpen')
+  onExternalSidePanelOpenChange(): void {
+    if (this.sidePanelOpen) {
+      this.userClosedSidePanel = false;
+      this.footnoteSheetVisible = false;
+    } else if (this.canUseSidePanel()) {
+      this.userClosedSidePanel = true;
+    }
   }
 
   @Monitor('galleryReturnEpoch')
@@ -873,7 +913,61 @@ export struct ArticleNativeRenderer {
   }
 
   private hasNextFootnote(): boolean {
-    return this.activeFootnoteIndex >= 0 && this.activeFootnoteIndex < this.footnoteRows.length - 1;
+    return this.footnoteRows.length > 0 && this.activeFootnoteIndex < this.footnoteRows.length - 1;
+  }
+
+  private hasWorkbenchContent(): boolean {
+    return this.footnoteRows.length > 0 || this.relatedTaleRows.length > 0;
+  }
+
+  private canUseSidePanel(): boolean {
+    return supportsArticleSidePanel(this.containerWidth) && this.hasWorkbenchContent();
+  }
+
+  private sidePanelVisible(): boolean {
+    return this.canUseSidePanel() && this.sidePanelOpen;
+  }
+
+  private syncWorkbenchTabDefault(): void {
+    if (this.footnoteRows.length === 0 && this.relatedTaleRows.length > 0) {
+      this.activeWorkbenchTab = 1;
+    } else if (this.relatedTaleRows.length === 0) {
+      this.activeWorkbenchTab = 0;
+    }
+  }
+
+  private sidePanelBadgeLabel(): string {
+    const fnCount = this.footnoteRows.length;
+    const taleCount = this.relatedTaleRows.length;
+    if (fnCount > 0 && taleCount > 0) {
+      return `研读 ${fnCount + taleCount}`;
+    }
+    if (fnCount > 0) {
+      return `脚注 ${fnCount}`;
+    }
+    if (taleCount > 0) {
+      return `故事 ${taleCount}`;
+    }
+    return '';
+  }
+
+  private syncSidePanelAvailability(): void {
+    const available = this.canUseSidePanel();
+    const label = available ? this.sidePanelBadgeLabel() : '';
+    const notifyKey = `${available ? '1' : '0'}:${label}`;
+    if (notifyKey !== this.lastNotifiedAvailabilityKey) {
+      this.lastNotifiedAvailabilityKey = notifyKey;
+      this.onSidePanelAvailabilityChange(available, label);
+    }
+    if (!available) {
+      if (this.sidePanelOpen) {
+        this.onSidePanelOpenChange(false);
+      }
+      return;
+    }
+    if (autoOpenArticleSidePanel(this.containerWidth) && !this.userClosedSidePanel && !this.sidePanelOpen) {
+      this.onSidePanelOpenChange(true);
+    }
   }
 
   private scrollFootnoteSheetToTop(): void {
@@ -881,6 +975,17 @@ export struct ArticleNativeRenderer {
       this.footnoteSheetScroller.scrollEdge(Edge.Top);
     } catch (_error) {
       // Sheet Scroll is not bound yet on initial open; ignore harmless 100004 error.
+    }
+  }
+
+  private scrollSidePanelToFootnote(index: number): void {
+    if (index < 0 || index >= this.footnoteRows.length) {
+      return;
+    }
+    try {
+      this.sidePanelScroller.scrollToIndex(index, true, ScrollAlign.CENTER);
+    } catch (_error) {
+      // Sidebar List may not be attached yet during panel mount; onAppear will sync.
     }
   }
 
@@ -895,6 +1000,18 @@ export struct ArticleNativeRenderer {
       return;
     }
     this.activeFootnoteIndex = targetIndex;
+    if (this.canUseSidePanel()) {
+      this.footnoteSheetVisible = false;
+      this.userClosedSidePanel = false;
+      this.activeWorkbenchTab = 0;
+      if (!this.sidePanelOpen) {
+        this.onSidePanelOpenChange(true);
+      }
+      this.onAnchorJump();
+      this.triggerAnchorHighlight(`ref:${this.footnoteRows[targetIndex].footnote.id}`);
+      this.scrollSidePanelToFootnote(targetIndex);
+      return;
+    }
     this.footnoteSheetVisible = true;
     this.onAnchorJump();
     this.scrollFootnoteSheetToTop();
@@ -902,7 +1019,26 @@ export struct ArticleNativeRenderer {
 
   private closeFootnoteSheet(): void {
     this.footnoteSheetVisible = false;
-    this.activeFootnoteIndex = -1;
+    if (!this.sidePanelVisible()) {
+      this.activeFootnoteIndex = -1;
+    }
+  }
+
+  private closeSidePanel(): void {
+    this.userClosedSidePanel = true;
+    if (this.sidePanelOpen) {
+      this.onSidePanelOpenChange(false);
+    }
+  }
+
+  private selectSidePanelFootnote(row: ArticleFootnoteRowState): void {
+    this.activeFootnoteIndex = row.index;
+    const refKey = `ref:${row.footnote.id}`;
+    if (this.anchorIndexByKey.has(refKey)) {
+      this.jumpTo(refKey);
+      return;
+    }
+    this.onAnchorJump();
   }
 
   private stepFootnote(delta: number): void {
@@ -915,7 +1051,12 @@ export struct ArticleNativeRenderer {
       return;
     }
     this.activeFootnoteIndex = next;
-    this.scrollFootnoteSheetToTop();
+    if (this.footnoteSheetVisible) {
+      this.scrollFootnoteSheetToTop();
+    }
+    if (this.sidePanelVisible()) {
+      this.scrollSidePanelToFootnote(next);
+    }
     const row = this.currentFootnoteRow();
     if (row !== undefined) {
       const refKey = `ref:${row.footnote.id}`;
@@ -941,6 +1082,16 @@ export struct ArticleNativeRenderer {
     this.onOpenUrl(url);
   }
 
+  private mainReadingAreaWidth(): number {
+    const sidebarWidth = this.sidePanelVisible() ? resolveArticleSidebarWidth(this.containerWidth) : 0;
+    const baseWidth = this.containerWidth > 0 ? this.containerWidth : windowWidthVp();
+    return Math.max(0, baseWidth - sidebarWidth);
+  }
+
+  private mainHorizontalMargin(): number {
+    return adaptivePageMarginForWidth(this.mainReadingAreaWidth());
+  }
+
   private footnoteSheetOptions(): SheetOptions {
     const row = this.currentFootnoteRow();
     const header: FootnoteSheetHeader = row !== undefined ?
@@ -950,10 +1101,9 @@ export struct ArticleNativeRenderer {
         this.footnoteRows.length
       ) :
       { title: '脚注', subtitle: '' };
+    const useCenter = shouldUseCenterSheet(windowWidthVp());
     const options: SheetOptions = {
-      detents: this.footnoteSheetDetents,
-      scrollSizeMode: ScrollSizeMode.CONTINUOUS,
-      preferType: SheetType.CENTER,
+      preferType: useCenter ? SheetType.CENTER : SheetType.BOTTOM,
       dragBar: true,
       showClose: true,
       title: header.subtitle.length > 0 ?
@@ -967,6 +1117,12 @@ export struct ArticleNativeRenderer {
         this.closeFootnoteSheet();
       }
     };
+    if (useCenter) {
+      options.height = SheetSize.FIT_CONTENT;
+    } else {
+      options.detents = this.footnoteSheetDetents;
+      options.scrollSizeMode = ScrollSizeMode.CONTINUOUS;
+    }
     if (this.materialEnabled) {
       if (uiImmersiveMaterialSupported()) {
         options.systemMaterial = this.footnoteSheetMaterial;
@@ -1567,15 +1723,18 @@ export struct ArticleNativeRenderer {
           .width('100%')
           .alignItems(HorizontalAlign.Start)
           .padding({
-            left: PHONE_PAGE_MARGIN,
-            right: PHONE_PAGE_MARGIN,
+            left: adaptivePageMarginForWidth(windowWidthVp()),
+            right: adaptivePageMarginForWidth(windowWidthVp()),
             top: 4,
             bottom: this.footnoteRows.length > 1 ? 16 : 24
           })
         }
         .width('100%')
         .flexShrink(1)
-        .constraintSize({ minHeight: 56 })
+        .constraintSize({
+          minHeight: 56,
+          maxHeight: shouldUseCenterSheet(windowWidthVp()) ? 400 : 520
+        })
         .align(Alignment.Top)
         .scrollBar(BarState.Auto)
         .edgeEffect(EdgeEffect.Spring)
@@ -1599,8 +1758,8 @@ export struct ArticleNativeRenderer {
           }
           .width('100%')
           .padding({
-            left: PHONE_PAGE_MARGIN,
-            right: PHONE_PAGE_MARGIN,
+            left: adaptivePageMarginForWidth(windowWidthVp()),
+            right: adaptivePageMarginForWidth(windowWidthVp()),
             top: 10,
             bottom: 20
           })
@@ -1612,57 +1771,276 @@ export struct ArticleNativeRenderer {
     .width('100%')
   }
 
-  build() {
-    List({ scroller: this.scroller }) {
-      Repeat<ArticleSectionRow>(this.sectionRows)
-        .each((item: RepeatItem<ArticleSectionRow>) => {
-          ListItem() {
-            this.sectionView(item.item)
+  private showingFootnotesTab(): boolean {
+    if (this.footnoteRows.length === 0) {
+      return false;
+    }
+    if (this.relatedTaleRows.length === 0) {
+      return true;
+    }
+    return this.activeWorkbenchTab === 0;
+  }
+
+  @Builder
+  private workbenchTabPill(label: string, index: number) {
+    Text(label)
+      .fontSize(AppTypography.CAPTION_L)
+      .fontWeight(this.activeWorkbenchTab === index ? FontWeight.Medium : FontWeight.Regular)
+      .fontColor(this.activeWorkbenchTab === index ?
+        accentPillForegroundColor() : $r('sys.color.font_secondary'))
+      .height(28)
+      .padding({ left: 10, right: 10 })
+      .borderRadius(14)
+      .backgroundColor(this.activeWorkbenchTab === index ?
+        accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+      .onClick(() => {
+        this.activeWorkbenchTab = index;
+      })
+  }
+
+  @Builder
+  private sidePanelFootnoteCard(fnRow: ArticleFootnoteRowState) {
+    Row({ space: 8 }) {
+      Text(`${fnRow.footnote.index}.`)
+        .fontSize(AppTypography.BODY_S)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('sys.color.font_emphasize'))
+      Column({ space: 6 }) {
+        ForEach(fnRow.blocks, (block: ArticleBlockRowState) => {
+          this.blockView(block)
+        }, (block: ArticleBlockRowState) => block.key)
+      }
+      .layoutWeight(1)
+      .alignItems(HorizontalAlign.Start)
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Top)
+    .padding(12)
+    .backgroundColor(fnRow.index === this.activeFootnoteIndex ?
+      badgeInfoBackgroundColor() : $r('sys.color.comp_background_primary'))
+    .border({
+      width: fnRow.index === this.activeFootnoteIndex ? 1 : 0.5,
+      color: fnRow.index === this.activeFootnoteIndex ?
+        $r('sys.color.font_emphasize') : materialCardBorderColor(this.materialEnabled)
+    })
+    .borderRadius(14)
+    .onClick(() => this.selectSidePanelFootnote(fnRow))
+  }
+
+  @Builder
+  private sidePanelRelatedTaleCard(taleRow: ArticleRelatedTaleRowState) {
+    Row({ space: 8 }) {
+      Column({ space: 2 }) {
+        Text(taleRow.tale.title)
+          .fontSize(AppTypography.BODY_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(taleRow.tale.id)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(14)
+        .fontColor([$r('sys.color.icon_secondary')])
+    }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor($r('sys.color.comp_background_primary'))
+    .border({ width: 0.5, color: materialCardBorderColor(this.materialEnabled) })
+    .borderRadius(12)
+    .onClick(() => this.onOpenRelatedTale(taleRow.tale))
+  }
+
+  @Builder
+  private researchSidePanelBuilder() {
+    Column() {
+      Row({ space: 8 }) {
+        if (this.footnoteRows.length > 0 && this.relatedTaleRows.length > 0) {
+          Row({ space: 6 }) {
+            this.workbenchTabPill(`脚注 ${this.footnoteRows.length}`, 0)
+            this.workbenchTabPill(`故事 ${this.relatedTaleRows.length}`, 1)
+          }
+          .layoutWeight(1)
+        } else {
+          Text(this.footnoteRows.length > 0 ?
+            `脚注 (${this.footnoteRows.length})` :
+            `关联故事 (${this.relatedTaleRows.length})`)
+            .fontSize(AppTypography.SUBTITLE_M)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('sys.color.font'))
+            .layoutWeight(1)
+            .maxLines(1)
+        }
+
+        Button({ type: ButtonType.Circle, stateEffect: false }) {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(13)
+            .fontColor([$r('sys.color.icon_secondary')])
+        }
+        .width(28)
+        .height(28)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .accessibilityText('收起研读侧栏')
+        .onClick(() => this.closeSidePanel())
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+      .padding({
+        left: 16,
+        right: 16,
+        top: this.topPadding + 8,
+        bottom: 10
+      })
+
+      Divider()
+        .strokeWidth(0.5)
+        .color($r('sys.color.comp_divider'))
+
+      if (this.showingFootnotesTab()) {
+        if (this.footnoteRows.length > 1) {
+          Row({ space: 8 }) {
+            this.footnoteStepButton(-1)
+            Blank()
+            Text(this.activeFootnoteIndex >= 0 ?
+              `${this.activeFootnoteIndex + 1} / ${this.footnoteRows.length}` :
+              `共 ${this.footnoteRows.length} 条`)
+              .fontSize(AppTypography.CAPTION_M)
+              .fontColor($r('sys.color.font_tertiary'))
+            Blank()
+            this.footnoteStepButton(1)
           }
           .width('100%')
-          .constraintSize({ maxWidth: 680 })
-          .padding({
-            left: PHONE_PAGE_MARGIN,
-            right: PHONE_PAGE_MARGIN,
-            bottom: item.item.bottomGap
-          })
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+          .alignItems(VerticalAlign.Center)
+
+          Divider()
+            .strokeWidth(0.5)
+            .color($r('sys.color.comp_divider'))
+        }
+
+        List({ scroller: this.sidePanelScroller, space: 10 }) {
+          ForEach(this.footnoteRows, (fnRow: ArticleFootnoteRowState) => {
+            ListItem() {
+              this.sidePanelFootnoteCard(fnRow)
+            }
+          }, (fnRow: ArticleFootnoteRowState) => fnRow.key)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .contentStartOffset(12)
+        .contentEndOffset(32)
+        .padding({ left: 16, right: 16 })
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Auto)
+        .onAppear(() => {
+          if (this.activeFootnoteIndex >= 0) {
+            this.scrollSidePanelToFootnote(this.activeFootnoteIndex);
+          }
         })
-        .key((section: ArticleSectionRow) => section.key)
-        .virtualScroll({ reusable: false })
+      } else {
+        List({ space: 10 }) {
+          ForEach(this.relatedTaleRows, (taleRow: ArticleRelatedTaleRowState) => {
+            ListItem() {
+              this.sidePanelRelatedTaleCard(taleRow)
+            }
+          }, (taleRow: ArticleRelatedTaleRowState) => taleRow.key)
+        }
+        .width('100%')
+        .layoutWeight(1)
+        .contentStartOffset(12)
+        .contentEndOffset(32)
+        .padding({ left: 16, right: 16 })
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Auto)
+      }
+    }
+    .width(resolveArticleSidebarWidth(this.containerWidth))
+    .height('100%')
+    .border({ width: { left: 0.5 }, color: $r('sys.color.comp_divider') })
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
+    .transition(
+      TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
+        .animation({ duration: 220, curve: Curve.FastOutSlowIn })
+    )
+  }
+
+  build() {
+    Row() {
+      List({ scroller: this.scroller }) {
+        Repeat<ArticleSectionRow>(this.sectionRows)
+          .each((item: RepeatItem<ArticleSectionRow>) => {
+            ListItem() {
+              this.sectionView(item.item)
+            }
+            .width('100%')
+            .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
+            .padding({
+              left: this.mainHorizontalMargin(),
+              right: this.mainHorizontalMargin(),
+              bottom: item.item.bottomGap
+            })
+          })
+          .key((section: ArticleSectionRow) => section.key)
+          .virtualScroll({ reusable: false })
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .alignListItem(ListItemAlign.Center)
+      .cachedCount(6)
+      .contentStartOffset(this.topPadding)
+      .contentEndOffset(48)
+      .backgroundColor($r('sys.color.background_secondary'))
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      .onAreaChange((_oldArea: Area, newArea: Area) => {
+        const height = Number(newArea.height);
+        if (Number.isFinite(height) && height > 0) {
+          this.viewportHeight = height;
+          this.onContentLaidOut();
+          this.publishReadingProgress();
+        }
+      })
+      .onScrollIndex((start: number, end: number, _center: number) => {
+        this.visibleStartIndex = start;
+        this.visibleEndIndex = end;
+        this.publishReadingProgress();
+      })
+      .onDidScroll((_scrollOffset: number, _scrollState: ScrollState) => {
+        this.publishReadingProgress();
+        this.onScrollDidScroll();
+      })
+      .onScrollStart(() => {
+        this.onScrollStart();
+      })
+      .onScrollStop(() => {
+        this.publishReadingProgress();
+        this.onScrollStop();
+      })
+      .bindSheet(this.footnoteSheetVisible, this.footnoteSheetBuilder(), this.footnoteSheetOptions())
+
+      if (this.sidePanelVisible()) {
+        this.researchSidePanelBuilder()
+      }
     }
     .width('100%')
     .height('100%')
-    .alignListItem(ListItemAlign.Center)
-    .cachedCount(6)
-    .contentStartOffset(this.topPadding)
-    .contentEndOffset(48)
-    .backgroundColor($r('sys.color.background_secondary'))
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .scrollBar(BarState.Off)
-    .onAreaChange((_oldArea: Area, newArea: Area) => {
-      const height = Number(newArea.height);
-      if (Number.isFinite(height) && height > 0) {
-        this.viewportHeight = height;
-        this.onContentLaidOut();
-        this.publishReadingProgress();
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const measured = Number(newArea.width);
+      if (Number.isFinite(measured) && measured > 0 && measured !== this.containerWidth) {
+        this.containerWidth = measured;
+        this.syncSidePanelAvailability();
       }
     })
-    .onScrollIndex((start: number, end: number, _center: number) => {
-      this.visibleStartIndex = start;
-      this.visibleEndIndex = end;
-      this.publishReadingProgress();
-    })
-    .onDidScroll((_scrollOffset: number, _scrollState: ScrollState) => {
-      this.publishReadingProgress();
-      this.onScrollDidScroll();
-    })
-    .onScrollStart(() => {
-      this.onScrollStart();
-    })
-    .onScrollStop(() => {
-      this.publishReadingProgress();
-      this.onScrollStop();
-    })
-    .bindSheet(this.footnoteSheetVisible, this.footnoteSheetBuilder(), this.footnoteSheetOptions())
   }
 }

@@ -3,6 +3,7 @@
  * only this phone composition boundary touches NavPathStack.
  */
 import { promptAction } from '@kit.ArkUI';
+import { notifyNavigationStackChanged } from 'anomiconbasic';
 
 export class AppNavigationCoordinator {
   private static readonly pending: Set<string> = new Set<string>();
@@ -29,6 +30,7 @@ export class AppNavigationCoordinator {
     AppNavigationCoordinator.pending.add(key);
     try {
       await stack.pushDestination({ name: name, param: param }, true);
+      notifyNavigationStackChanged();
       return true;
     } catch (error) {
       const businessError: BusinessError = error as BusinessError;
@@ -64,6 +66,56 @@ export class AppNavigationCoordinator {
       const businessError: BusinessError = error as BusinessError;
       console.error(
         `Replace with '${name}' failed. Code: ${businessError.code}, message: ${businessError.message}`
+      );
+      AppNavigationCoordinator.notifyFailure('replace');
+      return false;
+    } finally {
+      AppNavigationCoordinator.pending.delete(key);
+    }
+  }
+
+  /**
+   * Open a top-level destination from the root tab master pane.
+   *
+   * When Split mode is already showing a detail stack, pop back to the root
+   * detail entry without collapsing the stack to zero and replace it in place.
+   */
+  static async openFromMaster(
+    stack: NavPathStack | undefined,
+    name: string,
+    param: Object | undefined,
+    splitActive: boolean
+  ): Promise<boolean> {
+    if (stack === undefined) {
+      AppNavigationCoordinator.notifyFailure('push');
+      return false;
+    }
+    if (!splitActive || stack.size() === 0) {
+      return AppNavigationCoordinator.push(stack, name, param);
+    }
+    const paths = stack.getPathStack();
+    const top = paths.length > 0 ? paths[paths.length - 1] : undefined;
+    const targetParamJson = param === undefined ? '' : JSON.stringify(param);
+    const topParamJson = top?.param === undefined ? '' : JSON.stringify(top.param);
+    if (paths.length === 1 && top !== undefined && top.name === name && topParamJson === targetParamJson) {
+      return true;
+    }
+    const key = AppNavigationCoordinator.operationKey('master', stack, name, param);
+    if (AppNavigationCoordinator.pending.has(key)) {
+      return false;
+    }
+    AppNavigationCoordinator.pending.add(key);
+    try {
+      if (paths.length > 1) {
+        stack.popToIndex(0, false);
+      }
+      await stack.replaceDestination({ name: name, param: param }, { animated: false });
+      notifyNavigationStackChanged();
+      return true;
+    } catch (error) {
+      const businessError: BusinessError = error as BusinessError;
+      console.error(
+        `Open from master '${name}' failed. Code: ${businessError.code}, message: ${businessError.message}`
       );
       AppNavigationCoordinator.notifyFailure('replace');
       return false;

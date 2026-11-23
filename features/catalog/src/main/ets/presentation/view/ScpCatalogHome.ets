@@ -5,7 +5,14 @@ import {
   LazyVWaterFlowLayoutAttribute,
   LengthMetrics
 } from '@kit.ArkUI';
-import { AppTypography, pageContentTop, SkeletonBlock } from 'anomiconbasic';
+import {
+  adaptivePageMarginForWidth,
+  AppTypography,
+  CATALOG_CONTENT_MAX_WIDTH,
+  pageContentTop,
+  PHONE_PAGE_MARGIN,
+  SkeletonBlock
+} from 'anomiconbasic';
 import { CatalogEntry, CatalogPreview } from '../../domain/CatalogContracts';
 import { CATALOG_TOOLBAR_HEIGHT, ScpCatalogSearchState, sharedCatalogSearchState } from '../ScpCatalogSearchState';
 import { CatalogViewModel } from '../viewmodel/CatalogViewModel';
@@ -35,6 +42,7 @@ export struct ScpCatalogHome {
   @Local private searchState: ScpCatalogSearchState = sharedCatalogSearchState();
   @Local private entries: ScpCatalogEntry[] = [];
   @Local private catalogColumns: string = '1fr 1fr';
+  @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
   /** Single refresh generation shared by every visible preview card. */
   @Local private previewReloadToken: number = 0;
   /** Keep preview projections alive while search temporarily hides an item. */
@@ -240,7 +248,11 @@ export struct ScpCatalogHome {
     Column() {
       this.topSpacer();
       if (this.viewModel.errorMessage.length > 0 && this.viewModel.entries.length > 0) {
-        this.partialBlock();
+        Column() {
+          this.partialBlock();
+        }
+        .width('100%')
+        .padding({ left: this.horizontalMargin, right: this.horizontalMargin, bottom: 10 });
       }
     }
     .width('100%');
@@ -336,7 +348,8 @@ export struct ScpCatalogHome {
 
   private updateCatalogColumns(area: Area): void {
     const viewportWidth = Number(area.width);
-    if (viewportWidth > 0) {
+    if (Number.isFinite(viewportWidth) && viewportWidth > 0) {
+      this.horizontalMargin = adaptivePageMarginForWidth(viewportWidth);
       this.catalogColumns = viewportWidth >= 1440 ? '1fr 1fr 1fr 1fr 1fr' :
         viewportWidth >= 840 ? '1fr 1fr 1fr 1fr' : viewportWidth >= 600 ? '1fr 1fr 1fr' : '1fr 1fr';
     }
@@ -378,7 +391,7 @@ export struct ScpCatalogHome {
               .columnsTemplate(this.catalogColumns)
               .columnsGap(LengthMetrics.vp(12))
               .rowsGap(LengthMetrics.vp(12))
-              .padding({ left: 16, right: 16, bottom: 160 })
+              .padding({ left: this.horizontalMargin, right: this.horizontalMargin, bottom: 160 })
               .onVisibleIndexesChange((start: number, end: number): void =>
                 this.handleVisibleIndexesChange(start, end));
             }
@@ -386,7 +399,7 @@ export struct ScpCatalogHome {
               this.listHeader();
             })
             .width('100%')
-            .constraintSize({ maxWidth: 1440 });
+            .constraintSize({ maxWidth: CATALOG_CONTENT_MAX_WIDTH });
           }
           .scrollable(ScrollDirection.Vertical)
           .scrollBar(BarState.Off)

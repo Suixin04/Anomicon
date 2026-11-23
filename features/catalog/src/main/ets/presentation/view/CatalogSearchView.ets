@@ -1,13 +1,16 @@
 import { LengthMetrics, uiMaterial } from '@kit.ArkUI';
 import {
+  adaptiveListLanesForWidth,
+  adaptivePageMarginForWidth,
   AppTypography,
+  CARD_PRESS_MODIFIER,
   materialCardBorderColor,
   materialCardSurfaceColor,
   PHONE_PAGE_MARGIN,
-  PHONE_TAB_CONTENT_MAX_WIDTH,
-  ROW_PRESS_MODIFIER,
   pageContentTop,
-  ViewModelLoadState
+  ViewModelLoadState,
+  WIDE_CONTENT_MAX_WIDTH,
+  windowWidthVp
 } from 'anomiconbasic';
 import { CatalogEntry } from '../../domain/CatalogContracts';
 import { ALL_SERIES_ID } from '../../domain/ScpSeriesItem';
@@ -33,12 +36,18 @@ export struct CatalogSearchHeader {
   @Require @Param viewModel: CatalogSearchViewModel;
   @Require @Param sharedState: CatalogSearchSharedState;
   @Param materialEnabled: boolean = true;
+  @Local private headerWidth: number = 0;
 
   private readonly searchBarMaterial: uiMaterial.ImmersiveMaterial =
     new uiMaterial.ImmersiveMaterial({
       style: uiMaterial.ImmersiveStyle.THIN,
       applyShadow: false
     });
+
+  private resolvedMargin(): number {
+    const width = this.headerWidth > 0 ? this.headerWidth : windowWidthVp();
+    return width > 0 ? adaptivePageMarginForWidth(width) : PHONE_PAGE_MARGIN;
+  }
 
   private selectSeries(id: string): void {
     if (this.viewModel.snapshot.data?.seriesId === id) {
@@ -60,29 +69,41 @@ export struct CatalogSearchHeader {
   }
 
   build() {
-    Column({ space: 8 }) {
-      Search({
-        placeholder: '搜索编号或名称',
-        value: this.viewModel.snapshot.data?.query ?? ''
-      })
-        .height(SEARCH_FIELD_HEIGHT)
-        .margin({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
-        .backgroundColor(this.materialEnabled ?
-          Color.Transparent : $r('sys.color.comp_background_primary'))
-        .systemMaterial(this.materialEnabled ? this.searchBarMaterial : undefined)
-        .placeholderColor($r('sys.color.font_secondary'))
-        .accessibilityText('搜索编号或名称')
-        .onChange((value: string) => this.applyQuery(value))
+    Column() {
+      Column({ space: 8 }) {
+        Search({
+          placeholder: '搜索编号或名称',
+          value: this.viewModel.snapshot.data?.query ?? ''
+        })
+          .height(SEARCH_FIELD_HEIGHT)
+          .margin({ left: this.resolvedMargin(), right: this.resolvedMargin() })
+          .backgroundColor(this.materialEnabled ?
+            Color.Transparent : $r('sys.color.comp_background_primary'))
+          .systemMaterial(this.materialEnabled ? this.searchBarMaterial : undefined)
+          .placeholderColor($r('sys.color.font_secondary'))
+          .accessibilityText('搜索编号或名称')
+          .onChange((value: string) => this.applyQuery(value))
 
-      CatalogSeriesSelector({
-        selectedSeriesId: this.viewModel.snapshot.data?.seriesId ?? ALL_SERIES_ID,
-        includeAll: true,
-        materialEnabled: this.materialEnabled,
-        onSelect: (seriesId: string) => this.selectSeries(seriesId)
-      })
+        CatalogSeriesSelector({
+          selectedSeriesId: this.viewModel.snapshot.data?.seriesId ?? ALL_SERIES_ID,
+          includeAll: true,
+          materialEnabled: this.materialEnabled,
+          horizontalMargin: this.resolvedMargin(),
+          onSelect: (seriesId: string) => this.selectSeries(seriesId)
+        })
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+      .padding({ top: 4, bottom: 8 })
     }
     .width('100%')
-    .padding({ top: 4, bottom: 8 })
+    .alignItems(HorizontalAlign.Center)
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const width = Number(newArea.width);
+      if (Number.isFinite(width) && width > 0) {
+        this.headerWidth = width;
+      }
+    })
   }
 }
 
@@ -112,6 +133,25 @@ struct CatalogSearchContent {
   @Require @Param sharedState: CatalogSearchSharedState;
   @Require @Param onOpenContent: (itemId: string, title: string) => void;
   @Param materialEnabled: boolean = true;
+  @Local private paneWidth: number = 0;
+
+  private resolvedWidth(): number {
+    return this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+  }
+
+  private horizontalMargin(): number {
+    const width = this.resolvedWidth();
+    return width > 0 ? adaptivePageMarginForWidth(width) : PHONE_PAGE_MARGIN;
+  }
+
+  private listLanes(): number {
+    return adaptiveListLanesForWidth(this.resolvedWidth(), 680);
+  }
+
+  private isLoadingAllSeries(): boolean {
+    return (this.viewModel.snapshot.data?.seriesId ?? '') === ALL_SERIES_ID &&
+      (this.viewModel.snapshot.data?.allSeriesLoading ?? false);
+  }
 
   aboutToAppear(): void {
     const selectedData = this.viewModel.snapshot.data;
@@ -221,14 +261,14 @@ struct CatalogSearchContent {
   }
 
   @Builder
-  private resultRow(row: RepeatItem<CatalogEntry>) {
-    Column({ space: 2 }) {
+  private entryCardRow(entry: CatalogEntry) {
+    Column({ space: 3 }) {
       Row({ space: 8 }) {
-        Text(row.item.itemId)
+        Text(entry.itemId)
           .fontSize(AppTypography.BODY_S)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('sys.color.font_secondary'))
-        Text(row.item.title)
+        Text(entry.title)
           .fontSize(AppTypography.BODY_M)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('sys.color.font'))
@@ -240,8 +280,8 @@ struct CatalogSearchContent {
           .fontColor([$r('sys.color.icon_secondary')])
       }
       .width('100%')
-      if (row.item.description.length > 0) {
-        Text(row.item.description)
+      if (entry.description.length > 0) {
+        Text(entry.description)
           .fontSize(AppTypography.CAPTION_L)
           .fontColor($r('sys.color.font_tertiary'))
           .maxLines(1)
@@ -249,24 +289,24 @@ struct CatalogSearchContent {
           .width('100%')
       }
     }
-    .attributeModifier(ROW_PRESS_MODIFIER)
+    .attributeModifier(CARD_PRESS_MODIFIER)
     .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
+    .constraintSize({ minHeight: 62 })
+    .justifyContent(FlexAlign.Center)
     .alignItems(HorizontalAlign.Start)
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-    .onClick(() => this.openResult(row.item))
+    .backgroundColor($r('sys.color.comp_background_primary'))
+    .borderRadius(14)
+    .onClick(() => this.openResult(entry))
   }
 
   @Builder
   private idleContent() {
     Scroll(this.scroller) {
-      Column({ space: 14 }) {
+      Column({ space: 18 }) {
         if (this.hasPartialError()) {
-          Row() {
-            this.partialErrorContent()
-          }
-          .width('100%')
-          .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+          this.partialErrorContent()
         }
 
         if ((this.viewModel.snapshot.data?.history.length ?? 0) > 0) {
@@ -306,22 +346,24 @@ struct CatalogSearchContent {
             .width('100%')
           }
           .width('100%')
-          .padding({ left: 16, right: 16 })
         }
 
         if ((this.viewModel.snapshot.data?.random.length ?? 0) > 0) {
-          Column({ space: 2 }) {
+          Column({ space: 10 }) {
             Text('随机发现')
               .fontSize(AppTypography.SUBTITLE_S)
               .fontWeight(FontWeight.Medium)
               .fontColor($r('sys.color.font'))
-              .padding({ left: 16, right: 16, bottom: 6 })
               .width('100%')
-            Repeat<CatalogEntry>(this.viewModel.snapshot.data?.random ?? [])
-              .each((row: RepeatItem<CatalogEntry>) => {
-                this.resultRow(row)
-              })
-              .key((entry: CatalogEntry) => entry.itemId)
+
+            GridRow({ columns: this.listLanes(), gutter: { x: 12, y: 10 } }) {
+              ForEach(this.viewModel.snapshot.data?.random ?? [], (entry: CatalogEntry) => {
+                GridCol({ span: 1 }) {
+                  this.entryCardRow(entry)
+                }
+              }, (entry: CatalogEntry) => entry.itemId)
+            }
+            .width('100%')
           }
           .width('100%')
         } else {
@@ -334,7 +376,12 @@ struct CatalogSearchContent {
         }
       }
       .width('100%')
-      .padding({ top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 6, bottom: 120 })
+      .padding({
+        left: this.horizontalMargin(),
+        right: this.horizontalMargin(),
+        top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 6,
+        bottom: 120
+      })
     }
     .align(Alignment.Top)
     .clip(false)
@@ -344,46 +391,62 @@ struct CatalogSearchContent {
     .width('100%')
   }
 
+  private resultsHeaderNoticeHeight(): number {
+    let extra: number = 0;
+    if (this.hasPartialError()) {
+      extra += 52;
+    }
+    if (this.isLoadingAllSeries()) {
+      extra += 26;
+    }
+    return extra;
+  }
+
   @Builder
   private resultsContent() {
-    List({ scroller: this.scroller }) {
-      ListItem() {
-        Column()
-          .width('100%')
-          .height(pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 6)
+    Stack({ alignContent: Alignment.Top }) {
+      List({ scroller: this.scroller, space: 10 }) {
+        Repeat<CatalogEntry>(this.viewModel.snapshot.data?.entries ?? [])
+          .each((row: RepeatItem<CatalogEntry>) => {
+            ListItem() {
+              this.entryCardRow(row.item)
+            }
+          })
+          .key((entry: CatalogEntry) => entry.itemId)
+          .virtualScroll({ reusable: false })
       }
-      if (this.hasPartialError()) {
-        ListItem() {
-          Column() {
+      .lanes(this.listLanes(), 12)
+      .contentStartOffset(
+        pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 6 + this.resultsHeaderNoticeHeight()
+      )
+      .contentEndOffset(32)
+      .padding({ left: this.horizontalMargin(), right: this.horizontalMargin() })
+      .clip(false)
+      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+      .scrollBar(BarState.Off)
+      .width('100%')
+      .height('100%')
+
+      if (this.hasPartialError() || this.isLoadingAllSeries()) {
+        Column({ space: 6 }) {
+          if (this.hasPartialError()) {
             this.partialErrorContent()
           }
-          .width('100%')
-          .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 6 })
-        }
-      }
-      if ((this.viewModel.snapshot.data?.seriesId ?? '') === ALL_SERIES_ID &&
-        (this.viewModel.snapshot.data?.allSeriesLoading ?? false)) {
-        ListItem() {
-          Text(`正在检索全部系列（已加载 ${this.viewModel.snapshot.data?.loadedSeriesCount ?? 0}/${this.viewModel.snapshot.data?.totalSeriesCount ?? 0}）…`)
-            .fontSize(AppTypography.CAPTION_M)
-            .fontColor($r('sys.color.font_tertiary'))
-            .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 6 })
-            .width('100%')
-        }
-      }
-      Repeat<CatalogEntry>(this.viewModel.snapshot.data?.entries ?? [])
-        .each((row: RepeatItem<CatalogEntry>) => {
-          ListItem() {
-            this.resultRow(row)
+          if (this.isLoadingAllSeries()) {
+            Text(`正在检索全部系列（已加载 ${this.viewModel.snapshot.data?.loadedSeriesCount ?? 0}/${this.viewModel.snapshot.data?.totalSeriesCount ?? 0}）…`)
+              .fontSize(AppTypography.CAPTION_M)
+              .fontColor($r('sys.color.font_tertiary'))
+              .width('100%')
           }
+        }
+        .width('100%')
+        .padding({
+          left: this.horizontalMargin(),
+          right: this.horizontalMargin(),
+          top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 6
         })
-        .key((entry: CatalogEntry) => entry.itemId)
-        .virtualScroll()
+      }
     }
-    .clip(false)
-    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-    .scrollBar(BarState.Off)
-    .contentEndOffset(32)
     .layoutWeight(1)
     .width('100%')
   }
@@ -402,7 +465,11 @@ struct CatalogSearchContent {
             .fontColor($r('sys.color.font_tertiary'))
         }
         .width('100%')
-        .padding({ top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 60 })
+        .padding({
+          left: this.horizontalMargin(),
+          right: this.horizontalMargin(),
+          top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 60
+        })
         .justifyContent(FlexAlign.Center)
         .layoutWeight(1)
       } else {
@@ -410,7 +477,7 @@ struct CatalogSearchContent {
       }
     }
     .width('100%')
-    .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
+    .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
     .height('100%')
   }
 
@@ -422,5 +489,11 @@ struct CatalogSearchContent {
     .height('100%')
     .alignItems(HorizontalAlign.Center)
     .backgroundColor($r('sys.color.background_secondary'))
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const width = Number(newArea.width);
+      if (Number.isFinite(width) && width > 0) {
+        this.paneWidth = width;
+      }
+    })
   }
 }

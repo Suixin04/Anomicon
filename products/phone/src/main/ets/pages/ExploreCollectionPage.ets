@@ -15,7 +15,7 @@ import {
 } from '../navigation/AppRoutes';
 import { parseExploreCollectionRoute } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
-import { createAppTitleBarStyle } from 'anomiconbasic';
+import { createAppBackIcon, createAppTitleBarStyle, popNavigationDestination } from 'anomiconbasic';
 
 @Builder
 export function ExploreCollectionPageBuilder(viewModel: ExploreCollectionVM) {
@@ -69,7 +69,9 @@ struct ExploreCollectionPage {
       enableComponentSafeArea: false,
       content: {
         title: { mainTitle: this.pageTitle() },
-        backIcon: { label: '返回', componentId: 'exploreCollectionBackButton' }
+        backIcon: createAppBackIcon('exploreCollectionBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        })
       },
       style: createAppTitleBarStyle()
     })

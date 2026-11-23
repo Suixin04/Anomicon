@@ -9,10 +9,15 @@ import {
   SettingsThemeSelector
 } from './SettingsControls';
 import {
+  adaptivePageMarginForWidth,
+  createAppBackIcon,
+  createAppTitleBarStyle,
   pageContentTop,
   PHONE_PAGE_MARGIN,
-  createAppTitleBarStyle,
-  ROW_PRESS_MODIFIER
+  popNavigationDestination,
+  READING_CONTENT_MAX_WIDTH,
+  ROW_PRESS_MODIFIER,
+  windowWidthVp
 } from 'anomiconbasic';
 import { AppTypography, ReadingBodyText } from 'anomiconbasic';
 import {
@@ -104,8 +109,14 @@ export struct SettingsPage {
   @Local private fontSizeDraft: number = ReadingSettingsRange.FONT_SIZE_DEFAULT;
   @Local private lineHeightDraft: number = ReadingSettingsRange.LINE_HEIGHT_DEFAULT;
   @Local private immersiveMaterialDraft: boolean = false;
+  @Local private paneWidth: number = 0;
   private fontSizeDraftDirty: boolean = false;
   private lineHeightDraftDirty: boolean = false;
+
+  private horizontalMargin(): number {
+    const width = this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+    return width > 0 ? adaptivePageMarginForWidth(width) : PHONE_PAGE_MARGIN;
+  }
 
   aboutToAppear(): void {
     this.fontSizeDraft = this.viewModel.fontSize;
@@ -599,27 +610,36 @@ export struct SettingsPage {
           .width('100%')
         }
         .width('100%')
-        .constraintSize({ maxWidth: 680 })
+        .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
         .padding({
-          left: PHONE_PAGE_MARGIN,
-          right: PHONE_PAGE_MARGIN,
+          left: this.horizontalMargin(),
+          right: this.horizontalMargin(),
           top: pageContentTop(),
           bottom: 36
         })
       }
       .width('100%')
       .height('100%')
+      .align(Alignment.Top)
       .backgroundColor($r('sys.color.background_secondary'))
       .clip(false)
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      .onAreaChange((_oldArea: Area, newArea: Area): void => {
+        const width = Number(newArea.width);
+        if (Number.isFinite(width) && width > 0) {
+          this.paneWidth = width;
+        }
+      })
     }
     .titleBar({
       avoidLayoutSafeArea: false,
       enableComponentSafeArea: false,
       content: {
         title: { mainTitle: '设置' },
-        backIcon: { label: '返回', componentId: 'settingsBackButton' }
+        backIcon: createAppBackIcon('settingsBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        })
       },
       style: createAppTitleBarStyle(this.viewModel.immersiveMaterialEnabled)
     })

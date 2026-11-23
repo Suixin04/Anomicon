@@ -861,7 +861,7 @@ export struct ExploreRecommendationDeck {
   build() {
     Column({ space: 12 }) {
       Row() {
-        Column({ space: 2 }) {
+        Column({ space: 4 }) {
           Text('今日推荐')
             .fontSize(AppTypography.TITLE_S)
             .fontWeight(FontWeight.Bold)

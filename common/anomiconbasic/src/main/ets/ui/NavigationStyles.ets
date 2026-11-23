@@ -1,6 +1,17 @@
 import { uiMaterial } from '@kit.ArkUI';
-import { hdsMaterial, ScrollEffectType, TitleBarStyleOptions } from '@kit.UIDesignKit';
+import {
+  hdsMaterial,
+  HdsNavigationBackButtonItemOptions,
+  ScrollEffectType,
+  TitleBarStyleOptions
+} from '@kit.UIDesignKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
+import {
+  AppWidthBreakpoint,
+  adaptivePageMarginForWidth,
+  resolveWidthBreakpoint,
+  supportsSplitNavigation
+} from './ResponsiveLayoutPolicy';
 
 /**
  * Shared phone navigation tokens and capability adapter.
@@ -24,10 +35,118 @@ class NavigationTopInsetState {
   @Trace avoidTop: number = FALLBACK_STATUS_BAR_HEIGHT;
 }
 
+@ObservedV2
+class WindowLayoutState {
+  @Trace widthVp: number = 390;
+  @Trace heightVp: number = 844;
+  @Trace splitNavigationActive: boolean = false;
+  @Trace detailFullscreen: boolean = false;
+  @Trace previewFullscreen: boolean = false;
+  @Trace stackRevision: number = 0;
+}
+
 const navigationTopInset = new NavigationTopInsetState();
+const windowLayoutState = new WindowLayoutState();
 
 export function updateWindowAvoidArea(avoidTop: number): void {
   navigationTopInset.avoidTop = avoidTop;
+}
+
+/** Update the reactive main-window dimensions in vp from WindowStage callbacks. */
+export function updateWindowLayoutSize(widthVp: number, heightVp: number): void {
+  if (Number.isFinite(widthVp) && widthVp > 0) {
+    windowLayoutState.widthVp = widthVp;
+  }
+  if (Number.isFinite(heightVp) && heightVp > 0) {
+    windowLayoutState.heightVp = heightVp;
+  }
+}
+
+export function windowWidthVp(): number {
+  return windowLayoutState.widthVp;
+}
+
+export function windowHeightVp(): number {
+  return windowLayoutState.heightVp;
+}
+
+export function windowWidthBreakpoint(): AppWidthBreakpoint {
+  return resolveWidthBreakpoint(windowLayoutState.widthVp);
+}
+
+export function adaptivePageMargin(): number {
+  return adaptivePageMarginForWidth(windowLayoutState.widthVp);
+}
+
+export function isLargeWindow(): boolean {
+  return supportsSplitNavigation(windowLayoutState.widthVp);
+}
+
+export function isSplitNavigationActive(): boolean {
+  return windowLayoutState.splitNavigationActive;
+}
+
+export function setSplitNavigationActive(active: boolean): void {
+  windowLayoutState.splitNavigationActive = active;
+}
+
+export function isDetailFullscreen(): boolean {
+  return windowLayoutState.detailFullscreen;
+}
+
+export function setDetailFullscreen(fullscreen: boolean): void {
+  windowLayoutState.detailFullscreen = fullscreen;
+}
+
+export function isPreviewFullscreen(): boolean {
+  return windowLayoutState.previewFullscreen;
+}
+
+export function setPreviewFullscreen(fullscreen: boolean): void {
+  windowLayoutState.previewFullscreen = fullscreen;
+}
+
+export function notifyNavigationStackChanged(): void {
+  windowLayoutState.stackRevision++;
+}
+
+export function navigationStackRevision(): number {
+  return windowLayoutState.stackRevision;
+}
+
+/**
+ * Pop the top NavDestination explicitly and notify root split state.
+ *
+ * HarmonyOS Split mode treats stack index 0 as a resident detail pane where the
+ * default system back button does not exit back to full-screen NavigationMode.Stack.
+ */
+export function popNavigationDestination(
+  stack: NavPathStack | undefined,
+  onBeforePop?: () => void
+): boolean {
+  onBeforePop?.();
+  if (stack !== undefined && stack.size() > 0) {
+    stack.pop(true);
+    if (stack.size() === 0) {
+      setDetailFullscreen(false);
+      setPreviewFullscreen(false);
+    }
+    notifyNavigationStackChanged();
+    return true;
+  }
+  return false;
+}
+
+export function createAppBackIcon(
+  componentId: string,
+  onBack: () => void,
+  label: string = '返回'
+): HdsNavigationBackButtonItemOptions {
+  return {
+    label: label,
+    componentId: componentId,
+    action: onBack
+  };
 }
 
 /** Current top system avoid-area inset in vp (e.g., status bar height). */
@@ -145,20 +264,20 @@ export function createAppTitleBarStyle(materialEnabled: boolean = true): TitleBa
       },
       contentStyle: {
         titleStyle: {
-          mainTitleColor: $r('sys.color.font_on'),
-          subTitleColor: $r('sys.color.font_on_secondary')
+          mainTitleColor: $r('sys.color.font'),
+          subTitleColor: $r('sys.color.font_secondary')
         },
         menuStyle: immersiveSupported ? {
-          iconColor: $r('sys.color.icon_on')
+          iconColor: $r('sys.color.icon')
         } : {
           backgroundColor: $r('sys.color.comp_background_secondary'),
-          iconColor: $r('sys.color.icon_on')
+          iconColor: $r('sys.color.icon')
         },
         backIconStyle: immersiveSupported ? {
-          iconColor: $r('sys.color.icon_on')
+          iconColor: $r('sys.color.icon')
         } : {
           backgroundColor: $r('sys.color.comp_background_secondary'),
-          iconColor: $r('sys.color.icon_on')
+          iconColor: $r('sys.color.icon')
         }
       }
     }

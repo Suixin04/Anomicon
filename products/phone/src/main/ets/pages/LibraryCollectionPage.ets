@@ -9,7 +9,7 @@ import {
   LibraryCollectionVM,
   LibraryContentRef
 } from 'library';
-import { createAppTitleBarStyle } from 'anomiconbasic';
+import { createAppBackIcon, createAppTitleBarStyle, popNavigationDestination } from 'anomiconbasic';
 import {
   AppRoutes,
   ScpArticleRouteParams
@@ -77,7 +77,9 @@ struct LibraryCollectionPage {
       enableComponentSafeArea: false,
       content: {
         title: { mainTitle: this.pageTitle() },
-        backIcon: { label: '返回', componentId: 'libraryCollectionBackButton' }
+        backIcon: createAppBackIcon('libraryCollectionBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        })
       },
       style: createAppTitleBarStyle()
     })

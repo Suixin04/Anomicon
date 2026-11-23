@@ -56,7 +56,24 @@ import {
   ScpArticleRouteParams
 } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
-import { createAppTitleBarStyle, immersiveMaterialSupported } from 'anomiconbasic';
+import {
+  adaptivePageMarginForWidth,
+  createAppTitleBarStyle,
+  immersiveMaterialSupported,
+  isDetailFullscreen,
+  isLargeWindow,
+  isPreviewFullscreen,
+  navigationStackRevision,
+  setDetailFullscreen,
+  setPreviewFullscreen,
+  setSplitNavigationActive,
+  SPLIT_CONTENT_MIN_WIDTH,
+  SPLIT_NAV_BAR_MAX_WIDTH,
+  SPLIT_NAV_BAR_MIN_WIDTH,
+  SPLIT_NAV_BAR_WIDTH,
+  supportsSplitNavigation,
+  windowWidthVp
+} from 'anomiconbasic';
 import { HapticFeedbackPort } from 'anomiconbasic';
 import {
   SettingsViewModel
@@ -76,7 +93,7 @@ export struct MainTabIndex {
   @Require @Param readingHistory: ReadingHistoryViewModel;
   @Require @Param exploreSkeletonAnimated: boolean;
   @Event onExploreHeroAnchorChange: (anchor: ExploreHeroAnchor) => void;
-  private pageStack: NavPathStack = new NavPathStack();
+  @Param pageStack: NavPathStack = new NavPathStack();
   /** 图鉴浏览状态：与独立搜索路由共享当前系列。 */
   @Local private searchState: ScpCatalogSearchState = sharedCatalogSearchState();
   /** 故事筛选只在首页会话内共享给筛选栏和列表。 */
@@ -85,6 +102,8 @@ export struct MainTabIndex {
   // 顶部栏跟随页签选中；页面激活和滚动绑定仍等切页完成。
   @Local private titleTabIndex: number = HomeTabId.EXPLORE;
   @Local private tabContentOpacity: number = 1;
+  @Local private stackDepth: number = 0;
+  @Local private navPaneWidth: number = 0;
   private readingHistoryUnsubscribe: (() => void) | undefined = undefined;
   @Local private tabsViewModel: TabsViewModel = new TabsViewModel({
     onCatalogSearch: () => this.openCatalogSearchMenu(),
@@ -106,6 +125,15 @@ export struct MainTabIndex {
     for (let index: number = 0; index < this.scrollers.length; index++) {
       this.tabsController.bindScroller(index, this.scrollers[index]);
     }
+    this.pageStack.setInterception({
+      willShow: (): void => {
+        this.syncNavigationStackState();
+      },
+      didShow: (): void => {
+        this.syncNavigationStackState();
+      }
+    });
+    this.syncNavigationStackState();
   }
 
   aboutToDisappear(): void {
@@ -123,26 +151,92 @@ export struct MainTabIndex {
     this.terminalViewModel.dispose();
   }
 
-  /** 图鉴搜索：点击标题栏菜单搜索图标，使用 Navigation 默认转场动画进入搜索页。 */
+  private topRouteSupportsDetailFullscreen(): boolean {
+    const names = this.pageStack.getAllPathName();
+    if (names.length === 0) {
+      return false;
+    }
+    const topRoute = names[names.length - 1];
+    return topRoute === AppRoutes.ARTICLE || topRoute === AppRoutes.ARCHIVE_3D;
+  }
+
+  private syncNavigationStackState(): void {
+    const nextDepth = this.pageStack.size();
+    if (nextDepth === 0 || !this.topRouteSupportsDetailFullscreen()) {
+      setDetailFullscreen(false);
+      setPreviewFullscreen(false);
+    }
+    this.stackDepth = nextDepth;
+    this.syncSplitActiveState();
+  }
+
+  private shouldUseSplitMode(): boolean {
+    const revision = navigationStackRevision();
+    const activeDepth = this.pageStack.size();
+    return revision >= 0 && (activeDepth > 0 && (this.stackDepth > 0 || activeDepth > 0)) &&
+      supportsSplitNavigation(windowWidthVp());
+  }
+
+  private shouldHideNavBar(): boolean {
+    return this.shouldUseSplitMode() &&
+      this.topRouteSupportsDetailFullscreen() &&
+      (isDetailFullscreen() || isPreviewFullscreen());
+  }
+
+  private isSplitNavBarVisible(): boolean {
+    return this.shouldUseSplitMode() && !this.shouldHideNavBar();
+  }
+
+  private syncSplitActiveState(): void {
+    setSplitNavigationActive(this.isSplitNavBarVisible());
+  }
+
+  private toolbarHorizontalMargin(): number {
+    const measuredWidth = this.navPaneWidth > 0 ? this.navPaneWidth :
+      (this.isSplitNavBarVisible() ? SPLIT_NAV_BAR_WIDTH : windowWidthVp());
+    return adaptivePageMarginForWidth(measuredWidth);
+  }
+
+  /** 图鉴搜索：点击标题栏菜单搜索图标，大屏自动进入分栏，手机端全屏推入。 */
   private openCatalogSearchMenu(): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    AppNavigationCoordinator.push(this.pageStack, AppRoutes.SEARCH);
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.SEARCH,
+      undefined,
+      this.shouldUseSplitMode()
+    );
   }
 
   private openSettings(): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    AppNavigationCoordinator.push(this.pageStack, AppRoutes.SETTINGS);
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.SETTINGS,
+      undefined,
+      this.shouldUseSplitMode()
+    );
   }
 
   private openArchive3DGallery(): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARCHIVE_3D_GALLERY);
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.ARCHIVE_3D_GALLERY,
+      undefined,
+      this.shouldUseSplitMode()
+    );
   }
 
   private openContent(content: LibraryContentRef): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
     const params: ScpArticleRouteParams = { content: content };
-    AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.ARTICLE,
+      params,
+      this.shouldUseSplitMode()
+    );
   }
 
   private isReadCompleted(contentId: string): boolean {
@@ -159,13 +253,23 @@ export struct MainTabIndex {
   private openLibraryCollection(mode: LibraryCollectionMode): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
     const params: LibraryCollectionRouteParams = { mode: mode };
-    AppNavigationCoordinator.push(this.pageStack, AppRoutes.LIBRARY_COLLECTION, params);
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.LIBRARY_COLLECTION,
+      params,
+      this.shouldUseSplitMode()
+    );
   }
 
   private openExploreCollection(mode: ExploreCollectionMode): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
     const params: ExploreCollectionRouteParams = { mode: mode };
-    AppNavigationCoordinator.push(this.pageStack, AppRoutes.EXPLORE_COLLECTION, params);
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.EXPLORE_COLLECTION,
+      params,
+      this.shouldUseSplitMode()
+    );
   }
 
   private createTabBarStyle(item: TabItem): BottomTabBarStyle {
@@ -198,6 +302,7 @@ export struct MainTabIndex {
     CatalogSeriesSelector({
       selectedSeriesId: this.searchState.seriesId,
       materialEnabled: this.settings.immersiveMaterialEnabled,
+      horizontalMargin: this.toolbarHorizontalMargin(),
       onSelect: (seriesId: string) => {
         this.hapticService.playSelection(this.settings.hapticEnabled);
         this.searchState.clear();
@@ -216,6 +321,7 @@ export struct MainTabIndex {
         state: this.taleFilterState,
         hapticEnabled: this.settings.hapticEnabled,
         materialEnabled: this.settings.immersiveMaterialEnabled,
+        horizontalMargin: this.toolbarHorizontalMargin(),
         onHaptic: (enabled: boolean) => this.hapticService.playSelection(enabled)
       })
     }
@@ -297,7 +403,9 @@ export struct MainTabIndex {
       // HDS 原生属性：0 关闭点击页签时的 TabContent 横向切换动画。
       .animationDuration(0)
       .barFloatingStyle({
-        barWidth: { smallWidth: 280, mediumWidth: 360, largeWidth: 420 },
+        barWidth: this.isSplitNavBarVisible() ?
+          { smallWidth: 280, mediumWidth: 312, largeWidth: 320 } :
+          { smallWidth: 280, mediumWidth: 360, largeWidth: 420 },
         barBottomMargin: 28,
         gradientMask: {
           maskColor: $r('sys.color.background_secondary'),
@@ -307,6 +415,12 @@ export struct MainTabIndex {
           materialType: this.settings.immersiveMaterialEnabled && immersiveMaterialSupported() ?
             hdsMaterial.MaterialType.IMMERSIVE : hdsMaterial.MaterialType.ADAPTIVE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
+        }
+      })
+      .onAreaChange((_oldArea: Area, newArea: Area): void => {
+        const measuredWidth = Number(newArea.width);
+        if (Number.isFinite(measuredWidth) && measuredWidth > 0) {
+          this.navPaneWidth = measuredWidth;
         }
       })
       .onSelected((index: number) => {
@@ -327,8 +441,22 @@ export struct MainTabIndex {
         }
       })
     }
-    // Tabs are the home content, not a master pane for an empty destination.
-    .mode(NavigationMode.Stack)
+    // Full-screen tabs at home; Switch to Split when a detail page is pushed on LG+ windows.
+    .mode(this.shouldUseSplitMode() ? NavigationMode.Split : NavigationMode.Stack)
+    .hideNavBar(this.shouldHideNavBar())
+    .navBarWidth(SPLIT_NAV_BAR_WIDTH)
+    .navBarWidthRange({
+      minWidth: SPLIT_NAV_BAR_MIN_WIDTH,
+      maxWidth: SPLIT_NAV_BAR_MAX_WIDTH
+    })
+    .minContentWidth(SPLIT_CONTENT_MIN_WIDTH)
+    .divider({ color: $r('sys.color.comp_divider') })
+    .onNavigationModeChange((mode: NavigationMode): void => {
+      setSplitNavigationActive(mode === NavigationMode.Split && !this.shouldHideNavBar());
+    })
+    .onNavBarStateChange((visible: boolean): void => {
+      setSplitNavigationActive(this.shouldUseSplitMode() && visible);
+    })
     .titleBar({
       avoidLayoutSafeArea: false,
       enableComponentSafeArea: false,
@@ -348,9 +476,9 @@ export struct MainTabIndex {
     // 官方不建议多个可滚动容器同时驱动同一导航栏：隐藏 Tab 的顶部/底部状态
     // 会打断当前页面的显隐动画。这里只绑定当前可见 Tab。
     .bindToScrollable([this.scrollers[this.tabsViewModel.currentIndex]])
-    // MINI 标题栏随滚动方向显隐；图鉴/故事的 bottomBuilder 作为筛选工具栏保持吸顶。
+    // MINI 标题栏在宽屏首页保持常驻以免右上角入口滚出视线；窄屏与分栏左栏随滚动隐藏。
     .dynamicHideTitleBar({
-      hideTitleArea: true,
+      hideTitleArea: !(isLargeWindow() && !this.isSplitNavBarVisible()),
       hideBottomBuilder: false,
       hideStatusBar: false,
       mode: HideMode.SCROLL_UP,

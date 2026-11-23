@@ -4,10 +4,15 @@ import {
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
 import {
+  adaptivePageMarginForWidth,
   AppBodyText,
   AppTypography,
+  createAppBackIcon,
   createAppTitleBarStyle,
-  pageContentTop
+  pageContentTop,
+  popNavigationDestination,
+  READING_CONTENT_MAX_WIDTH,
+  windowWidthVp
 } from 'anomiconbasic';
 import {
   ContentLicenseContent,
@@ -25,7 +30,14 @@ export function ContentLicensePageBuilder(content: ContentLicenseContent) {
 @ComponentV2
 export struct ContentLicensePage {
   @Require @Param content: ContentLicenseContent;
+  private pageStack: NavPathStack | undefined = undefined;
   private scroller: Scroller = new Scroller();
+  @Local private paneWidth: number = 0;
+
+  private horizontalMargin(): number {
+    const width = this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+    return adaptivePageMarginForWidth(width);
+  }
 
   @Builder
   private linkRow(link: ContentLicenseLink) {
@@ -92,8 +104,12 @@ export struct ContentLicensePage {
             .padding({ top: 4, bottom: 32 })
         }
         .width('100%')
-        .constraintSize({ maxWidth: 680 })
-        .padding({ left: 16, right: 16, top: pageContentTop() })
+        .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
+        .padding({
+          left: this.horizontalMargin(),
+          right: this.horizontalMargin(),
+          top: pageContentTop()
+        })
       }
       .width('100%')
       .height('100%')
@@ -102,6 +118,12 @@ export struct ContentLicensePage {
       .backgroundColor($r('sys.color.background_secondary'))
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      .onAreaChange((_oldArea: Area, newArea: Area): void => {
+        const width = Number(newArea.width);
+        if (Number.isFinite(width) && width > 0) {
+          this.paneWidth = width;
+        }
+      })
     }
     .titleBar({
       avoidLayoutSafeArea: false,
@@ -110,10 +132,9 @@ export struct ContentLicensePage {
         title: {
           mainTitle: this.content.pageTitle
         },
-        backIcon: {
-          label: '返回',
-          componentId: 'contentLicenseBackButton'
-        }
+        backIcon: createAppBackIcon('contentLicenseBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        })
       },
       style: createAppTitleBarStyle()
     })
@@ -125,6 +146,9 @@ export struct ContentLicensePage {
       hideStatusBar: false,
       mode: HideMode.SCROLL_UP,
       hideRatio: 1.5
+    })
+    .onReady((context: NavDestinationContext) => {
+      this.pageStack = context.pathStack;
     })
     .ignoreLayoutSafeArea(
       [LayoutSafeAreaType.SYSTEM],

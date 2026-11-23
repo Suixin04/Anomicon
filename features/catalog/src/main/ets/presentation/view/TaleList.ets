@@ -2,19 +2,18 @@ import { CatalogTaleEntry } from '../../domain/CatalogContracts';
 import { TaleListViewModel } from '../viewmodel/TaleListViewModel';
 import { TALE_FILTER_BAR_HEIGHT, TaleFilterState } from '../TaleFilterState';
 import {
-  LazyColumnLayout,
-  LazyColumnLayoutAttribute
-} from '@kit.ArkUI';
-import {
+  adaptiveListLanesForWidth,
+  adaptivePageMarginForWidth,
   AppTypography,
   CARD_PRESS_MODIFIER,
   ContentUpdateNotice,
   pageContentTop,
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_BOTTOM_SPACE,
-  PHONE_TAB_CONTENT_MAX_WIDTH,
   PHONE_TAB_CONTENT_TOP_GAP,
-  SkeletonBlock
+  SkeletonBlock,
+  WIDE_CONTENT_MAX_WIDTH,
+  windowWidthVp
 } from 'anomiconbasic';
 
 /**
@@ -30,6 +29,20 @@ export struct TaleList {
   @Param active: boolean = true;
   @Param isReadCompleted: (id: string) => boolean = (_id: string): boolean => false;
   @Param completionRevision: number = 0;
+  @Local private paneWidth: number = 0;
+
+  private resolvedWidth(): number {
+    return this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+  }
+
+  private horizontalMargin(): number {
+    const width = this.resolvedWidth();
+    return width > 0 ? adaptivePageMarginForWidth(width) : PHONE_PAGE_MARGIN;
+  }
+
+  private columnCount(): number {
+    return adaptiveListLanesForWidth(this.resolvedWidth(), 680);
+  }
 
   aboutToAppear(): void {
     if (this.active) {
@@ -106,15 +119,22 @@ export struct TaleList {
 
   @Builder
   private loadingBlock() {
-    Column({ space: 8 }) {
+    GridRow({ columns: this.columnCount(), gutter: { x: 12, y: 10 } }) {
       ForEach([0, 1, 2, 3, 4, 5], (index: number) => {
-        this.skeletonRow(index)
+        GridCol({ span: 1 }) {
+          this.skeletonRow(index)
+        }
       }, (index: number) => `${index}`)
     }
     .width('100%')
     .margin({ top: pageContentTop() + TALE_FILTER_BAR_HEIGHT })
-    .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
-    .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, top: PHONE_TAB_CONTENT_TOP_GAP, bottom: 24 })
+    .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+    .padding({
+      left: this.horizontalMargin(),
+      right: this.horizontalMargin(),
+      top: PHONE_TAB_CONTENT_TOP_GAP,
+      bottom: 24
+    })
   }
 
   private hasDirectoryUpdate(): boolean {
@@ -151,7 +171,8 @@ export struct TaleList {
       })
     }
     .width('100%')
-    .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 8 })
+    .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+    .padding({ left: this.horizontalMargin(), right: this.horizontalMargin(), bottom: 8 })
   }
 
   @Builder
@@ -210,6 +231,7 @@ export struct TaleList {
     .attributeModifier(CARD_PRESS_MODIFIER)
     .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
+    .constraintSize({ minHeight: 76 })
     .alignItems(VerticalAlign.Center)
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })
     .backgroundColor($r('sys.color.comp_background_primary'))
@@ -217,56 +239,44 @@ export struct TaleList {
     .onClick(() => this.onOpenTale(row.item.id, row.item.title))
   }
 
-  @Builder
-  private topSpacer() {
-    Blank()
-      .width('100%')
-      .height(pageContentTop() + TALE_FILTER_BAR_HEIGHT + PHONE_TAB_CONTENT_TOP_GAP)
-  }
-
-  @Builder
-  private listHeader() {
-    Column() {
-      this.topSpacer()
-      if (this.viewModel.visibleTales.length > 0 && this.hasDirectoryUpdate()) {
-        this.directoryUpdateBlock()
-      }
-    }
-    .width('100%')
+  private showVisibleDirectoryBanner(): boolean {
+    return this.viewModel.visibleTales.length > 0 && this.hasDirectoryUpdate();
   }
 
   build() {
     Column() {
       Stack({ alignContent: Alignment.Top }) {
-        Scroll(this.scroller) {
-          LazyColumnLayout() {
-            Repeat<CatalogTaleEntry>(this.viewModel.visibleTales)
-              .each((row: RepeatItem<CatalogTaleEntry>) => {
-                Column() {
-                  this.taleRow(row)
-                }
-                .width('100%')
-                .padding({
-                  left: PHONE_PAGE_MARGIN,
-                  right: PHONE_PAGE_MARGIN,
-                  // Keep the tab-bar inset in the last item, not a lazy-layout footer.
-                  bottom: row.index === this.viewModel.visibleTales.length - 1 ? PHONE_TAB_CONTENT_BOTTOM_SPACE : 8
-                })
-              })
-              .key((tale: CatalogTaleEntry) => tale.id)
-              .virtualScroll()
-          }
-          .header(() => {
-            this.listHeader()
-          })
-          .width('100%')
-          .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
+        List({ scroller: this.scroller, space: 10 }) {
+          Repeat<CatalogTaleEntry>(this.viewModel.visibleTales)
+            .each((row: RepeatItem<CatalogTaleEntry>) => {
+              ListItem() {
+                this.taleRow(row)
+              }
+            })
+            .key((tale: CatalogTaleEntry) => tale.id)
+            .virtualScroll()
         }
-        .scrollable(ScrollDirection.Vertical)
+        .lanes(this.columnCount(), 12)
+        .contentStartOffset(
+          pageContentTop() + TALE_FILTER_BAR_HEIGHT + PHONE_TAB_CONTENT_TOP_GAP +
+            (this.showVisibleDirectoryBanner() ? 52 : 0)
+        )
+        .contentEndOffset(PHONE_TAB_CONTENT_BOTTOM_SPACE)
         .scrollBar(BarState.Off)
         .edgeEffect(EdgeEffect.Spring)
-        .layoutWeight(1)
         .width('100%')
+        .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
+        .height('100%')
+        .padding({ left: this.horizontalMargin(), right: this.horizontalMargin() })
+
+        if (this.showVisibleDirectoryBanner()) {
+          Column() {
+            this.directoryUpdateBlock()
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Center)
+          .margin({ top: pageContentTop() + TALE_FILTER_BAR_HEIGHT + PHONE_TAB_CONTENT_TOP_GAP })
+        }
 
         if (this.viewModel.tales.length === 0 && this.viewModel.loading) {
           this.loadingBlock()
@@ -282,5 +292,11 @@ export struct TaleList {
     .width('100%')
     .height('100%')
     .backgroundColor($r('sys.color.background_secondary'))
+    .onAreaChange((_oldArea: Area, newArea: Area): void => {
+      const width = Number(newArea.width);
+      if (Number.isFinite(width) && width > 0) {
+        this.paneWidth = width;
+      }
+    })
   }
 }

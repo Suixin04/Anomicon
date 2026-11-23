@@ -2,11 +2,11 @@
   "string": [
     {
       "name": "module_desc",
-      "value": "module description"
+      "value": "格异录主应用模块，支持多端 SCP 中文档案阅读与三维观测"
     },
     {
       "name": "EntryAbility_desc",
-      "value": "description"
+      "value": "格异录应用主入口"
     },
     {
       "name": "EntryAbility_label",

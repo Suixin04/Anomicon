@@ -1,7 +1,7 @@
 /** Phone product entry shell; all feature UI is composed below this boundary. */
 import { MainTabIndex } from './MainTabIndex';
 import { AppContainer } from '../composition/AppContainer';
-import { HapticFeedbackPort } from 'anomiconbasic';
+import { HapticFeedbackPort, popNavigationDestination } from 'anomiconbasic';
 import { ExploreHeroAnchor, ExploreHomeViewModel } from 'explore';
 import { CatalogViewModel, TaleListViewModel } from 'catalog';
 import { TerminalViewModel } from 'terminal';
@@ -29,14 +29,23 @@ struct PhoneIndex {
   @Local private readingHistory: ReadingHistoryViewModel =
     AppContainer.getInstance().readingHistory();
   @Local private startupCoordinator: StartupCoordinator = new StartupCoordinator();
+  private readonly pageStack: NavPathStack = new NavPathStack();
 
   aboutToDisappear(): void {
     this.startupCoordinator.dispose();
   }
 
+  onBackPress(): boolean {
+    if (this.pageStack.size() > 0) {
+      return popNavigationDestination(this.pageStack);
+    }
+    return false;
+  }
+
   build() {
     Stack({ alignContent: Alignment.Center }) {
       MainTabIndex({
+        pageStack: this.pageStack,
         settings: this.settings,
         hapticService: this.hapticService,
         exploreViewModel: this.exploreViewModel,

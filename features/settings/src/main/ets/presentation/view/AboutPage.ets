@@ -4,10 +4,15 @@ import {
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
 import {
+  adaptivePageMarginForWidth,
   AppBodyText,
   AppTypography,
+  createAppBackIcon,
   createAppTitleBarStyle,
-  pageContentTop
+  pageContentTop,
+  popNavigationDestination,
+  READING_CONTENT_MAX_WIDTH,
+  windowWidthVp
 } from 'anomiconbasic';
 import { AboutPageContent } from './SettingsViewContracts';
 
@@ -22,7 +27,14 @@ export function AboutPageBuilder(content: AboutPageContent) {
 @ComponentV2
 export struct AboutPage {
   @Require @Param content: AboutPageContent;
+  private pageStack: NavPathStack | undefined = undefined;
   private scroller: Scroller = new Scroller();
+  @Local private paneWidth: number = 0;
+
+  private horizontalMargin(): number {
+    const width = this.paneWidth > 0 ? this.paneWidth : windowWidthVp();
+    return adaptivePageMarginForWidth(width);
+  }
 
   @Builder
   private infoRow(label: string, value: string) {
@@ -98,22 +110,36 @@ export struct AboutPage {
           .borderRadius(16)
         }
         .width('100%')
-        .constraintSize({ maxWidth: 680 })
-        .padding({ left: 16, right: 16, top: pageContentTop(), bottom: 32 })
+        .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
+        .padding({
+          left: this.horizontalMargin(),
+          right: this.horizontalMargin(),
+          top: pageContentTop(),
+          bottom: 32
+        })
       }
       .width('100%')
       .height('100%')
+      .align(Alignment.Top)
       .clip(false)
       .backgroundColor($r('sys.color.background_secondary'))
       .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
       .scrollBar(BarState.Off)
+      .onAreaChange((_oldArea: Area, newArea: Area): void => {
+        const width = Number(newArea.width);
+        if (Number.isFinite(width) && width > 0) {
+          this.paneWidth = width;
+        }
+      })
     }
     .titleBar({
       avoidLayoutSafeArea: false,
       enableComponentSafeArea: false,
       content: {
         title: { mainTitle: `关于${this.content.displayName}` },
-        backIcon: { label: '返回', componentId: 'aboutBackButton' }
+        backIcon: createAppBackIcon('aboutBackButton', (): void => {
+          popNavigationDestination(this.pageStack);
+        })
       },
       style: createAppTitleBarStyle()
     })
@@ -125,6 +151,9 @@ export struct AboutPage {
       hideStatusBar: false,
       mode: HideMode.SCROLL_UP,
       hideRatio: 1.5
+    })
+    .onReady((context: NavDestinationContext) => {
+      this.pageStack = context.pathStack;
     })
     .ignoreLayoutSafeArea(
       [LayoutSafeAreaType.SYSTEM],
