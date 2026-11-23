@@ -1,3 +1,4 @@
+import { schedulingOptimization } from '@kit.FASTKit';
 import {
   HideMode,
   HdsNavDestination,
@@ -21,6 +22,7 @@ import {
   ScpArticleRouteParams
 } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
+import { FastPerformanceHintScope } from '../composition/FastPerformanceHints';
 import { createAppTitleBarStyle } from 'anomiconbasic';
 import { SettingsViewModel } from 'settings';
 
@@ -48,7 +50,34 @@ struct ScpSearchPage {
   @Param settings: SettingsViewModel | undefined = undefined;
   private pageStack: NavPathStack | undefined = undefined;
   private readonly contentScroller: Scroller = new Scroller();
+  private readonly searchLoadHint: FastPerformanceHintScope =
+    new FastPerformanceHintScope(
+      schedulingOptimization.SceneType.PAGE_LOAD,
+      schedulingOptimization.DurationType.SHORT
+    );
+  private searchHintActive: boolean = false;
   @Local private readonly searchState: ScpCatalogSearchState = sharedCatalogSearchState();
+
+  aboutToDisappear(): void {
+    this.syncSearchLoadHint(false);
+  }
+
+  @Monitor('viewModel.allSeriesLoading')
+  onAllSeriesLoadingChanged(): void {
+    this.syncSearchLoadHint(this.viewModel.allSeriesLoading);
+  }
+
+  private syncSearchLoadHint(active: boolean): void {
+    if (active) {
+      if (!this.searchHintActive) {
+        this.searchHintActive = true;
+        this.searchLoadHint.begin();
+      }
+    } else if (this.searchHintActive) {
+      this.searchHintActive = false;
+      this.searchLoadHint.end();
+    }
+  }
 
   private openContent(itemId: string, title: string): void {
     const params: ScpArticleRouteParams = {
@@ -106,8 +135,10 @@ struct ScpSearchPage {
     })
     .onActive(() => {
       this.viewModel.activate();
+      this.syncSearchLoadHint(this.viewModel.allSeriesLoading);
     })
     .onInactive(() => {
+      this.syncSearchLoadHint(false);
       this.viewModel.deactivate();
     })
     .onBackPressed(() => {
@@ -115,6 +146,7 @@ struct ScpSearchPage {
       return false;
     })
     .onWillDisappear(() => {
+      this.syncSearchLoadHint(false);
       this.searchState.clear();
     })
     .ignoreLayoutSafeArea(

@@ -45,6 +45,8 @@ class ScpImagePrefetchTask {
 export class ScpImagePrefetchService {
   private initialized: boolean = false;
   private available: boolean = false;
+  private maxActiveDownloads: number = MAX_ACTIVE_DOWNLOADS;
+  private prefetchPaused: boolean = false;
   private nextSequence: number = 0;
   private lastHistoryPurgeAt: number = 0;
   private readonly queued: ScpImagePrefetchTask[] = [];
@@ -83,6 +85,20 @@ export class ScpImagePrefetchService {
     }
   }
 
+  setNetworkPolicy(maxActive: number, pauseBackgroundPrefetch: boolean): void {
+    this.maxActiveDownloads = Math.max(1, Math.min(MAX_ACTIVE_DOWNLOADS, Math.floor(maxActive)));
+    this.prefetchPaused = pauseBackgroundPrefetch;
+    if (pauseBackgroundPrefetch) {
+      for (let index: number = this.queued.length - 1; index >= 0; index--) {
+        if (this.queued[index].priority >= ScpImagePrefetchPriority.NEAR_VIEWPORT) {
+          const dropped = this.queued.splice(index, 1)[0];
+          this.resolveWaiters(dropped.url, false);
+        }
+      }
+    }
+    this.drain();
+  }
+
   prefetch(
     url: string,
     priority: ScpImagePrefetchPriority = ScpImagePrefetchPriority.NEAR_VIEWPORT,
@@ -92,6 +108,9 @@ export class ScpImagePrefetchService {
       this.initialize();
     }
     if (!this.available || !url.startsWith('https://') || url.length > 8192) {
+      return;
+    }
+    if (this.prefetchPaused && priority >= ScpImagePrefetchPriority.NEAR_VIEWPORT) {
       return;
     }
     const now = Date.now();
@@ -139,6 +158,9 @@ export class ScpImagePrefetchService {
     if (!this.available || !url.startsWith('https://') || url.length > 8192) {
       return Promise.resolve(false);
     }
+    if (this.prefetchPaused && priority >= ScpImagePrefetchPriority.NEAR_VIEWPORT) {
+      return Promise.resolve(false);
+    }
     const now = Date.now();
     this.purgeHistory(now);
     const successAt = this.recentSuccesses.get(url) ?? 0;
@@ -174,7 +196,7 @@ export class ScpImagePrefetchService {
   }
 
   private drain(): void {
-    while (this.active.size < MAX_ACTIVE_DOWNLOADS && this.queued.length > 0) {
+    while (this.active.size < this.maxActiveDownloads && this.queued.length > 0) {
       const index = this.nextTaskIndex();
       if (index < 0) {
         return;

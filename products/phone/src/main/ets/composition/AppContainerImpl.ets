@@ -1,15 +1,19 @@
 import { common } from '@kit.AbilityKit';
 import { AppStorageV2 } from '@kit.ArkUI';
-import { ImagePreviewActions } from 'anomiconbasic';
-import { RequestAgentBackgroundDownloadAdapter } from 'anomiconbasic';
-import { AppInfoAdapter } from 'anomiconbasic';
-import { AppInfoPort } from 'anomiconbasic';
-import { HapticFeedbackPort } from 'anomiconbasic';
-import { HapticFeedbackAdapter } from 'anomiconbasic';
-import { IdGeneratorAdapter } from 'anomiconbasic';
-import { IdGeneratorPort } from 'anomiconbasic';
-import { RuntimeClockAdapter } from 'anomiconbasic';
-import { RuntimeClockPort } from 'anomiconbasic';
+import {
+  ImagePreviewActions,
+  NetworkBoostAdapter,
+  NetworkBoostPort,
+  RequestAgentBackgroundDownloadAdapter,
+  AppInfoAdapter,
+  AppInfoPort,
+  HapticFeedbackPort,
+  HapticFeedbackAdapter,
+  IdGeneratorAdapter,
+  IdGeneratorPort,
+  RuntimeClockAdapter,
+  RuntimeClockPort
+} from 'anomiconbasic';
 import {
   ReadingActivityCoord
 } from 'library';
@@ -124,6 +128,7 @@ export class AppContainer {
   private readonly hapticFeedbackCapability: HapticFeedbackPort = new HapticFeedbackAdapter();
   private readonly runtimeClockCapability: RuntimeClockPort = new RuntimeClockAdapter();
   private readonly idGeneratorCapability: IdGeneratorPort = new IdGeneratorAdapter();
+  private readonly networkBoostCapability: NetworkBoostPort = new NetworkBoostAdapter();
 
   private constructor() {
   }
@@ -143,12 +148,14 @@ export class AppContainer {
       }
       this.abilityScopeOwner.attach(context);
     }
+    this.networkBoostCapability.start();
     if (this.archive3DGraph === undefined) {
       const applicationContext = context.getApplicationContext();
       const downloads = new RequestAgentBackgroundDownloadAdapter(
         applicationContext,
         context.abilityInfo.bundleName,
-        context.abilityInfo.name
+        context.abilityInfo.name,
+        this.networkBoostCapability
       );
       const archiveModels: ArchiveModelDescriptor[] = listScp3DModelAssets().map(
         (asset): ArchiveModelDescriptor => describeScp3DAsset(asset, asset.downloadUrl)
@@ -174,7 +181,7 @@ export class AppContainer {
       this.libraryGraph = createLibraryFeatureGraph(context);
     }
     if (this.catalogGraph === undefined) {
-      this.catalogGraph = createCatalogFeatureGraph(context);
+      this.catalogGraph = createCatalogFeatureGraph(context, this.networkBoostCapability);
       // All repositories originate from the feature graph; screen factories
       // receive only the narrow ports they need.
       this.catalogRepository = this.catalogGraph.catalogRepository;
@@ -429,6 +436,11 @@ export class AppContainer {
     return this.hapticFeedbackCapability;
   }
 
+  /** Shared capability-gated NetworkBoost port for page/download scene hints. */
+  networkBoost(): NetworkBoostPort {
+    return this.networkBoostCapability;
+  }
+
   createLibraryCollectionVM(): LibraryCollectionVM {
     return new LibraryCollectionVM(this.favorites(), this.readingHistory());
   }
@@ -495,6 +507,7 @@ export class AppContainer {
   setReadingActivityForeground(context: common.UIAbilityContext, foreground: boolean): void {
     if (this.abilityScopeOwner.owns(context)) {
       this.readingActivityState?.setAbilityForeground(foreground);
+      this.networkBoostCapability.setLowPowerMode(!foreground);
     }
   }
 
@@ -561,6 +574,7 @@ export class AppContainer {
   private clearAbilityScopedGraph(): void {
     this.settingsState?.dispose();
     this.catalogGraph?.dispose();
+    this.networkBoostCapability.stop();
 
     this.settingsState = undefined;
     this.settingsGraph = undefined;

@@ -10,7 +10,8 @@ const WIKI_REFERER: string = 'https://scp-wiki-cn.wikidot.com/';
 const MAX_IMAGE_BYTES: number = 20 * 1024 * 1024;
 const MAX_REDIRECTS: number = 5;
 const MAX_ATTEMPTS: number = 2;
-const MAX_CONCURRENT_DOWNLOADS: number = 4;
+const DEFAULT_MAX_CONCURRENT_DOWNLOADS: number = 4;
+const TEMP_FILE_CLEANUP_GRACE_MS: number = 5000;
 // SCP 图床在弱网下下载 1 MiB 图片可能超过 50 秒。transferMs 是整段传输总时限，
 // 不是“连续多久没收到数据”；旧值 20 秒会把仍在下载的正常请求误判为失败。
 const IMAGE_TRANSFER_TIMEOUT_MS: number = 120000;
@@ -112,7 +113,12 @@ export class ScpImageCacheService {
   private imageDir: string = '';
   private context: common.UIAbilityContext | undefined = undefined;
   private tempSequence: number = 0;
+  private maxConcurrentDownloads: number = DEFAULT_MAX_CONCURRENT_DOWNLOADS;
   private activeDownloads: number = 0;
+  private imageSession: rcp.Session | undefined = undefined;
+  private disposed: boolean = false;
+  private readonly activePerSession: Map<rcp.Session, number> = new Map();
+  private readonly retiredSessions: Set<rcp.Session> = new Set();
   private readonly inflight: Map<string, Promise<string>> = new Map();
   private readonly downloadWaiters: Queue<() => void> = new Queue<() => void>();
   private readonly validatedPaths: Set<string> = new Set();
@@ -129,17 +135,58 @@ export class ScpImageCacheService {
       if (!this.existsSync(imageDir)) {
         fs.mkdirSync(imageDir, true);
       }
-      this.cleanupAbandonedTempFiles(imageDir);
-      // Publish the directory only after all setup steps succeeded.  A failed
-      // mkdir/cleanup therefore remains retryable on the next load.
+      // Publish the directory immediately so synchronous callers can validate paths,
+      // while sweeping only stale leftover temp files asynchronously off the main thread.
       this.imageDir = imageDir;
+      const cutoffMs = Date.now() - TEMP_FILE_CLEANUP_GRACE_MS;
+      this.cleanupAbandonedTempFilesAsync(imageDir, cutoffMs).catch((): void => {
+      });
     } catch (error) {
       console.warn(`Create image cache dir failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
   }
 
+  setMaxConcurrentDownloads(limit: number): void {
+    this.maxConcurrentDownloads = Math.max(1, Math.min(6, Math.floor(limit)));
+    this.drainDownloadWaiters();
+  }
+
+  retireSessionForHandover(): void {
+    const session = this.imageSession;
+    if (session === undefined) {
+      return;
+    }
+    this.imageSession = undefined;
+    if ((this.activePerSession.get(session) ?? 0) === 0) {
+      this.closeSessionSafely(session, false);
+    } else {
+      this.retiredSessions.add(session);
+    }
+  }
+
+  dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    const session = this.imageSession;
+    this.imageSession = undefined;
+    if (session !== undefined) {
+      this.closeSessionSafely(session, true);
+    }
+    const retired = Array.from(this.retiredSessions);
+    this.retiredSessions.clear();
+    this.activePerSession.clear();
+    for (let index: number = 0; index < retired.length; index++) {
+      this.closeSessionSafely(retired[index], true);
+    }
+  }
+
   /** 返回本地文件路径；命中缓存直接返回，未命中则下载。 */
   async load(url: string): Promise<string> {
+    if (this.disposed) {
+      throw new Error('图片缓存服务已关闭');
+    }
     if (this.imageDir.length === 0 && this.context !== undefined) {
       this.initialize(this.context);
     }
@@ -182,7 +229,7 @@ export class ScpImageCacheService {
    * 实际解码首帧。空文件、截断文件、扩展名伪装文件会被删除并视为缓存未命中。
    */
   async isReusableManagedCachePath(path: string): Promise<boolean> {
-    if (!this.isManagedCachePath(path) || !this.hasValidFileSize(path)) {
+    if (!this.isManagedCachePath(path) || !(await this.hasValidFileSize(path))) {
       this.validatedPaths.delete(path);
       return false;
     }
@@ -199,7 +246,7 @@ export class ScpImageCacheService {
     } catch (error) {
       hilog.warn(DOMAIN, TAG, 'discard invalid image cache %{private}s: %{public}s', path,
         error instanceof Error ? error.message : '未知错误');
-      this.removeFileIfExists(path);
+      await this.removeFileIfExists(path);
       this.validatedPaths.delete(path);
       return false;
     }
@@ -221,12 +268,12 @@ export class ScpImageCacheService {
         normalizedUrl, downloaded.declaredMimeType, inspection.mimeType);
     }
     const path = `${this.imageDir}/${stem}.${inspection.extension}`;
-    this.writeAtomically(path, downloaded.bytes);
+    await this.writeAtomically(path, downloaded.bytes);
     this.validatedPaths.add(path);
     return path;
   }
 
-  /** 不同 URL 共享四个网络槽位；同 URL 已在 load() 层合并为同一个 Promise。 */
+  /** 不同 URL 共享受网络策略调控的下载槽位；同 URL 已在 load() 层合并为同一个 Promise。 */
   private async downloadWithSlot(url: string): Promise<ScpDownloadedImage> {
     await this.acquireDownloadSlot();
     try {
@@ -238,7 +285,7 @@ export class ScpImageCacheService {
   }
 
   private acquireDownloadSlot(): Promise<void> {
-    if (this.activeDownloads < MAX_CONCURRENT_DOWNLOADS) {
+    if (this.activeDownloads < this.maxConcurrentDownloads && this.downloadWaiters.length === 0) {
       this.activeDownloads += 1;
       return Promise.resolve();
     }
@@ -246,6 +293,7 @@ export class ScpImageCacheService {
       if (!this.downloadWaiters.add(resolve)) {
         throw new Error('图片下载等待队列入队失败');
       }
+      this.drainDownloadWaiters();
     });
   }
 
@@ -254,82 +302,75 @@ export class ScpImageCacheService {
       hilog.error(DOMAIN, TAG, '%{public}s', 'image download slot underflow');
       return;
     }
-    if (this.downloadWaiters.length > 0) {
+    this.activeDownloads -= 1;
+    this.drainDownloadWaiters();
+  }
+
+  private drainDownloadWaiters(): void {
+    while (this.activeDownloads < this.maxConcurrentDownloads && this.downloadWaiters.length > 0) {
       try {
-        // 直接把当前槽位移交给队首，不改变 activeDownloads，保持严格 FIFO。
         const next = this.downloadWaiters.pop();
+        this.activeDownloads += 1;
         next();
-        return;
       } catch (error) {
         hilog.error(DOMAIN, TAG, 'dequeue image download waiter failed: %{public}s',
           error instanceof Error ? error.message : 'unknown error');
+        return;
       }
     }
-    this.activeDownloads -= 1;
   }
 
-  private writeAtomically(path: string, bytes: ArrayBuffer): void {
+  private async writeAtomically(path: string, bytes: ArrayBuffer): Promise<void> {
     this.tempSequence += 1;
     const tempPath = `${path}.tmp_${Date.now()}_${this.tempSequence}`;
     try {
       let file: fs.File | undefined = undefined;
       try {
-        file = fs.openSync(tempPath,
+        file = await fs.open(tempPath,
           fs.OpenMode.CREATE | fs.OpenMode.WRITE_ONLY | fs.OpenMode.TRUNC | fs.OpenMode.NOFOLLOW);
-        const written = fs.writeSync(file.fd, bytes);
+        const written = await fs.write(file.fd, bytes);
         if (written !== bytes.byteLength) {
           throw new Error(`图片缓存写入不完整：${written}/${bytes.byteLength}`);
         }
-        fs.fsyncSync(file.fd);
+        await fs.fsync(file.fd);
       } finally {
         if (file !== undefined) {
-          fs.closeSync(file);
+          await fs.close(file);
         }
       }
       // 临时文件与目标文件位于同一缓存目录，rename 不会暴露部分写入的图片。
-      fs.renameSync(tempPath, path);
+      await fs.rename(tempPath, path);
     } catch (error) {
-      this.removeFileIfExists(tempPath);
+      await this.removeFileIfExists(tempPath);
       throw new Error(`图片缓存写入失败：${error instanceof Error ? error.message : '未知错误'}`);
     }
   }
 
   private async download(url: string): Promise<ScpDownloadedImage> {
-    // 同一下载任务内复用 session，并在任务结束后统一关闭释放资源。
     const collector = new ScpImageByteCollector(MAX_IMAGE_BYTES);
-    const session = this.createSession(collector);
     let lastError: Error = new Error('图片下载失败');
-    try {
-      for (let attempt: number = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        try {
-          return await this.fetchBytes(session, url, collector);
-        } catch (error) {
-          const requestError = error instanceof ScpImageRequestError ? error :
-            new ScpImageRequestError(-1,
-              error instanceof Error ? error.message : '未知错误', false);
-          hilog.warn(DOMAIN, TAG,
-            'image download failed (attempt %{public}d) for %{private}s: %{public}d %{public}s',
-            attempt + 1, url, requestError.code, requestError.message);
-          lastError = new Error(`图片下载失败：${requestError.message}`);
-          // URL/MIME/大小/4xx 等确定性错误立即返回；只重试明确的瞬时网络失败和 5xx。
-          if (!requestError.retryable) {
-            throw lastError;
-          }
-        }
-      }
-    } finally {
+    for (let attempt: number = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      this.assertActive();
       try {
-        session.close();
+        return await this.fetchBytes(url, collector);
       } catch (error) {
-        hilog.warn(DOMAIN, TAG, 'close image session failed: %{public}s',
-          error instanceof Error ? error.message : '未知错误');
+        const requestError = error instanceof ScpImageRequestError ? error :
+          new ScpImageRequestError(-1,
+            error instanceof Error ? error.message : '未知错误', false);
+        hilog.warn(DOMAIN, TAG,
+          'image download failed (attempt %{public}d) for %{private}s: %{public}d %{public}s',
+          attempt + 1, url, requestError.code, requestError.message);
+        lastError = new Error(`图片下载失败：${requestError.message}`);
+        // URL/MIME/大小/4xx 等确定性错误立即返回；只重试明确的瞬时网络失败和 5xx。
+        if (!requestError.retryable || this.disposed) {
+          throw lastError;
+        }
       }
     }
     throw lastError;
   }
 
   private async fetchBytes(
-    session: rcp.Session,
     initialUrl: string,
     collector: ScpImageByteCollector
   ): Promise<ScpDownloadedImage> {
@@ -338,7 +379,7 @@ export class ScpImageCacheService {
       collector.reset();
       let response: rcp.Response;
       try {
-        response = await this.fetchResponse(session, currentUrl);
+        response = await this.fetchResponse(currentUrl, collector);
       } catch (error) {
         if (collector.limitExceeded()) {
           throw new ScpImageRequestError(-1, `图片超过 ${MAX_IMAGE_BYTES} 字节限制`, false);
@@ -389,13 +430,21 @@ export class ScpImageCacheService {
     throw new Error('图片重定向处理失败');
   }
 
-  private createSession(collector: ScpImageByteCollector): rcp.Session {
+  private getImageSession(): rcp.Session {
+    this.assertActive();
+    if (this.imageSession !== undefined) {
+      return this.imageSession;
+    }
     try {
-      return rcp.createSession({
+      this.imageSession = rcp.createSession({
         headers: {
           'user-agent': 'Anomicon/0.1 image cache',
           'referer': WIKI_REFERER,
           'accept': 'image/*'
+        },
+        connectionConfiguration: {
+          maxConnectionsPerHost: 6,
+          maxTotalConnections: 16
         },
         requestConfiguration: {
           transfer: {
@@ -408,29 +457,78 @@ export class ScpImageCacheService {
           },
           security: {
             remoteValidation: 'system'
-          },
-          tracing: {
-            httpEventsHandler: {
-              onDataReceive: (incomingData: ArrayBuffer) => {
-                collector.receive(incomingData);
-              }
-            }
           }
         }
       });
     } catch (error) {
       throw new Error(`无法创建图片网络会话：${error instanceof Error ? error.message : '未知错误'}`);
     }
+    return this.imageSession;
   }
 
-  private async fetchResponse(session: rcp.Session, requestUrl: string): Promise<rcp.Response> {
+  private async fetchResponse(requestUrl: string, collector: ScpImageByteCollector): Promise<rcp.Response> {
+    let session: rcp.Session | undefined = undefined;
     try {
-      return await session.fetch(new rcp.Request(requestUrl, 'GET'));
+      session = this.getImageSession();
+      this.acquireSessionFetch(session);
+      const request = new rcp.Request(requestUrl, 'GET');
+      request.destination = (incomingData: ArrayBuffer): void => {
+        collector.receive(incomingData);
+      };
+      const response = await session.fetch(request);
+      this.assertActive();
+      return response;
     } catch (error) {
+      if (error instanceof ScpImageRequestError) {
+        throw error;
+      }
       const businessError: BusinessError = error as BusinessError;
       const code: number = businessError.code !== undefined ? businessError.code : -1;
       const message = error instanceof Error ? error.message : '网络请求异常';
       throw new ScpImageRequestError(code, `${message}（错误码 ${code}）`, this.isTransientNetworkCode(code));
+    } finally {
+      if (session !== undefined) {
+        this.releaseSessionFetch(session);
+      }
+    }
+  }
+
+  private assertActive(): void {
+    if (this.disposed) {
+      throw new ScpImageRequestError(-1, '图片缓存服务已关闭', false);
+    }
+  }
+
+  private acquireSessionFetch(session: rcp.Session): void {
+    this.activePerSession.set(session, (this.activePerSession.get(session) ?? 0) + 1);
+  }
+
+  private releaseSessionFetch(session: rcp.Session): void {
+    const remaining = (this.activePerSession.get(session) ?? 0) - 1;
+    if (remaining > 0) {
+      this.activePerSession.set(session, remaining);
+      return;
+    }
+    this.activePerSession.delete(session);
+    if (this.retiredSessions.delete(session) && !this.disposed) {
+      this.closeSessionSafely(session, false);
+    }
+  }
+
+  private closeSessionSafely(session: rcp.Session, cancelActive: boolean): void {
+    if (cancelActive) {
+      try {
+        session.cancel();
+      } catch (error) {
+        hilog.warn(DOMAIN, TAG, 'cancel image session failed: %{public}s',
+          error instanceof Error ? error.message : '未知错误');
+      }
+    }
+    try {
+      session.close();
+    } catch (error) {
+      hilog.warn(DOMAIN, TAG, 'close image session failed: %{public}s',
+        error instanceof Error ? error.message : '未知错误');
     }
   }
 
@@ -509,23 +607,24 @@ export class ScpImageCacheService {
       code === 1007900999;
   }
 
-  private removeFileIfExists(path: string): void {
+  private async removeFileIfExists(path: string): Promise<void> {
     try {
-      if (this.existsSync(path)) {
-        fs.unlinkSync(path);
+      if (await this.existsAsync(path)) {
+        await fs.unlink(path);
       }
     } catch (error) {
       // 临时文件清理失败不应覆盖原始写入错误。
     }
   }
 
-  private cleanupAbandonedTempFiles(imageDir: string): void {
+  private async cleanupAbandonedTempFilesAsync(imageDir: string, cutoffMs: number): Promise<void> {
     try {
-      const names = fs.listFileSync(imageDir);
+      const names = await fs.listFile(imageDir);
       for (let index: number = 0; index < names.length; index++) {
         const name = names[index];
-        if (/^img_[0-9a-f]+\.[a-z0-9]+\.tmp_[0-9]+_[0-9]+$/.test(name)) {
-          this.removeFileIfExists(`${imageDir}/${name}`);
+        const match = /^img_[0-9a-f]+\.[a-z0-9]+\.tmp_([0-9]+)_[0-9]+$/.exec(name);
+        if (match !== null && Number(match[1]) < cutoffMs) {
+          await this.removeFileIfExists(`${imageDir}/${name}`);
         }
       }
     } catch (error) {
@@ -544,14 +643,22 @@ export class ScpImageCacheService {
     return undefined;
   }
 
-  private hasValidFileSize(path: string): boolean {
+  private async hasValidFileSize(path: string): Promise<boolean> {
     try {
-      if (!this.existsSync(path)) {
+      if (!(await this.existsAsync(path))) {
         return false;
       }
-      const stat = fs.lstatSync(path);
+      const stat = await fs.lstat(path);
       return stat.isFile() && stat.size > 0 && stat.size <= MAX_IMAGE_BYTES;
     } catch (error) {
+      return false;
+    }
+  }
+
+  private async existsAsync(path: string): Promise<boolean> {
+    try {
+      return await fs.access(path);
+    } catch (_error) {
       return false;
     }
   }
@@ -560,8 +667,7 @@ export class ScpImageCacheService {
    * return void), so existence checks must be exception-safe. */
   private existsSync(path: string): boolean {
     try {
-      fs.accessSync(path);
-      return true;
+      return fs.accessSync(path);
     } catch (error) {
       return false;
     }
@@ -575,7 +681,7 @@ export class ScpImageCacheService {
   private async inspectFile(path: string): Promise<ScpImageInspection> {
     let file: fs.File | undefined = undefined;
     try {
-      file = fs.openSync(path, fs.OpenMode.READ_ONLY | fs.OpenMode.NOFOLLOW);
+      file = await fs.open(path, fs.OpenMode.READ_ONLY | fs.OpenMode.NOFOLLOW);
       const source = image.createImageSource(file.fd);
       return await this.inspectImageSource(source);
     } catch (error) {
@@ -583,7 +689,7 @@ export class ScpImageCacheService {
     } finally {
       if (file !== undefined) {
         try {
-          fs.closeSync(file);
+          await fs.close(file);
         } catch (error) {
           hilog.warn(DOMAIN, TAG, 'close cached image failed: %{public}s',
             error instanceof Error ? error.message : '未知错误');

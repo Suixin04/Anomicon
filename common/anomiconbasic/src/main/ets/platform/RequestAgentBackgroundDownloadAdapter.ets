@@ -11,6 +11,7 @@ import {
   BackgroundDownloadState,
   BackgroundDownloadTask
 } from './BackgroundDownloadContracts';
+import { NetworkBoostPort, NetworkBoostScene } from './NetworkBoostContracts';
 
 const UNKNOWN_TOTAL_BYTES: number = -1;
 const REQUEST_TASK_NOT_FOUND: number = 21900006;
@@ -108,6 +109,8 @@ class RequestAgentTask implements BackgroundDownloadTask {
   private readonly destinationPath: string;
   private readonly expectedBytes: number;
   private readonly listeners: BackgroundDownloadListener[] = [];
+  private readonly networkBoost: NetworkBoostPort | undefined;
+  private leaveDownloadScene: (() => void) | undefined = undefined;
   private latest: BackgroundDownloadSnapshot;
   private disposed: boolean = false;
   private eventsAttached: boolean = false;
@@ -157,13 +160,15 @@ class RequestAgentTask implements BackgroundDownloadTask {
     nativeTask: request.agent.Task,
     token: string,
     destinationPath: string,
-    expectedBytes: number
+    expectedBytes: number,
+    networkBoost?: NetworkBoostPort
   ) {
     this.nativeTask = nativeTask;
     this.id = nativeTask.tid;
     this.token = token;
     this.destinationPath = destinationPath;
     this.expectedBytes = expectedBytes;
+    this.networkBoost = networkBoost;
     this.latest = this.makeSnapshot(
       BackgroundDownloadState.INITIALIZED,
       0,
@@ -171,6 +176,7 @@ class RequestAgentTask implements BackgroundDownloadTask {
       '',
       0
     );
+    this.syncDownloadScene(this.latest.state);
     this.attachEvents();
   }
 
@@ -256,6 +262,7 @@ class RequestAgentTask implements BackgroundDownloadTask {
       return;
     }
     this.disposed = true;
+    this.releaseDownloadScene();
     this.detachEvents();
     this.listeners.splice(0, this.listeners.length);
   }
@@ -339,12 +346,37 @@ class RequestAgentTask implements BackgroundDownloadTask {
       return;
     }
     this.latest = snapshot;
+    this.syncDownloadScene(snapshot.state);
     const listeners = this.listeners.slice();
     for (let index: number = 0; index < listeners.length; index++) {
       try {
         listeners[index](snapshot);
       } catch (_error) {
       }
+    }
+  }
+
+  private syncDownloadScene(state: BackgroundDownloadState): void {
+    if (this.disposed || this.networkBoost === undefined) {
+      return;
+    }
+    const active = state === BackgroundDownloadState.INITIALIZED ||
+      state === BackgroundDownloadState.RUNNING ||
+      state === BackgroundDownloadState.RETRYING;
+    if (active) {
+      if (this.leaveDownloadScene === undefined) {
+        this.leaveDownloadScene = this.networkBoost.enterScene(NetworkBoostScene.DOWNLOAD);
+      }
+    } else {
+      this.releaseDownloadScene();
+    }
+  }
+
+  private releaseDownloadScene(): void {
+    if (this.leaveDownloadScene !== undefined) {
+      const leave = this.leaveDownloadScene;
+      this.leaveDownloadScene = undefined;
+      leave();
     }
   }
 
@@ -367,11 +399,13 @@ export class RequestAgentBackgroundDownloadAdapter implements BackgroundDownload
   private readonly applicationContext: common.ApplicationContext;
   private readonly notificationBundleName: string;
   private readonly notificationAbilityName: string;
+  private readonly networkBoost: NetworkBoostPort | undefined;
 
   constructor(
     applicationContext: common.ApplicationContext,
     notificationBundleName: string,
-    notificationAbilityName: string
+    notificationAbilityName: string,
+    networkBoost?: NetworkBoostPort
   ) {
     if (notificationBundleName.trim().length === 0 || notificationAbilityName.trim().length === 0) {
       throw new Error('必须提供下载通知的 bundleName 和 abilityName');
@@ -379,6 +413,7 @@ export class RequestAgentBackgroundDownloadAdapter implements BackgroundDownload
     this.applicationContext = applicationContext;
     this.notificationBundleName = notificationBundleName;
     this.notificationAbilityName = notificationAbilityName;
+    this.networkBoost = networkBoost;
   }
 
   async create(downloadRequest: BackgroundDownloadRequest): Promise<BackgroundDownloadTask> {
@@ -415,7 +450,8 @@ export class RequestAgentBackgroundDownloadAdapter implements BackgroundDownload
         task,
         downloadRequest.token,
         downloadRequest.destinationPath,
-        downloadRequest.expectedBytes
+        downloadRequest.expectedBytes,
+        this.networkBoost
       );
     } catch (error) {
       throw mapError(error as Object, '无法创建后台下载任务');
@@ -427,7 +463,7 @@ export class RequestAgentBackgroundDownloadAdapter implements BackgroundDownload
     try {
       const task = await request.agent.getTask(this.applicationContext, id, token);
       const destination = task.config.saveas === undefined ? '' : task.config.saveas;
-      return new RequestAgentTask(task, token, destination, 0);
+      return new RequestAgentTask(task, token, destination, 0, this.networkBoost);
     } catch (error) {
       throw mapError(error as Object, '无法恢复后台下载任务');
     }

@@ -29,7 +29,14 @@ export {
   BackgroundDownloadListener,
   BackgroundDownloadTask,
   BackgroundDownloadClient,
-  RequestAgentBackgroundDownloadAdapter
+  RequestAgentBackgroundDownloadAdapter,
+  NetworkQualityTier,
+  NetworkBoostScene,
+  NetworkQoeStatus,
+  NetworkConditionSnapshot,
+  NetworkConditionListener,
+  NetworkBoostPort,
+  NetworkBoostAdapter
 } from './platform/Index';
 export {
   AtomicTextCacheFileStore,

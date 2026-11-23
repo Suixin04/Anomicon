@@ -3,6 +3,7 @@ import {
   HdsNavigationMenuItemOptions,
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
+import { schedulingOptimization } from '@kit.FASTKit';
 import { common } from '@kit.AbilityKit';
 import { promptAction } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
@@ -30,7 +31,6 @@ import {
 } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import {
-  ContentUpdateNotice,
   PHONE_PAGE_MARGIN,
   createAppTitleBarStyle,
   pageContentTop
@@ -49,7 +49,12 @@ import {
 } from 'library';
 import { ReadingSettingsRange, SettingsViewModel } from 'settings';
 import { ViewModelLoadState } from 'anomiconbasic';
-import { ImagePreviewActions } from 'anomiconbasic';
+import {
+  ImagePreviewActions,
+  NetworkBoostPort,
+  NetworkBoostScene
+} from 'anomiconbasic';
+import { FastPerformanceHintScope } from '../composition/FastPerformanceHints';
 
 const WIKI_BASE_URL: string = 'https://scp-wiki-cn.wikidot.com';
 const DOMAIN = 0x0000;
@@ -62,7 +67,8 @@ export function ScpArticlePageBuilder(
   hapticService: HapticFeedbackPort,
   settings: SettingsViewModel,
   research: ResearchProfileViewModel,
-  archive3dAvailability: (contentId: string) => boolean
+  archive3dAvailability: (contentId: string) => boolean,
+  networkBoost?: NetworkBoostPort
 ) {
   // The product route adapter is the only composition boundary.  This View
   // receives serializable state and narrow capabilities; it never constructs
@@ -73,7 +79,8 @@ export function ScpArticlePageBuilder(
     hapticService: hapticService,
     settings: settings,
     research: research,
-    archive3dAvailability: archive3dAvailability
+    archive3dAvailability: archive3dAvailability,
+    networkBoost: networkBoost
   })
 }
 
@@ -85,17 +92,23 @@ struct ScpArticlePage {
   @Require @Param settings: SettingsViewModel;
   @Require @Param research: ResearchProfileViewModel;
   @Require @Param archive3dAvailability: (contentId: string) => boolean;
+  @Param networkBoost: NetworkBoostPort | undefined = undefined;
   private pageStack: NavPathStack | undefined = undefined;
   private scroller: Scroller = new Scroller();
+  private readonly pageLoadHint: FastPerformanceHintScope =
+    new FastPerformanceHintScope(
+      schedulingOptimization.SceneType.PAGE_LOAD,
+      schedulingOptimization.DurationType.SHORT
+    );
+  private loadHintActive: boolean = false;
+  private leaveNetworkScene: (() => void) | undefined = undefined;
   private sourceUrl: string = '';
   private pendingHtml: string = '';
   private pendingSourceUrl: string = '';
   private activeExtractionRequestId: number = 0;
   /** 离屏后拒绝迟到的 scrollStop 保存，避免覆盖 onWillDisappear 的最终位置。 */
   private acceptsProgressEvents: boolean = true;
-  private scrollContentHeight: number = 0;
-  private scrollViewportHeight: number = 0;
-  /** 仅在 Scroll 仍处于有效布局/滚动回调期间采样，离屏生命周期只读该稳定值。 */
+  /** 仅在 Scroll/List 仍处于有效布局/滚动回调期间采样，离屏生命周期只读该稳定值。 */
   private lastKnownReadingOffset: number = 0;
   private readonly scrollRestore: ArticleScrollRestore =
     new ArticleScrollRestore();
@@ -141,10 +154,33 @@ struct ScpArticlePage {
     // A route can be retained while hidden, so only dispose on actual component
     // destruction. NavDestination callbacks below handle temporary inactivity.
     this.acceptsProgressEvents = false;
+    this.syncLoadingBoost(false);
     this.viewModelUnsubscribe?.();
     this.viewModelUnsubscribe = undefined;
     this.viewModel.releaseReadingSession(this.currentReadingOffset());
     this.viewModel.dispose();
+  }
+
+  private syncLoadingBoost(active: boolean): void {
+    if (active) {
+      if (!this.loadHintActive) {
+        this.loadHintActive = true;
+        this.pageLoadHint.begin();
+      }
+      if (this.leaveNetworkScene === undefined && this.networkBoost !== undefined) {
+        this.leaveNetworkScene = this.networkBoost.enterScene(NetworkBoostScene.BROWSER);
+      }
+      return;
+    }
+    if (this.loadHintActive) {
+      this.loadHintActive = false;
+      this.pageLoadHint.end();
+    }
+    if (this.leaveNetworkScene !== undefined) {
+      const leave = this.leaveNetworkScene;
+      this.leaveNetworkScene = undefined;
+      leave();
+    }
   }
 
   /** Project feature state into the existing native renderer without changing its visuals. */
@@ -153,6 +189,7 @@ struct ScpArticlePage {
     // A malformed route must remain visible as a route error even when the
     // lifecycle callbacks activate the otherwise empty ViewModel afterwards.
     if (!this.routeResolved && this.routeErrorMessage.length > 0) {
+      this.syncLoadingBoost(false);
       this.document = undefined;
       this.loading = false;
       this.parsing = false;
@@ -189,6 +226,7 @@ struct ScpArticlePage {
     this.partialUpdateFailed = partial && vm.error !== undefined;
     this.errorMessage = this.routeErrorMessage.length > 0 ? this.routeErrorMessage :
       (partial ? '' : vm.error?.message ?? '');
+    this.syncLoadingBoost(this.loading || this.parsing || this.partialRefreshing);
     this.readingPercent = vm.readingPercent;
     this.completed = vm.completed;
     // Article owns title enrichment and related-tale lookup.  The product
@@ -236,8 +274,6 @@ struct ScpArticlePage {
     this.expandedKeys = [];
     this.lastKnownReadingOffset = 0;
     this.scrollRestore.reset();
-    this.scrollContentHeight = 0;
-    this.scrollViewportHeight = 0;
     this.readingPercent = 0;
     this.previewVisible = false;
     this.previewIndex = 0;
@@ -322,20 +358,8 @@ struct ScpArticlePage {
   }
 
   /** 高频滚动只在整数百分比变化时发布 V2 状态，避免标题栏逐帧重组。 */
-  private updateReadingPercent(): void {
-    if (this.document === undefined || !Number.isFinite(this.scrollContentHeight) ||
-      !Number.isFinite(this.scrollViewportHeight) || this.scrollContentHeight <= 0 ||
-      this.scrollViewportHeight <= 0) {
-      if (this.readingPercent !== 0) {
-        this.readingPercent = 0;
-      }
-      return;
-    }
-    const scrollableDistance = Math.max(0, this.scrollContentHeight - this.scrollViewportHeight);
-    const offset = this.currentReadingOffset();
-    const ratio = scrollableDistance <= 0 || !Number.isFinite(offset) ? 1 :
-      Math.max(0, Math.min(1, offset / scrollableDistance));
-    const next = Math.round(ratio * 100);
+  private applyReadingPercent(percent: number): void {
+    const next = Math.max(0, Math.min(100, Math.round(percent)));
     if (next !== this.readingPercent) {
       this.readingPercent = next;
       this.viewModel.setReadingPercent(next);
@@ -387,18 +411,12 @@ struct ScpArticlePage {
     this.viewModel.toggleExpanded(block.key);
   }
 
-  private requestRendererScroll(offset: number): void {
-    this.hapticService.playSelection(this.settings.hapticEnabled);
-    this.scroller.scrollTo({ xOffset: 0, yOffset: Math.max(0, offset), animation: true });
-  }
-
   /** Product coordination after the feature-owned native body has a layout. */
   private onRendererContentLaidOut(): void {
     const restoreOffset = this.scrollRestore.markContentLaidOut();
     if (restoreOffset !== undefined) {
       this.applyRestoredScrollOffset(restoreOffset);
     }
-    this.updateReadingPercent();
   }
 
   private applyRestoredScrollOffset(offset: number): void {
@@ -409,7 +427,6 @@ struct ScpArticlePage {
       yOffset: normalized,
       animation: false
     });
-    this.updateReadingPercent();
   }
 
   private async openUrl(url: string): Promise<void> {
@@ -649,135 +666,116 @@ struct ScpArticlePage {
     })
   }
 
-  @Builder
-  private partialNotice() {
-    ContentUpdateNotice({
-      message: this.partialUpdateFailed ? '更新失败，仍可阅读缓存正文' : '当前显示缓存正文',
-      updating: this.partialRefreshing,
-      updatingMessage: '正在更新正文…',
-      onRetry: () => this.retryArticle()
-    })
-      .margin({ top: 8, bottom: 12 })
-  }
-
   build() {
     HdsNavDestination() {
       Stack() {
-        Scroll(this.scroller) {
-          Column() {
-            if (this.loading || (this.parsing && this.document === undefined)) {
-              Column({ space: 12 }) {
-                LoadingProgress()
-                  .width(32)
-                  .height(32)
-                  .color($r('sys.color.icon_emphasize'))
-                Text(this.parsing ? '正在整理正文…' : '正在加载正文…')
-                  .fontSize(14)
-                  .fontColor($r('sys.color.font_secondary'))
-              }
-              .width('100%')
-              .height(320)
-              .justifyContent(FlexAlign.Center)
-            } else if (this.errorMessage.length > 0) {
-              Column({ space: 12 }) {
-                Text(this.errorMessage)
-                  .fontSize(14)
-                  .fontColor($r('sys.color.font_secondary'))
-                  .textAlign(TextAlign.Center)
-                Button('重试', { stateEffect: false })
-                  .onClick(() => {
-                    this.retryArticle();
-                  })
-              }
-              .width('100%')
-              .height(320)
-              .justifyContent(FlexAlign.Center)
-            } else {
-              if (this.document !== undefined) {
-                if (this.partialNoticeVisible) {
-                  this.partialNotice()
-                }
-                ArticleNativeRenderer({
-                  document: this.document!,
-                  expandedKeys: this.expandedKeys,
-                  relatedTales: this.relatedTales,
-                  fontSize: this.fontSize,
-                  lineHeightMultiple: this.lineHeightMultiple,
-                  galleryAfterBody: this.isStoryDetail(),
-                  galleryReturnIndex: this.previewIndex,
-                  galleryReturnEpoch: this.galleryReturnEpoch,
-                  onOpenUrl: (url: string) => this.openUrl(url),
-                  onOpenArticleLink: (url: string, title: string) => this.openArticleLink(url, title),
-                  onOpenImage: (index: number) => this.openPreview(index),
-                  onToggleExpanded: (block: ScpContentBlock) => this.toggleRendererBlock(block),
-                  onOpenRelatedTale: (tale: ArticleRelatedTale) => this.openTale(tale),
-                  onRequestScrollTo: (offset: number) => this.requestRendererScroll(offset),
-                  onContentLaidOut: () => this.onRendererContentLaidOut()
-                })
-              }
-            }
-
-            // 离屏解析：仅在一次解析期间挂载，完成后由状态移除。
-            if (this.parsing && this.pendingHtml.length > 0) {
-              ForEach([this.activeExtractionRequestId], (requestId: number) => {
-                ScpHtmlExtractor({
-                  html: this.pendingHtml,
-                  baseUrl: this.pendingSourceUrl,
-                  requestId: requestId,
-                  onExtracted: (json: string, callbackRequestId: number): void => {
-                    this.onExtracted(json, callbackRequestId);
-                  },
-                  onFailed: (message: string, callbackRequestId: number): void => {
-                    this.onExtractionFailed(message, callbackRequestId);
-                  }
-                })
-              }, (requestId: number) => `article-extractor:${requestId}`)
-            }
+        if (this.loading || (this.parsing && this.document === undefined)) {
+          Column({ space: 12 }) {
+            LoadingProgress()
+              .width(32)
+              .height(32)
+              .color($r('sys.color.icon_emphasize'))
+            Text(this.parsing ? '正在整理正文…' : '正在加载正文…')
+              .fontSize(14)
+              .fontColor($r('sys.color.font_secondary'))
           }
           .width('100%')
-          .constraintSize({ maxWidth: 680 })
+          .height('100%')
           .padding({
             left: PHONE_PAGE_MARGIN,
             right: PHONE_PAGE_MARGIN,
             top: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
             bottom: 48
           })
-          .onAreaChange((_oldArea: Area, newArea: Area) => {
-            this.scrollContentHeight = Number(newArea.height);
-            this.updateReadingPercent();
+          .justifyContent(FlexAlign.Center)
+        } else if (this.errorMessage.length > 0) {
+          Column({ space: 12 }) {
+            Text(this.errorMessage)
+              .fontSize(14)
+              .fontColor($r('sys.color.font_secondary'))
+              .textAlign(TextAlign.Center)
+            Button('重试', { stateEffect: false })
+              .onClick(() => {
+                this.retryArticle();
+              })
+          }
+          .width('100%')
+          .height('100%')
+          .padding({
+            left: PHONE_PAGE_MARGIN,
+            right: PHONE_PAGE_MARGIN,
+            top: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
+            bottom: 48
+          })
+          .justifyContent(FlexAlign.Center)
+        } else if (this.document !== undefined) {
+          ArticleNativeRenderer({
+            scroller: this.scroller,
+            document: this.document!,
+            expandedKeys: this.expandedKeys,
+            relatedTales: this.relatedTales,
+            fontSize: this.fontSize,
+            lineHeightMultiple: this.lineHeightMultiple,
+            topPadding: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
+            partialNoticeVisible: this.partialNoticeVisible,
+            partialRefreshing: this.partialRefreshing,
+            partialUpdateFailed: this.partialUpdateFailed,
+            galleryAfterBody: this.isStoryDetail(),
+            galleryReturnIndex: this.previewIndex,
+            galleryReturnEpoch: this.galleryReturnEpoch,
+            onRetryPartial: () => this.retryArticle(),
+            onReadingProgressChange: (percent: number) => this.applyReadingPercent(percent),
+            onAnchorJump: () => this.hapticService.playSelection(this.settings.hapticEnabled),
+            onScrollDidScroll: () => {
+              this.captureReadingOffset();
+            },
+            onScrollStart: () => {
+              // Official ArkUI semantics do not emit onScrollStart for our
+              // non-animated restore scroll.  Reaching here before restoration
+              // therefore means the reader interacted first; their position wins.
+              this.scrollRestore.cancelForInteraction();
+              this.captureReadingOffset();
+              this.setReadingScrollActive(true);
+            },
+            onScrollStop: () => {
+              this.captureReadingOffset();
+              this.setReadingScrollActive(false);
+              if (this.acceptsProgressEvents) {
+                this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {
+                });
+                this.checkpointReadingActivity();
+              }
+            },
+            onOpenUrl: (url: string) => this.openUrl(url),
+            onOpenArticleLink: (url: string, title: string) => this.openArticleLink(url, title),
+            onOpenImage: (index: number) => this.openPreview(index),
+            onToggleExpanded: (block: ScpContentBlock) => this.toggleRendererBlock(block),
+            onOpenRelatedTale: (tale: ArticleRelatedTale) => this.openTale(tale),
+            onContentLaidOut: () => this.onRendererContentLaidOut()
           })
         }
-        .width('100%')
-        .height('100%')
-        .backgroundColor($r('sys.color.background_secondary'))
-        .clip(false)
-        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-        .scrollBar(BarState.Off)
-        .onAreaChange((_oldArea: Area, newArea: Area) => {
-          this.scrollViewportHeight = Number(newArea.height);
-          this.updateReadingPercent();
-        })
-        .onDidScroll((_xOffset: number, _yOffset: number, _state: ScrollState) => {
-          this.captureReadingOffset();
-          this.updateReadingPercent();
-        })
-        .onScrollStart(() => {
-          // Official ArkUI semantics do not emit onScrollStart for our
-          // non-animated restore scroll.  Reaching here before restoration
-          // therefore means the reader interacted first; their position wins.
-          this.scrollRestore.cancelForInteraction();
-          this.captureReadingOffset();
-          this.setReadingScrollActive(true);
-        })
-        .onScrollStop(() => {
-          this.captureReadingOffset();
-          this.setReadingScrollActive(false);
-          if (this.acceptsProgressEvents) {
-            this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {
-            });
-            this.checkpointReadingActivity();
+
+        // 离屏解析：仅在一次解析期间挂载，完成后由状态移除。
+        if (this.parsing && this.pendingHtml.length > 0) {
+          Column() {
+            ForEach([this.activeExtractionRequestId], (requestId: number) => {
+              ScpHtmlExtractor({
+                html: this.pendingHtml,
+                baseUrl: this.pendingSourceUrl,
+                requestId: requestId,
+                onExtracted: (json: string, callbackRequestId: number): void => {
+                  this.onExtracted(json, callbackRequestId);
+                },
+                onFailed: (message: string, callbackRequestId: number): void => {
+                  this.onExtractionFailed(message, callbackRequestId);
+                }
+              })
+            }, (requestId: number) => `article-extractor:${requestId}`)
           }
-        })
+          .width(1)
+          .height(1)
+          .hitTestBehavior(HitTestMode.None)
+        }
 
         // 全屏图片预览层
         if (this.previewVisible && this.document !== undefined && this.document!.images.length > 0) {
@@ -853,6 +851,7 @@ struct ScpArticlePage {
       }
     })
     .onHidden(() => {
+      this.syncLoadingBoost(false);
       if (this.acceptsProgressEvents) {
         this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {
         });
@@ -898,6 +897,7 @@ struct ScpArticlePage {
       }
     })
     .onWillDisappear(() => {
+      this.syncLoadingBoost(false);
       this.acceptsProgressEvents = false;
       this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {
       });

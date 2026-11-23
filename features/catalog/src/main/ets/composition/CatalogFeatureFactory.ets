@@ -1,5 +1,12 @@
 import { common } from '@kit.AbilityKit';
-import { ImagePreviewActions } from 'anomiconbasic';
+import {
+  ImagePreviewActions,
+  NetworkBoostPort,
+  NetworkBoostScene,
+  NetworkConditionSnapshot,
+  NetworkQoeStatus,
+  NetworkQualityTier
+} from 'anomiconbasic';
 import { CatalogFeatureGraph } from '../domain/CatalogFeaturePorts';
 import { ArticleHtmlRepository } from '../domain/ArticleHtmlRepository';
 import {
@@ -117,13 +124,32 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
  * only domain ports and a single idempotent initializer; concrete RDB/RCP
  * services remain private to this file.
  */
-export function createCatalogFeatureGraph(context: common.UIAbilityContext): CatalogFeatureGraph {
+export function createCatalogFeatureGraph(
+  context: common.UIAbilityContext,
+  networkBoost?: NetworkBoostPort
+): CatalogFeatureGraph {
   // One graph owns one concrete pipeline.  Catalog, tales, previews, Article
   // and Explore therefore share the same request scheduler, HTML cache and
   // in-flight deduplication without relying on process-global service state.
   const requestScheduler = new ScpRequestScheduler();
   const pageCacheService = new ScpPageCacheService();
-  const pageFetchService = new ScpPageFetchService(requestScheduler);
+  const pageFetchService = new ScpPageFetchService(
+    requestScheduler,
+    networkBoost === undefined ? undefined :
+      (latencyMs: number, statusCode: number, failed: boolean): void => {
+        if (failed || statusCode >= 500) {
+          const noData = statusCode === 1007900028 || statusCode === 1007900052;
+          networkBoost.reportQoe(
+            NetworkBoostScene.BROWSER,
+            noData ? NetworkQoeStatus.NO_DATA : NetworkQoeStatus.SERVER_ERROR
+          );
+        } else if (latencyMs >= 3000) {
+          networkBoost.reportQoe(NetworkBoostScene.BROWSER, NetworkQoeStatus.HIGH_LATENCY);
+        } else if (statusCode >= 200 && statusCode < 400 && latencyMs <= 1200) {
+          networkBoost.reportQoe(NetworkBoostScene.BROWSER, NetworkQoeStatus.GOOD);
+        }
+      }
+  );
   const articleHtmlRepository = new CachedArticleRepo(
     pageFetchService,
     pageCacheService,
@@ -132,6 +158,43 @@ export function createCatalogFeatureGraph(context: common.UIAbilityContext): Cat
   const catalogCacheService = new ScpCatalogCacheService();
   const imageCacheService = new ScpImageCacheService();
   const imagePrefetchService = new ScpImagePrefetchService();
+
+  let lastHandoverEpoch: number = networkBoost?.currentCondition().handoverEpoch ?? 0;
+  const applyNetworkCondition = (condition: NetworkConditionSnapshot): void => {
+    switch (condition.tier) {
+      case NetworkQualityTier.GOOD:
+        requestScheduler.setConcurrencyPolicy(6, 2);
+        imageCacheService.setMaxConcurrentDownloads(6);
+        imagePrefetchService.setNetworkPolicy(6, false);
+        break;
+      case NetworkQualityTier.WEAK:
+        requestScheduler.setConcurrencyPolicy(2, 0);
+        imageCacheService.setMaxConcurrentDownloads(2);
+        imagePrefetchService.setNetworkPolicy(2, true);
+        break;
+      case NetworkQualityTier.SUSPENDED:
+        requestScheduler.setConcurrencyPolicy(1, 0);
+        imageCacheService.setMaxConcurrentDownloads(1);
+        imagePrefetchService.setNetworkPolicy(1, true);
+        break;
+      case NetworkQualityTier.NORMAL:
+      default:
+        requestScheduler.setConcurrencyPolicy(4, 2);
+        imageCacheService.setMaxConcurrentDownloads(4);
+        imagePrefetchService.setNetworkPolicy(6, false);
+        break;
+    }
+    if (condition.handoverEpoch > lastHandoverEpoch) {
+      lastHandoverEpoch = condition.handoverEpoch;
+      pageFetchService.retireSessionForHandover();
+      imageCacheService.retireSessionForHandover();
+    }
+  };
+  let unsubscribeNetworkBoost: (() => void) | undefined = undefined;
+  if (networkBoost !== undefined) {
+    applyNetworkCondition(networkBoost.currentCondition());
+    unsubscribeNetworkBoost = networkBoost.subscribe(applyNetworkCondition);
+  }
   const searchHistoryService = new ScpSearchHistoryService();
   const taleListService = new TaleListService(articleHtmlRepository);
   const previewService = new ScpPreviewService(
@@ -209,6 +272,13 @@ export function createCatalogFeatureGraph(context: common.UIAbilityContext): Cat
     titleResolver,
     imagePreviewActions,
     initialize,
-    (): void => pageFetchService.dispose()
+    (): void => {
+      if (unsubscribeNetworkBoost !== undefined) {
+        unsubscribeNetworkBoost();
+        unsubscribeNetworkBoost = undefined;
+      }
+      pageFetchService.dispose();
+      imageCacheService.dispose();
+    }
   );
 }

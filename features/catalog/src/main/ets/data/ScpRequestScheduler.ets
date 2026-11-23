@@ -1,8 +1,12 @@
 import { ScpHtmlRequestPriority } from '../domain/ArticleHtmlRepository';
 
-const MAX_CONCURRENT_PAGE_REQUESTS: number = 2;
-/** 预取/后台工作最多使用一个槽，为正文和可见卡片保留一个槽。 */
-const MAX_LOW_PRIORITY_REQUESTS: number = 1;
+const DEFAULT_MAX_CONCURRENT_PAGE_REQUESTS: number = 4;
+const DEFAULT_MAX_LOW_PRIORITY_REQUESTS: number = 2;
+
+export interface ScpConcurrencyPolicy {
+  readonly maxConcurrent: number;
+  readonly maxLowPriority: number;
+}
 
 class ScpScheduledRequest {
   readonly key: string;
@@ -26,14 +30,39 @@ class ScpScheduledRequest {
 /**
  * 中文主站页面请求的应用级优先级闸门。
  *
- * 正文/可见卡片可使用两个并发槽；预取和后台刷新最多占一个槽。等待任务按
- * 「优先级 → 入队顺序」选择，且同一 URL 的排队任务可以在用户真正打开时晋升。
+ * 并发上限可根据网络质量动态调整，始终为正文和可见卡片保留至少一个高优先级槽。
+ * 等待任务按「优先级 → 入队顺序」选择，且同一 URL 的排队任务可以在用户真正打开时晋升。
  */
 export class ScpRequestScheduler {
+  private maxConcurrentRequests: number = DEFAULT_MAX_CONCURRENT_PAGE_REQUESTS;
+  private maxLowPriorityRequests: number = DEFAULT_MAX_LOW_PRIORITY_REQUESTS;
   private activeRequests: number = 0;
   private activeLowPriorityRequests: number = 0;
   private nextSequence: number = 0;
   private readonly waiting: ScpScheduledRequest[] = [];
+
+  constructor(
+    maxConcurrent: number = DEFAULT_MAX_CONCURRENT_PAGE_REQUESTS,
+    maxLowPriority: number = DEFAULT_MAX_LOW_PRIORITY_REQUESTS
+  ) {
+    this.setConcurrencyPolicy(maxConcurrent, maxLowPriority);
+  }
+
+  setConcurrencyPolicy(maxConcurrent: number, maxLowPriority: number): void {
+    const nextMax = Math.max(1, Math.floor(maxConcurrent));
+    const nextLow = nextMax <= 1 ?
+      0 : Math.max(0, Math.min(nextMax - 1, Math.floor(maxLowPriority)));
+    this.maxConcurrentRequests = nextMax;
+    this.maxLowPriorityRequests = nextLow;
+    this.drain();
+  }
+
+  getConcurrencyPolicy(): ScpConcurrencyPolicy {
+    return {
+      maxConcurrent: this.maxConcurrentRequests,
+      maxLowPriority: this.maxLowPriorityRequests
+    };
+  }
 
   async run<T>(
     task: () => Promise<T>,
@@ -91,7 +120,7 @@ export class ScpRequestScheduler {
   }
 
   private drain(): void {
-    while (this.activeRequests < MAX_CONCURRENT_PAGE_REQUESTS) {
+    while (this.activeRequests < this.maxConcurrentRequests) {
       const index = this.nextEligibleIndex();
       if (index < 0) {
         return;
@@ -124,11 +153,11 @@ export class ScpRequestScheduler {
   }
 
   private canStart(priority: ScpHtmlRequestPriority): boolean {
-    if (this.activeRequests >= MAX_CONCURRENT_PAGE_REQUESTS) {
+    if (this.activeRequests >= this.maxConcurrentRequests) {
       return false;
     }
     return !this.isLowPriority(priority) ||
-      this.activeLowPriorityRequests < MAX_LOW_PRIORITY_REQUESTS;
+      this.activeLowPriorityRequests < this.maxLowPriorityRequests;
   }
 
   private markStarted(priority: ScpHtmlRequestPriority): void {

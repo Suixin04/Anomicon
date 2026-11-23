@@ -10,7 +10,7 @@ import {
   ExploreHtmlRepository,
   ExploreHtmlSource
 } from '../domain/ExploreRepositories';
-import { ExploreHtmlParser } from './ExploreHtmlParser';
+import { parseExploreHtmlOffThread } from './ExploreHtmlParseTask';
 import { RetryableInitialization } from './RetryableInitialization';
 
 const TABLE_NAME: string = 'explore_list_cache';
@@ -239,7 +239,7 @@ export class ExploreListService {
     forceNetwork: boolean
   ): Promise<LoadedExplorePayload> {
     let result: ExploreHtmlLoadResult = await this.repository.loadHtml(url, forceNetwork);
-    let payload = ExploreHtmlParser.parse(source, result.html);
+    let payload = await parseExploreHtmlOffThread(source, result.html);
     if (payload.ok && payload.entries.length > 0) {
       return new LoadedExplorePayload(payload, result.source, result.fetchedAt);
     }
@@ -251,7 +251,7 @@ export class ExploreListService {
     }
     if (result.source !== ExploreHtmlSource.NETWORK && !forceNetwork) {
       result = await this.repository.loadHtml(url, true);
-      payload = ExploreHtmlParser.parse(source, result.html);
+      payload = await parseExploreHtmlOffThread(source, result.html);
       if ((!payload.ok || payload.entries.length === 0) && result.source !== ExploreHtmlSource.NETWORK) {
         await this.repository.discard(url);
       }

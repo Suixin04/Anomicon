@@ -33,6 +33,9 @@ export struct ScpCatalogCard {
 
   @Monitor('entry')
   onEntryChange(): void {
+    if (this.loadedSource !== this.previewSource()) {
+      this.loadedSource = '';
+    }
     // A keyed Repeat normally remounts this component when the immutable
     // entry changes.  Keep a lifecycle-safe fallback for runtimes that reuse
     // the node despite the key update: a visible card must request its new

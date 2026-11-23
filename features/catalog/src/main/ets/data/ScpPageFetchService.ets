@@ -100,11 +100,19 @@ class ScpFetchedPage {
  */
 export class ScpPageFetchService {
   private readonly scheduler: ScpRequestScheduler;
+  private readonly onRequestMetrics:
+    ((latencyMs: number, statusCode: number, failed: boolean) => void) | undefined;
   private pageSession: rcp.Session | undefined = undefined;
+  private readonly activePerSession: Map<rcp.Session, number> = new Map();
+  private readonly retiredSessions: Set<rcp.Session> = new Set();
   private disposed: boolean = false;
 
-  constructor(scheduler: ScpRequestScheduler) {
+  constructor(
+    scheduler: ScpRequestScheduler,
+    onRequestMetrics?: (latencyMs: number, statusCode: number, failed: boolean) => void
+  ) {
     this.scheduler = scheduler;
+    this.onRequestMetrics = onRequestMetrics;
   }
 
   async fetchPage(
@@ -152,6 +160,20 @@ export class ScpPageFetchService {
     }
   }
 
+  /** Retire the current session on network handover so fresh fetches establish new sockets. */
+  retireSessionForHandover(): void {
+    const session = this.pageSession;
+    if (session === undefined) {
+      return;
+    }
+    this.pageSession = undefined;
+    if ((this.activePerSession.get(session) ?? 0) === 0) {
+      this.closeSessionSafely(session, false);
+    } else {
+      this.retiredSessions.add(session);
+    }
+  }
+
   /** Close the graph-owned native connection pool and reject later work. */
   dispose(): void {
     if (this.disposed) {
@@ -160,14 +182,25 @@ export class ScpPageFetchService {
     this.disposed = true;
     const session = this.pageSession;
     this.pageSession = undefined;
-    if (session === undefined) {
-      return;
+    if (session !== undefined) {
+      this.closeSessionSafely(session, true);
     }
-    try {
-      session.cancel();
-    } catch (error) {
-      hilog.warn(DOMAIN, TAG, 'cancel page session failed: %{public}s',
-        error instanceof Error ? error.message : '未知错误');
+    const retired = Array.from(this.retiredSessions);
+    this.retiredSessions.clear();
+    this.activePerSession.clear();
+    for (let index: number = 0; index < retired.length; index++) {
+      this.closeSessionSafely(retired[index], true);
+    }
+  }
+
+  private closeSessionSafely(session: rcp.Session, cancelActive: boolean): void {
+    if (cancelActive) {
+      try {
+        session.cancel();
+      } catch (error) {
+        hilog.warn(DOMAIN, TAG, 'cancel page session failed: %{public}s',
+          error instanceof Error ? error.message : '未知错误');
+      }
     }
     try {
       session.close();
@@ -255,10 +288,13 @@ export class ScpPageFetchService {
   ): Promise<ScpPageResponse> {
     return this.scheduler.run(async (): Promise<ScpPageResponse> => {
       const collector = new ScpPageByteCollector();
+      let session: rcp.Session | undefined = undefined;
+      const startedAt = Date.now();
       try {
         // 已排队任务可能在 Graph 销毁后才取得调度槽；不得复活原生 Session。
         this.assertActive();
-        const session = this.getPageSession();
+        session = this.getPageSession();
+        this.acquireSessionFetch(session);
         const request = new rcp.Request(url, 'GET', header);
         // 收集器属于当前 Request；共享 Session 并发工作时，各响应正文不会互相串流。
         request.destination = (incomingData: ArrayBuffer): void => {
@@ -267,15 +303,47 @@ export class ScpPageFetchService {
         const response = await session.fetch(request);
         // close 与 fetch 完成的先后顺序没有保证；销毁后的响应不能再写入旧 Graph 的缓存。
         this.assertActive();
+        this.reportRequestMetrics(Date.now() - startedAt, response.statusCode, false);
         return new ScpPageResponse(response.statusCode, response.headers, collector.finish());
       } catch (error) {
         const requestError = this.requestError(error);
+        this.reportRequestMetrics(Date.now() - startedAt, requestError.code, true);
         if (collector.limitExceeded()) {
           throw new ScpRequestError(requestError.code, `页面超过 ${MAX_PAGE_BYTES} 字节限制`);
         }
         throw requestError;
+      } finally {
+        if (session !== undefined) {
+          this.releaseSessionFetch(session);
+        }
       }
     }, priority, url);
+  }
+
+  private acquireSessionFetch(session: rcp.Session): void {
+    this.activePerSession.set(session, (this.activePerSession.get(session) ?? 0) + 1);
+  }
+
+  private releaseSessionFetch(session: rcp.Session): void {
+    const remaining = (this.activePerSession.get(session) ?? 0) - 1;
+    if (remaining > 0) {
+      this.activePerSession.set(session, remaining);
+      return;
+    }
+    this.activePerSession.delete(session);
+    if (this.retiredSessions.delete(session) && !this.disposed) {
+      this.closeSessionSafely(session, false);
+    }
+  }
+
+  private reportRequestMetrics(latencyMs: number, statusCode: number, failed: boolean): void {
+    if (this.onRequestMetrics === undefined) {
+      return;
+    }
+    try {
+      this.onRequestMetrics(Math.max(0, latencyMs), statusCode, failed);
+    } catch (_error) {
+    }
   }
 
   private toFetchedPage(
@@ -320,6 +388,10 @@ export class ScpPageFetchService {
     // FeatureGraph 内复用一个长连接池，不为每一页重复创建原生 Session。
     try {
       this.pageSession = rcp.createSession({
+        connectionConfiguration: {
+          maxConnectionsPerHost: 6,
+          maxTotalConnections: 16
+        },
         requestConfiguration: {
           transfer: {
             // 自动跟随会绕过应用的主站 URL 策略；由业务层逐跳解析并重新校验。

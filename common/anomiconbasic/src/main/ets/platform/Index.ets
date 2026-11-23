@@ -14,8 +14,17 @@ export {
   BackgroundDownloadTask,
   BackgroundDownloadClient
 } from './BackgroundDownloadContracts';
+export {
+  NetworkQualityTier,
+  NetworkBoostScene,
+  NetworkQoeStatus,
+  NetworkConditionSnapshot,
+  NetworkConditionListener,
+  NetworkBoostPort
+} from './NetworkBoostContracts';
 export { AppInfoAdapter } from './AppInfoAdapter';
 export { HapticFeedbackAdapter } from './HapticFeedbackAdapter';
+export { NetworkBoostAdapter } from './NetworkBoostAdapter';
 export { RuntimeClockAdapter } from './RuntimeClockAdapter';
 export { IdGeneratorAdapter } from './IdGeneratorAdapter';
 export { ExternalUrlPolicy } from './ExternalUrlPolicy';

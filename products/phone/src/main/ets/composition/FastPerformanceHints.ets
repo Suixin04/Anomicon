@@ -18,6 +18,8 @@ export class FastPerformanceHintScope {
   private readonly durationType: schedulingOptimization.DurationType;
   private capabilityAvailable: boolean | undefined = undefined;
   private activeUsers: number = 0;
+  private activeDispatched: boolean = false;
+  private lastBeginAtMs: number = 0;
   private requestTail: Promise<void> = Promise.resolve();
 
   constructor(
@@ -31,13 +33,20 @@ export class FastPerformanceHintScope {
   /**
    * Starts the hint when the first logical operation enters the scope.
    * Reference counting makes overlapping loads safe: a stale load finishing
-   * cannot end a newer load's hint.
+   * cannot end a newer load's hint. Cooldown throttling prevents FAST Kit
+   * interval errors during rapid navigation.
    */
   begin(): void {
     this.activeUsers++;
     if (this.activeUsers !== 1 || !this.isCapabilityAvailable()) {
       return;
     }
+    const now = Date.now();
+    if (this.lastBeginAtMs > 0 && now - this.lastBeginAtMs < this.minIntervalMs()) {
+      return;
+    }
+    this.lastBeginAtMs = now;
+    this.activeDispatched = true;
     this.enqueue(schedulingOptimization.SceneState.BEGIN);
   }
 
@@ -47,10 +56,23 @@ export class FastPerformanceHintScope {
       return;
     }
     this.activeUsers--;
-    if (this.activeUsers !== 0 || !this.isCapabilityAvailable()) {
+    if (this.activeUsers !== 0 || !this.activeDispatched || !this.isCapabilityAvailable()) {
       return;
     }
+    this.activeDispatched = false;
     this.enqueue(schedulingOptimization.SceneState.END);
+  }
+
+  private minIntervalMs(): number {
+    switch (this.durationType) {
+      case schedulingOptimization.DurationType.SHORT:
+        return 3500;
+      case schedulingOptimization.DurationType.MEDIUM:
+        return 31000;
+      case schedulingOptimization.DurationType.LONG:
+      default:
+        return 181000;
+    }
   }
 
   private enqueue(sceneState: schedulingOptimization.SceneState): void {

@@ -39,6 +39,8 @@ export struct ScpCatalogHome {
   @Local private previewReloadToken: number = 0;
   /** Keep preview projections alive while search temporarily hides an item. */
   private readonly previewEntriesById: Map<string, ScpCatalogEntry> = new Map();
+  private readonly activePrefetchIds: Set<string> = new Set();
+  private lastVisibleStart: number = -1;
   private mountedEpoch: number = 0;
 
   aboutToAppear(): void {
@@ -51,6 +53,7 @@ export struct ScpCatalogHome {
 
   aboutToDisappear(): void {
     this.mountedEpoch++;
+    this.clearPrefetchWindow();
     this.viewModel.deactivate();
   }
 
@@ -60,18 +63,21 @@ export struct ScpCatalogHome {
       this.viewModel.activate();
       this.syncEntries();
     } else {
+      this.clearPrefetchWindow();
       this.viewModel.deactivate();
     }
   }
 
   @Monitor('searchState.query')
   onSearchQueryChanged(): void {
+    this.clearPrefetchWindow();
     this.viewModel.setQuery(this.searchState.query);
     this.scroller.scrollTo({ xOffset: 0, yOffset: 0, animation: false });
   }
 
   @Monitor('searchState.seriesId')
   onSearchSeriesChanged(): void {
+    this.clearPrefetchWindow();
     this.previewEntriesById.clear();
     this.viewModel.selectSeries(this.searchState.seriesId);
     this.scroller.scrollTo({ xOffset: 0, yOffset: 0, animation: false });
@@ -140,6 +146,7 @@ export struct ScpCatalogHome {
   }
 
   private retry(): void {
+    this.clearPrefetchWindow();
     // Refresh is the single preview retry mechanism.  Clear every projected
     // result first so cards that remain mounted and cards entering later both
     // observe the same idle state.
@@ -154,6 +161,73 @@ export struct ScpCatalogHome {
     this.viewModel.retry().catch((): void => {
       // The error is represented by the ViewModel snapshot.
     });
+  }
+
+  private clearPrefetchWindow(): void {
+    if (this.activePrefetchIds.size > 0) {
+      this.viewModel.cancelPreviewPrefetch(Array.from(this.activePrefetchIds));
+      this.activePrefetchIds.clear();
+    }
+    this.lastVisibleStart = -1;
+  }
+
+  private handleVisibleIndexesChange(start: number, end: number): void {
+    if (!this.active || this.entries.length === 0 || start < 0 || end < start) {
+      this.clearPrefetchWindow();
+      return;
+    }
+    const visibleStart = Math.max(0, start);
+    const visibleEnd = Math.min(this.entries.length - 1, end);
+    const scrollingUp = this.lastVisibleStart >= 0 && visibleStart < this.lastVisibleStart;
+    this.lastVisibleStart = visibleStart;
+
+    const visibleIds: Set<string> = new Set<string>();
+    for (let index: number = visibleStart; index <= visibleEnd; index++) {
+      visibleIds.add(this.entries[index].itemId);
+    }
+
+    const nextWindow: Set<string> = new Set<string>();
+    const backCount = scrollingUp ? 8 : 2;
+    const forwardCount = scrollingUp ? 2 : 8;
+    const aheadStart = Math.max(0, visibleStart - backCount);
+    for (let index: number = aheadStart; index < visibleStart; index++) {
+      const entry = this.entries[index];
+      if (entry.previewState === CatalogPreviewState.IDLE) {
+        nextWindow.add(entry.itemId);
+      }
+    }
+    const trailingEnd = Math.min(this.entries.length - 1, visibleEnd + forwardCount);
+    for (let index: number = visibleEnd + 1; index <= trailingEnd; index++) {
+      const entry = this.entries[index];
+      if (entry.previewState === CatalogPreviewState.IDLE) {
+        nextWindow.add(entry.itemId);
+      }
+    }
+
+    const toCancel: string[] = [];
+    this.activePrefetchIds.forEach((itemId: string): void => {
+      if (!nextWindow.has(itemId) && !visibleIds.has(itemId)) {
+        toCancel.push(itemId);
+      }
+    });
+    const toPrefetch: string[] = [];
+    nextWindow.forEach((itemId: string): void => {
+      if (!this.activePrefetchIds.has(itemId)) {
+        toPrefetch.push(itemId);
+      }
+    });
+
+    this.activePrefetchIds.clear();
+    nextWindow.forEach((itemId: string): void => {
+      this.activePrefetchIds.add(itemId);
+    });
+
+    if (toCancel.length > 0) {
+      this.viewModel.cancelPreviewPrefetch(toCancel);
+    }
+    if (toPrefetch.length > 0) {
+      this.viewModel.prefetchPreviews(toPrefetch);
+    }
   }
 
   @Builder
@@ -304,7 +378,9 @@ export struct ScpCatalogHome {
               .columnsTemplate(this.catalogColumns)
               .columnsGap(LengthMetrics.vp(12))
               .rowsGap(LengthMetrics.vp(12))
-              .padding({ left: 16, right: 16, bottom: 160 });
+              .padding({ left: 16, right: 16, bottom: 160 })
+              .onVisibleIndexesChange((start: number, end: number): void =>
+                this.handleVisibleIndexesChange(start, end));
             }
             .header(() => {
               this.listHeader();
