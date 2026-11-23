@@ -7,6 +7,7 @@ import {
 } from '@kit.ArkUI';
 import {
   AppTypography,
+  CARD_PRESS_MODIFIER,
   ContentUpdateNotice,
   pageContentTop,
   PHONE_PAGE_MARGIN,
@@ -206,6 +207,8 @@ export struct TaleList {
         .fontSize(14)
         .fontColor([$r('sys.color.icon_secondary')])
     }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })

@@ -361,11 +361,21 @@ struct ScpArticlePage {
     }
     this.noteReadingInteraction();
     this.previewIndex = Math.max(0, Math.min(Math.floor(index), this.document.images.length - 1));
-    this.previewVisible = true;
+    this.getUIContext().animateTo({
+      duration: 220,
+      curve: Curve.FastOutSlowIn
+    }, (): void => {
+      this.previewVisible = true;
+    });
   }
 
   private closePreview(): void {
-    this.previewVisible = false;
+    this.getUIContext().animateTo({
+      duration: 180,
+      curve: Curve.EaseOut
+    }, (): void => {
+      this.previewVisible = false;
+    });
     // Notify the feature renderer even when the selected preview index did
     // not change, so its private SwiperController is always realigned.
     this.galleryReturnEpoch++;
@@ -634,7 +644,8 @@ struct ScpArticlePage {
       level: this.research.profile.level,
       experience: this.research.profile.experience,
       contentReady: this.document !== undefined && !this.loading,
-      compactProfile: this.isStoryDetail()
+      compactProfile: this.isStoryDetail(),
+      materialEnabled: this.settings.immersiveMaterialEnabled
     })
   }
 
@@ -770,20 +781,29 @@ struct ScpArticlePage {
 
         // 全屏图片预览层
         if (this.previewVisible && this.document !== undefined && this.document!.images.length > 0) {
-          ScpImagePreviewer({
-            images: this.document!.images,
-            initialIndex: this.previewIndex,
-            actions: this.imageActions,
-            onClose: () => {
-              this.closePreview();
-            },
-            onIndexChange: (index: number) => {
-              this.previewIndex = index;
-            },
-            onNotice: (message: string) => {
-              this.showToast(message);
-            }
-          })
+          Column() {
+            ScpImagePreviewer({
+              images: this.document!.images,
+              initialIndex: this.previewIndex,
+              actions: this.imageActions,
+              materialEnabled: this.settings.immersiveMaterialEnabled,
+              onClose: () => {
+                this.closePreview();
+              },
+              onIndexChange: (index: number) => {
+                this.previewIndex = index;
+              },
+              onNotice: (message: string) => {
+                this.showToast(message);
+              }
+            })
+          }
+          .width('100%')
+          .height('100%')
+          .transition(
+            TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+              .animation({ duration: 220, curve: Curve.FastOutSlowIn })
+          )
         }
       }
       .width('100%')
@@ -810,7 +830,7 @@ struct ScpArticlePage {
           maxCount: this.articleMenuMaxCount()
         }
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.settings.immersiveMaterialEnabled)
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     // 全屏预览时隐藏标题栏，沉浸式看图；关闭后恢复。

@@ -45,6 +45,7 @@ function createSeriesItems(includeAll: boolean): ChipGroupV2Items {
 export struct CatalogSeriesSelector {
   @Require @Param selectedSeriesId: string;
   @Param includeAll: boolean = false;
+  @Param materialEnabled: boolean = true;
   @Event onSelect: (seriesId: string) => void = (_seriesId: string): void => {};
 
   @Local private items: ChipGroupV2Items = createSeriesItems(false);
@@ -69,12 +70,15 @@ export struct CatalogSeriesSelector {
       applyShadow: false,
       interactive: true
     });
-  private readonly itemStyle: ChipGroupV2ItemStyle = new ChipGroupV2ItemStyle({
+  private readonly materialItemStyle: ChipGroupV2ItemStyle = new ChipGroupV2ItemStyle({
     // Use the native size enum instead of fixed dimensions so font-scale
     // adaptation remains available while fitting the 48 vp title toolbar.
     size: ChipV2Size.SMALL,
     backgroundSystemMaterial: this.normalMaterial,
     selectedBackgroundSystemMaterial: this.selectedMaterial
+  });
+  private readonly plainItemStyle: ChipGroupV2ItemStyle = new ChipGroupV2ItemStyle({
+    size: ChipV2Size.SMALL
   });
 
   aboutToAppear(): void {
@@ -129,7 +133,7 @@ export struct CatalogSeriesSelector {
   build() {
     ChipGroupV2({
       items: this.items,
-      itemStyle: this.itemStyle,
+      itemStyle: this.materialEnabled ? this.materialItemStyle : this.plainItemStyle,
       selectedIndexes: this.selectedIndexes(),
       multiple: false,
       chipGroupSpace: this.itemSpace,

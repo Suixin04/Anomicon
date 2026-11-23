@@ -84,6 +84,7 @@ export struct MainTabIndex {
   @Local private completionRevision: number = 0;
   // 顶部栏跟随页签选中；页面激活和滚动绑定仍等切页完成。
   @Local private titleTabIndex: number = HomeTabId.EXPLORE;
+  @Local private tabContentOpacity: number = 1;
   private readingHistoryUnsubscribe: (() => void) | undefined = undefined;
   @Local private tabsViewModel: TabsViewModel = new TabsViewModel({
     onCatalogSearch: () => this.openCatalogSearchMenu(),
@@ -196,6 +197,7 @@ export struct MainTabIndex {
   private catalogToolbar() {
     CatalogSeriesSelector({
       selectedSeriesId: this.searchState.seriesId,
+      materialEnabled: this.settings.immersiveMaterialEnabled,
       onSelect: (seriesId: string) => {
         this.hapticService.playSelection(this.settings.hapticEnabled);
         this.searchState.clear();
@@ -213,6 +215,7 @@ export struct MainTabIndex {
       StoryFilterBar({
         state: this.taleFilterState,
         hapticEnabled: this.settings.hapticEnabled,
+        materialEnabled: this.settings.immersiveMaterialEnabled,
         onHaptic: (enabled: boolean) => this.hapticService.playSelection(enabled)
       })
     }
@@ -226,58 +229,63 @@ export struct MainTabIndex {
       }) {
         ForEach(this.tabsViewModel.items, (item: TabItem) => {
           TabContent() {
-            if (item.id === HomeTabId.EXPLORE) {
-              ExploreHome({
-                scroller: this.scrollers[item.id],
-                viewModel: this.exploreViewModel,
-                materialEnabled: this.settings.immersiveMaterialEnabled,
-                active: this.tabsViewModel.currentIndex === HomeTabId.EXPLORE,
-                recommendationSkeletonAnimated: this.exploreSkeletonAnimated,
-                onOpenContent: (content: LibraryContentRef) => this.openContent(content),
-                onOpenCollection: (mode: ExploreCollectionMode) => this.openExploreCollection(mode),
-                onSelection: () => this.hapticService.playSelection(this.settings.hapticEnabled),
-                onHeroAnchorChange: (anchor: ExploreHeroAnchor): void =>
-                  this.onExploreHeroAnchorChange(anchor)
-              })
-            } else if (item.id === HomeTabId.CATALOG) {
-              ScpCatalogHome({
-                scroller: this.scrollers[item.id],
-                viewModel: this.catalogViewModel,
-                active: this.tabsViewModel.currentIndex === HomeTabId.CATALOG,
-                resolveLocalPreviewSource: resolveCatalogPreviewFileSource,
-                previewLoader: (itemId: string,
-                  onRefreshed?: (preview: CatalogPreview) => void,
-                  forceRefresh: boolean = false): Promise<CatalogPreview> =>
-                  this.catalogViewModel.loadPreview(itemId, onRefreshed, forceRefresh),
-                onOpenArticle: (itemId: string, name: string) => this.openContent(
-                  createLibraryContentRef(LibraryContentKind.SCP, itemId, name)
-                ),
-                has3DModel: (itemId: string): boolean => hasScp3DModel(itemId),
-                isReadCompleted: (itemId: string): boolean => this.isReadCompleted(itemId),
-                completionRevision: this.completionRevision
-              })
-            } else if (item.id === HomeTabId.STORY) {
-              TaleList({
-                scroller: this.scrollers[item.id],
-                viewModel: this.taleListViewModel,
-                active: this.tabsViewModel.currentIndex === HomeTabId.STORY,
-                filterState: this.taleFilterState,
-                onOpenTale: (id: string, name: string) => this.openContent(
-                  createLibraryContentRef(LibraryContentKind.TALE, id, name)
-                ),
-                isReadCompleted: (id: string): boolean => this.isReadCompleted(id),
-                completionRevision: this.completionRevision
-              })
-            } else if (item.id === HomeTabId.TERMINAL) {
-              TerminalHome({
-                scroller: this.scrollers[item.id],
-                viewModel: this.terminalViewModel,
-                settings: this.settings,
-                active: this.tabsViewModel.currentIndex === HomeTabId.TERMINAL,
-                onOpenContent: (content: LibraryContentRef) => this.openContent(content),
-                onOpenCollection: (mode: LibraryCollectionMode) => this.openLibraryCollection(mode)
-              })
+            Column() {
+              if (item.id === HomeTabId.EXPLORE) {
+                ExploreHome({
+                  scroller: this.scrollers[item.id],
+                  viewModel: this.exploreViewModel,
+                  materialEnabled: this.settings.immersiveMaterialEnabled,
+                  active: this.tabsViewModel.currentIndex === HomeTabId.EXPLORE,
+                  recommendationSkeletonAnimated: this.exploreSkeletonAnimated,
+                  onOpenContent: (content: LibraryContentRef) => this.openContent(content),
+                  onOpenCollection: (mode: ExploreCollectionMode) => this.openExploreCollection(mode),
+                  onSelection: () => this.hapticService.playSelection(this.settings.hapticEnabled),
+                  onHeroAnchorChange: (anchor: ExploreHeroAnchor): void =>
+                    this.onExploreHeroAnchorChange(anchor)
+                })
+              } else if (item.id === HomeTabId.CATALOG) {
+                ScpCatalogHome({
+                  scroller: this.scrollers[item.id],
+                  viewModel: this.catalogViewModel,
+                  active: this.tabsViewModel.currentIndex === HomeTabId.CATALOG,
+                  resolveLocalPreviewSource: resolveCatalogPreviewFileSource,
+                  previewLoader: (itemId: string,
+                    onRefreshed?: (preview: CatalogPreview) => void,
+                    forceRefresh: boolean = false): Promise<CatalogPreview> =>
+                    this.catalogViewModel.loadPreview(itemId, onRefreshed, forceRefresh),
+                  onOpenArticle: (itemId: string, name: string) => this.openContent(
+                    createLibraryContentRef(LibraryContentKind.SCP, itemId, name)
+                  ),
+                  has3DModel: (itemId: string): boolean => hasScp3DModel(itemId),
+                  isReadCompleted: (itemId: string): boolean => this.isReadCompleted(itemId),
+                  completionRevision: this.completionRevision
+                })
+              } else if (item.id === HomeTabId.STORY) {
+                TaleList({
+                  scroller: this.scrollers[item.id],
+                  viewModel: this.taleListViewModel,
+                  active: this.tabsViewModel.currentIndex === HomeTabId.STORY,
+                  filterState: this.taleFilterState,
+                  onOpenTale: (id: string, name: string) => this.openContent(
+                    createLibraryContentRef(LibraryContentKind.TALE, id, name)
+                  ),
+                  isReadCompleted: (id: string): boolean => this.isReadCompleted(id),
+                  completionRevision: this.completionRevision
+                })
+              } else if (item.id === HomeTabId.TERMINAL) {
+                TerminalHome({
+                  scroller: this.scrollers[item.id],
+                  viewModel: this.terminalViewModel,
+                  settings: this.settings,
+                  active: this.tabsViewModel.currentIndex === HomeTabId.TERMINAL,
+                  onOpenContent: (content: LibraryContentRef) => this.openContent(content),
+                  onOpenCollection: (mode: LibraryCollectionMode) => this.openLibraryCollection(mode)
+                })
+              }
             }
+            .width('100%')
+            .height('100%')
+            .opacity(this.tabContentOpacity)
           }
           .tabBar(this.createTabBarStyle(item))
         }, (item: TabItem) => item.id.toString())
@@ -292,11 +300,11 @@ export struct MainTabIndex {
         barWidth: { smallWidth: 280, mediumWidth: 360, largeWidth: 420 },
         barBottomMargin: 28,
         gradientMask: {
-          maskColor: $r('sys.color.comp_background_tertiary'),
+          maskColor: $r('sys.color.background_secondary'),
           maskHeight: 92
         },
         systemMaterialEffect: {
-          materialType: immersiveMaterialSupported() ?
+          materialType: this.settings.immersiveMaterialEnabled && immersiveMaterialSupported() ?
             hdsMaterial.MaterialType.IMMERSIVE : hdsMaterial.MaterialType.ADAPTIVE,
           materialLevel: hdsMaterial.MaterialLevel.ADAPTIVE
         }
@@ -309,6 +317,13 @@ export struct MainTabIndex {
       .onChange((index: number) => {
         if (this.tabsViewModel.select(index)) {
           this.hapticService.playSelection(this.settings.hapticEnabled);
+          this.tabContentOpacity = 0.84;
+          this.getUIContext().animateTo({
+            duration: 160,
+            curve: Curve.EaseOut
+          }, (): void => {
+            this.tabContentOpacity = 1;
+          });
         }
       })
     }
@@ -328,7 +343,7 @@ export struct MainTabIndex {
           height: this.toolbarHeight()
         } : undefined
       },
-      style: createAppTitleBarStyle(),
+      style: createAppTitleBarStyle(this.settings.immersiveMaterialEnabled),
     })
     // 官方不建议多个可滚动容器同时驱动同一导航栏：隐藏 Tab 的顶部/底部状态
     // 会打断当前页面的显隐动画。这里只绑定当前可见 Tab。

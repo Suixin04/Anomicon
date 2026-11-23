@@ -1,5 +1,10 @@
 import { LengthMetrics } from '@kit.ArkUI';
-import { AppTypography, objectClassColor } from 'anomiconbasic';
+import {
+  AppTypography,
+  badgeInfoBackgroundColor,
+  objectClassColor,
+  ROW_PRESS_MODIFIER
+} from 'anomiconbasic';
 import { ArticleRelatedTale } from '../../domain/ArticleContracts';
 import {
   ScpArticleDocument,
@@ -294,17 +299,27 @@ export struct ArticleNativeRenderer {
   @Local private imageRows: ArticleBlockRowState[] = [];
   @Local private footnoteRows: ArticleFootnoteRowState[] = [];
   @Local private relatedTaleRows: ArticleRelatedTaleRowState[] = [];
+  @Local private highlightedAnchorKey: string = '';
+  @Local private highlightOpacity: number = 0;
   private readonly galleryController: SwiperController = new SwiperController();
   private contentTop: number = 0;
   private offsets: Map<string, number> = new Map();
+  private highlightTimer: number = -1;
 
   aboutToAppear(): void {
     this.syncDocumentRows();
     this.syncRelatedTaleRows();
   }
 
+  aboutToDisappear(): void {
+    this.clearHighlightTimer();
+  }
+
   @Monitor('document')
   onDocumentChange(): void {
+    this.clearHighlightTimer();
+    this.highlightedAnchorKey = '';
+    this.highlightOpacity = 0;
     this.syncDocumentRows();
     this.galleryIndex = 0;
     this.contentTop = 0;
@@ -360,11 +375,77 @@ export struct ArticleNativeRenderer {
     }
   }
 
+  private clearHighlightTimer(): void {
+    if (this.highlightTimer >= 0) {
+      clearTimeout(this.highlightTimer);
+      this.highlightTimer = -1;
+    }
+  }
+
+  private triggerAnchorHighlight(key: string): void {
+    this.clearHighlightTimer();
+    this.highlightedAnchorKey = key;
+    this.highlightOpacity = 1;
+    this.highlightTimer = setTimeout((): void => {
+      this.highlightTimer = -1;
+      const targetKey = key;
+      const uiContext = this.getUIContext();
+      if (uiContext === undefined) {
+        if (this.highlightedAnchorKey === targetKey) {
+          this.highlightOpacity = 0;
+          this.highlightedAnchorKey = '';
+        }
+        return;
+      }
+      uiContext.animateTo({
+        duration: 680,
+        curve: Curve.EaseOut,
+        onFinish: (): void => {
+          if (this.highlightedAnchorKey === targetKey) {
+            this.highlightedAnchorKey = '';
+          }
+        }
+      }, (): void => {
+        if (this.highlightedAnchorKey === targetKey) {
+          this.highlightOpacity = 0;
+        }
+      });
+    }, 320);
+  }
+
   private jumpTo(key: string): void {
     const target = this.offsets.get(key);
     if (target !== undefined) {
       this.onRequestScrollTo(Math.max(0, target - 12));
+      this.triggerAnchorHighlight(key);
     }
+  }
+
+  private isParagraphHighlighted(block: ScpContentBlock): boolean {
+    if (this.highlightedAnchorKey.length === 0) {
+      return false;
+    }
+    const refIds = this.footnoteRefIds(block);
+    for (let index: number = 0; index < refIds.length; index++) {
+      if (this.highlightedAnchorKey === `ref:${refIds[index]}`) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private isFootnoteHighlighted(id: string): boolean {
+    return this.highlightedAnchorKey === `fn:${id}`;
+  }
+
+  @Builder
+  private anchorHighlightBackdrop(visible: boolean) {
+    Column() {}
+      .width('100%')
+      .height('100%')
+      .backgroundColor(badgeInfoBackgroundColor())
+      .borderRadius(8)
+      .opacity(visible ? this.highlightOpacity * 0.75 : 0)
   }
 
   private isExpanded(block: ScpContentBlock): boolean {
@@ -414,6 +495,7 @@ export struct ArticleNativeRenderer {
     .textAlign(TextAlign.JUSTIFY)
     .wordBreak(WordBreak.BREAK_WORD)
     .enableAutoSpacing(true)
+    .background(this.anchorHighlightBackdrop(this.isParagraphHighlighted(row.block)))
     .width('100%')
     .onAreaChange((_oldArea: Area, newArea: Area) => {
       this.recordOffset(row.key, newArea);
@@ -453,21 +535,31 @@ export struct ArticleNativeRenderer {
   private collapsibleBlock(row: ArticleBlockRowState) {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
-        SymbolGlyph(this.isExpanded(row.block) ?
-          $r('sys.symbol.chevron_down') : $r('sys.symbol.chevron_right'))
+        SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(16)
           .fontColor([$r('sys.color.icon_secondary')])
+          .rotate({ angle: this.isExpanded(row.block) ? 90 : 0 })
+          .animation({ duration: 220, curve: Curve.FastOutSlowIn })
         Text(row.block.caption.length > 0 ? row.block.caption : '展开内容')
           .fontSize(this.fontSize)
           .fontWeight(FontWeight.Medium)
           .fontColor($r('sys.color.font'))
           .layoutWeight(1)
       }
+      .attributeModifier(ROW_PRESS_MODIFIER)
+      .animation({ duration: 120, curve: Curve.FastOutSlowIn })
       .width('100%')
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
       .backgroundColor($r('sys.color.comp_background_tertiary'))
       .borderRadius(10)
-      .onClick(() => this.onToggleExpanded(row.block))
+      .onClick(() => {
+        this.getUIContext().animateTo({
+          duration: 240,
+          curve: Curve.FastOutSlowIn
+        }, (): void => {
+          this.onToggleExpanded(row.block);
+        });
+      })
 
       if (this.isExpanded(row.block)) {
         Column({ space: 12 }) {
@@ -477,9 +569,14 @@ export struct ArticleNativeRenderer {
         }
         .width('100%')
         .padding({ left: 12, right: 12 })
+        .transition(
+          TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.TOP))
+            .animation({ duration: 220, curve: Curve.FastOutSlowIn })
+        )
       }
     }
     .width('100%')
+    .clip(true)
   }
 
   @Builder
@@ -710,20 +807,29 @@ export struct ArticleNativeRenderer {
               ForEach(row.blocks, (block: ArticleBlockRowState) => {
                 this.blockView(block)
               }, (block: ArticleBlockRowState) => block.key)
-              Row() {
+              Row({ space: 4 }) {
                 SymbolGlyph($r('sys.symbol.arrow_up'))
                   .fontSize(13)
                   .fontColor([$r('sys.color.font_emphasize')])
                 Text('返回正文')
                   .fontSize(AppTypography.CAPTION_L)
+                  .fontWeight(FontWeight.Medium)
                   .fontColor($r('sys.color.font_emphasize'))
               }
+              .attributeModifier(ROW_PRESS_MODIFIER)
+              .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+              .constraintSize({ minHeight: 34 })
+              .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+              .backgroundColor($r('sys.color.comp_background_tertiary'))
+              .borderRadius(17)
               .onClick(() => this.jumpTo(`ref:${row.footnote.id}`))
             }
             .layoutWeight(1)
             .alignItems(HorizontalAlign.Start)
           }
           .width('100%')
+          .padding({ left: 4, right: 4, top: 4, bottom: 4 })
+          .background(this.anchorHighlightBackdrop(this.isFootnoteHighlighted(row.footnote.id)))
           .alignItems(VerticalAlign.Top)
           .onAreaChange((_oldArea: Area, newArea: Area) => {
             this.recordOffset(`fn:${row.footnote.id}`, newArea);
@@ -768,6 +874,8 @@ export struct ArticleNativeRenderer {
               .fontSize(14)
               .fontColor([$r('sys.color.icon_secondary')])
           }
+          .attributeModifier(ROW_PRESS_MODIFIER)
+          .animation({ duration: 120, curve: Curve.FastOutSlowIn })
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({ left: 12, right: 12, top: 10, bottom: 10 })

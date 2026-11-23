@@ -1,3 +1,4 @@
+import { uiMaterial } from '@kit.ArkUI';
 import { hdsMaterial, ScrollEffectType, TitleBarStyleOptions } from '@kit.UIDesignKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 
@@ -27,6 +28,11 @@ const navigationTopInset = new NavigationTopInsetState();
 
 export function updateWindowAvoidArea(avoidTop: number): void {
   navigationTopInset.avoidTop = avoidTop;
+}
+
+/** Current top system avoid-area inset in vp (e.g., status bar height). */
+export function windowAvoidTop(): number {
+  return navigationTopInset.avoidTop;
 }
 
 /** Content top inset: system avoid area + floating MINI title bar. */
@@ -76,9 +82,30 @@ export function immersiveMaterialSupported(): boolean {
   return supportsImmersiveMaterial();
 }
 
+let uiMaterialSupportCached: boolean = false;
+let uiMaterialSupportQueried: boolean = false;
+
+/** Query ArkUI ImmersiveMaterial capability, caching only a positive result. */
+export function uiImmersiveMaterialSupported(): boolean {
+  if (uiMaterialSupportQueried && uiMaterialSupportCached) {
+    return true;
+  }
+  try {
+    const supported = uiMaterial.isImmersiveMaterialSupported();
+    uiMaterialSupportQueried = true;
+    uiMaterialSupportCached = supported;
+    return supported;
+  } catch (error) {
+    const businessError = error as BusinessError;
+    console.warn(`Query UI immersive material capability failed. Code: ${businessError.code}, message: ${businessError.message}`);
+    uiMaterialSupportQueried = false;
+    return false;
+  }
+}
+
 /** Build the shared title-bar style while hiding platform details from Views. */
-export function createAppTitleBarStyle(): TitleBarStyleOptions {
-  const immersiveSupported = supportsImmersiveMaterial();
+export function createAppTitleBarStyle(materialEnabled: boolean = true): TitleBarStyleOptions {
+  const immersiveSupported = materialEnabled && supportsImmersiveMaterial();
   return {
     scrollEffectOpts: {
       enableScrollEffect: true,

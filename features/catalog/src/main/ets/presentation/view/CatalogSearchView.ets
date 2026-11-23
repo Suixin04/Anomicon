@@ -1,8 +1,11 @@
-import { LengthMetrics } from '@kit.ArkUI';
+import { LengthMetrics, uiMaterial } from '@kit.ArkUI';
 import {
   AppTypography,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_MAX_WIDTH,
+  ROW_PRESS_MODIFIER,
   pageContentTop,
   ViewModelLoadState
 } from 'anomiconbasic';
@@ -18,6 +21,70 @@ import {
 } from './SearchViewContracts';
 
 const SEARCH_FIELD_HEIGHT: number = 40;
+/** 搜索页标题栏底部工具栏高度：搜索框 40vp + 间距 + 系列选择行。 */
+export const CATALOG_SEARCH_HEADER_HEIGHT: number = 96;
+
+/**
+ * 搜索页标题栏底部工具栏：放入 HdsNavDestination.titleBar.bottomBuilder，
+ * 使 Search 与系列胶囊处于系统沉浸材质作用域内。
+ */
+@ComponentV2
+export struct CatalogSearchHeader {
+  @Require @Param viewModel: CatalogSearchViewModel;
+  @Require @Param sharedState: CatalogSearchSharedState;
+  @Param materialEnabled: boolean = true;
+
+  private readonly searchBarMaterial: uiMaterial.ImmersiveMaterial =
+    new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.THIN,
+      applyShadow: false
+    });
+
+  private selectSeries(id: string): void {
+    if (this.viewModel.snapshot.data?.seriesId === id) {
+      return;
+    }
+    if (id !== ALL_SERIES_ID) {
+      this.sharedState.setSeriesId(id);
+    }
+    this.viewModel.selectSeries(id);
+  }
+
+  private applyQuery(value: string): void {
+    const currentQuery = this.viewModel.snapshot.data?.query ?? '';
+    if (value === currentQuery && value === this.sharedState.query) {
+      return;
+    }
+    this.sharedState.setQuery(value);
+    this.viewModel.setQuery(value);
+  }
+
+  build() {
+    Column({ space: 8 }) {
+      Search({
+        placeholder: '搜索编号或名称',
+        value: this.viewModel.snapshot.data?.query ?? ''
+      })
+        .height(SEARCH_FIELD_HEIGHT)
+        .margin({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+        .backgroundColor(this.materialEnabled ?
+          Color.Transparent : $r('sys.color.comp_background_primary'))
+        .systemMaterial(this.materialEnabled ? this.searchBarMaterial : undefined)
+        .placeholderColor($r('sys.color.font_secondary'))
+        .accessibilityText('搜索编号或名称')
+        .onChange((value: string) => this.applyQuery(value))
+
+      CatalogSeriesSelector({
+        selectedSeriesId: this.viewModel.snapshot.data?.seriesId ?? ALL_SERIES_ID,
+        includeAll: true,
+        materialEnabled: this.materialEnabled,
+        onSelect: (seriesId: string) => this.selectSeries(seriesId)
+      })
+    }
+    .width('100%')
+    .padding({ top: 4, bottom: 8 })
+  }
+}
 
 /** Public, contract-shaped screen Builder consumed by product route hosts. */
 @Builder
@@ -26,7 +93,8 @@ export function CatalogSearchView(contract: CatalogSearchViewContract) {
     viewModel: contract.viewModel,
     scroller: contract.scroller,
     sharedState: contract.sharedState,
-    onOpenContent: contract.onOpenContent
+    onOpenContent: contract.onOpenContent,
+    materialEnabled: contract.materialEnabled
   });
 }
 
@@ -43,6 +111,7 @@ struct CatalogSearchContent {
   @Require @Param scroller: Scroller;
   @Require @Param sharedState: CatalogSearchSharedState;
   @Require @Param onOpenContent: (itemId: string, title: string) => void;
+  @Param materialEnabled: boolean = true;
 
   aboutToAppear(): void {
     const selectedData = this.viewModel.snapshot.data;
@@ -55,16 +124,6 @@ struct CatalogSearchContent {
 
   aboutToDisappear(): void {
     this.viewModel.dispose();
-  }
-
-  private selectSeries(id: string): void {
-    if (this.viewModel.snapshot.data?.seriesId === id) {
-      return;
-    }
-    if (id !== ALL_SERIES_ID) {
-      this.sharedState.setSeriesId(id);
-    }
-    this.viewModel.selectSeries(id);
   }
 
   private applyQuery(value: string): void {
@@ -122,7 +181,12 @@ struct CatalogSearchContent {
         .onClick(() => this.viewModel.retry())
     }
     .width('100%')
-    .padding({ left: 24, right: 24, top: 56, bottom: 56 })
+    .padding({
+      left: 24,
+      right: 24,
+      top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 24,
+      bottom: 56
+    })
     .justifyContent(FlexAlign.Center)
     .layoutWeight(1)
   }
@@ -144,7 +208,6 @@ struct CatalogSearchContent {
         .onClick(() => this.viewModel.retry())
     }
     .width('100%')
-    .margin({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
     .padding({ left: 12, right: 12, top: 9, bottom: 9 })
     .backgroundColor($r('sys.color.comp_background_tertiary'))
     .borderRadius(8)
@@ -186,6 +249,8 @@ struct CatalogSearchContent {
           .width('100%')
       }
     }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .alignItems(HorizontalAlign.Start)
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
@@ -196,6 +261,14 @@ struct CatalogSearchContent {
   private idleContent() {
     Scroll(this.scroller) {
       Column({ space: 14 }) {
+        if (this.hasPartialError()) {
+          Row() {
+            this.partialErrorContent()
+          }
+          .width('100%')
+          .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
+        }
+
         if ((this.viewModel.snapshot.data?.history.length ?? 0) > 0) {
           Column({ space: 10 }) {
             Row() {
@@ -222,7 +295,10 @@ struct CatalogSearchContent {
                   .fontSize(AppTypography.BODY_S)
                   .fontColor($r('sys.color.font_secondary'))
                   .padding({ left: 12, right: 12, top: 5, bottom: 5 })
-                  .backgroundColor($r('sys.color.comp_background_primary'))
+                  .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+                  .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THIN : undefined)
+                  .border(this.materialEnabled ?
+                    { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
                   .borderRadius(14)
                   .onClick(() => this.applyQuery(item))
               }, (item: string) => item)
@@ -258,9 +334,11 @@ struct CatalogSearchContent {
         }
       }
       .width('100%')
-      .padding({ top: 4, bottom: 120 })
+      .padding({ top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 6, bottom: 120 })
     }
     .align(Alignment.Top)
+    .clip(false)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .scrollBar(BarState.Off)
     .layoutWeight(1)
     .width('100%')
@@ -268,58 +346,51 @@ struct CatalogSearchContent {
 
   @Builder
   private resultsContent() {
-    Column({ space: 4 }) {
+    List({ scroller: this.scroller }) {
+      ListItem() {
+        Column()
+          .width('100%')
+          .height(pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 6)
+      }
+      if (this.hasPartialError()) {
+        ListItem() {
+          Column() {
+            this.partialErrorContent()
+          }
+          .width('100%')
+          .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 6 })
+        }
+      }
       if ((this.viewModel.snapshot.data?.seriesId ?? '') === ALL_SERIES_ID &&
         (this.viewModel.snapshot.data?.allSeriesLoading ?? false)) {
-        Text(`正在检索全部系列（已加载 ${this.viewModel.snapshot.data?.loadedSeriesCount ?? 0}/${this.viewModel.snapshot.data?.totalSeriesCount ?? 0}）…`)
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_tertiary'))
-          .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 2 })
-          .width('100%')
+        ListItem() {
+          Text(`正在检索全部系列（已加载 ${this.viewModel.snapshot.data?.loadedSeriesCount ?? 0}/${this.viewModel.snapshot.data?.totalSeriesCount ?? 0}）…`)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+            .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 6 })
+            .width('100%')
+        }
       }
-
-      List({ scroller: this.scroller }) {
-        Repeat<CatalogEntry>(this.viewModel.snapshot.data?.entries ?? [])
-          .each((row: RepeatItem<CatalogEntry>) => {
-            ListItem() {
-              this.resultRow(row)
-            }
-          })
-          .key((entry: CatalogEntry) => entry.itemId)
-          .virtualScroll()
-      }
-      .scrollBar(BarState.Off)
-      .contentEndOffset(32)
-      .layoutWeight(1)
-      .width('100%')
+      Repeat<CatalogEntry>(this.viewModel.snapshot.data?.entries ?? [])
+        .each((row: RepeatItem<CatalogEntry>) => {
+          ListItem() {
+            this.resultRow(row)
+          }
+        })
+        .key((entry: CatalogEntry) => entry.itemId)
+        .virtualScroll()
     }
+    .clip(false)
+    .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+    .scrollBar(BarState.Off)
+    .contentEndOffset(32)
     .layoutWeight(1)
     .width('100%')
   }
 
   @Builder
   private searchContent() {
-    Column({ space: 6 }) {
-      Search({
-        placeholder: '搜索编号或名称',
-        value: this.viewModel.snapshot.data?.query ?? ''
-      })
-        .height(SEARCH_FIELD_HEIGHT)
-        .margin({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN })
-        .backgroundColor($r('sys.color.comp_background_primary'))
-        .placeholderColor($r('sys.color.font_secondary'))
-        .onChange((value: string) => this.applyQuery(value))
-
-      CatalogSeriesSelector({
-        selectedSeriesId: this.viewModel.snapshot.data?.seriesId ?? ALL_SERIES_ID,
-        includeAll: true,
-        onSelect: (seriesId: string) => this.selectSeries(seriesId)
-      })
-
-      if (this.hasPartialError()) {
-        this.partialErrorContent()
-      }
-
+    Column() {
       if (this.hasColdLoadError()) {
         this.coldLoadErrorContent()
       } else if ((this.viewModel.snapshot.data?.query ?? '').trim().length === 0) {
@@ -331,7 +402,7 @@ struct CatalogSearchContent {
             .fontColor($r('sys.color.font_tertiary'))
         }
         .width('100%')
-        .padding({ top: 60 })
+        .padding({ top: pageContentTop() + CATALOG_SEARCH_HEADER_HEIGHT + 60 })
         .justifyContent(FlexAlign.Center)
         .layoutWeight(1)
       } else {
@@ -341,7 +412,6 @@ struct CatalogSearchContent {
     .width('100%')
     .constraintSize({ maxWidth: PHONE_TAB_CONTENT_MAX_WIDTH })
     .height('100%')
-    .padding({ top: pageContentTop() + 8 })
   }
 
   build() {

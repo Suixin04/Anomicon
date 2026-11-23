@@ -53,6 +53,8 @@ export {
   CatalogSearchSharedState,
   CatalogSearchViewContract,
   CatalogSearchViewInput,
+  CATALOG_SEARCH_HEADER_HEIGHT,
+  CatalogSearchHeader,
   CatalogSearchView,
   CatalogSeriesSelector,
   ScpCatalogHome,

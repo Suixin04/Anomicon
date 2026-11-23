@@ -4,7 +4,11 @@ export {
   CatalogSearchViewContract,
   CatalogSearchViewInput
 } from './SearchViewContracts';
-export { CatalogSearchView } from './CatalogSearchView';
+export {
+  CATALOG_SEARCH_HEADER_HEIGHT,
+  CatalogSearchHeader,
+  CatalogSearchView
+} from './CatalogSearchView';
 export { CatalogSeriesSelector } from './CatalogSeriesSelector';
 export { ScpCatalogHome } from './ScpCatalogHome';
 export { CatalogPreviewLoader, ScpCatalogCard } from './ScpCatalogCard';

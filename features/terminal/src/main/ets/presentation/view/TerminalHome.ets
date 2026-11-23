@@ -21,7 +21,8 @@ import {
   materialCardSurfaceColor,
   pageContentTop,
   PHONE_PAGE_MARGIN,
-  PHONE_TAB_CONTENT_MAX_WIDTH
+  PHONE_TAB_CONTENT_MAX_WIDTH,
+  ROW_PRESS_MODIFIER
 } from 'anomiconbasic';
 import { TerminalViewModel } from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
@@ -454,6 +455,8 @@ export struct TerminalHome {
         .fontSize(14)
         .fontColor([$r('sys.color.icon_secondary')])
     }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .constraintSize({ minHeight: 70 })
     .alignItems(VerticalAlign.Center)

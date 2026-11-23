@@ -1,3 +1,4 @@
+import { curves } from '@kit.ArkUI';
 import { ExploreRecommendation } from '../../domain/ExploreContracts';
 import {
   AppTypography,
@@ -431,12 +432,18 @@ export struct ExploreRecommendationDeck {
 
   @Local private dragX: number = 0;
   @Local private rows: ExploreRecommendationRowState[] = [];
+  @Local private deckEnterScale: number = 1;
+  @Local private deckEnterOpacity: number = 1;
   private suppressClick: boolean = false;
   private dismissing: boolean = false;
   private dragDeckVersion: number = -1;
+  private lastAnimatedDeckVersion: number = -1;
 
   aboutToAppear(): void {
     this.publishRows();
+    if (this.recommendations.length > 0) {
+      this.lastAnimatedDeckVersion = this.deckVersion;
+    }
   }
 
   @Monitor('recommendations')
@@ -449,11 +456,53 @@ export struct ExploreRecommendationDeck {
     this.publishDepths();
   }
 
+  @Monitor('refreshing')
+  onRefreshingChanged(): void {
+    const uiContext = this.getUIContext();
+    if (uiContext === undefined) {
+      return;
+    }
+    if (this.refreshing) {
+      uiContext.animateTo({
+        duration: 180,
+        curve: Curve.EaseOut
+      }, (): void => {
+        this.deckEnterScale = 0.97;
+        this.deckEnterOpacity = 0.78;
+      });
+    } else if (this.deckVersion === this.lastAnimatedDeckVersion) {
+      uiContext.animateTo({
+        duration: 180,
+        curve: Curve.EaseOut
+      }, (): void => {
+        this.deckEnterScale = 1;
+        this.deckEnterOpacity = 1;
+      });
+    }
+  }
+
   @Monitor('deckVersion')
   onDeckVersionChanged(): void {
     this.dragX = 0;
     if (!this.dismissing) {
       this.suppressClick = false;
+    }
+    if (this.recommendations.length > 0 && this.deckVersion !== this.lastAnimatedDeckVersion) {
+      this.lastAnimatedDeckVersion = this.deckVersion;
+      const uiContext = this.getUIContext();
+      if (uiContext === undefined) {
+        this.deckEnterScale = 1;
+        this.deckEnterOpacity = 1;
+        return;
+      }
+      this.deckEnterScale = 0.94;
+      this.deckEnterOpacity = 0.65;
+      uiContext.animateTo({
+        curve: curves.springMotion(0.36, 0.82)
+      }, (): void => {
+        this.deckEnterScale = 1;
+        this.deckEnterOpacity = 1;
+      });
     }
   }
 
@@ -576,8 +625,7 @@ export struct ExploreRecommendationDeck {
       return;
     }
     uiContext.animateTo({
-      duration: 240,
-      curve: Curve.Friction,
+      curve: curves.springMotion(0.32, 0.78),
       onFinish: () => {
         this.suppressClick = false;
       }
@@ -742,13 +790,18 @@ export struct ExploreRecommendationDeck {
       if (this.showSkeleton()) {
         ExploreRecommendationSkeleton({ animated: this.skeletonAnimated })
       } else if (this.recommendations.length > 0) {
-        ForEach(this.visibleRecommendations(), (row: ExploreRecommendationRowState) => {
-          ExploreRecommendationCard({
-            row: row,
-            dragX: this.dragX,
-            materialEnabled: this.materialEnabled
-          })
-        }, (row: ExploreRecommendationRowState) => row.itemId)
+        Stack({ alignContent: Alignment.Top }) {
+          ForEach(this.visibleRecommendations(), (row: ExploreRecommendationRowState) => {
+            ExploreRecommendationCard({
+              row: row,
+              dragX: this.dragX,
+              materialEnabled: this.materialEnabled
+            })
+          }, (row: ExploreRecommendationRowState) => row.itemId)
+        }
+        .width('100%')
+        .scale({ x: this.deckEnterScale, y: this.deckEnterScale })
+        .opacity(this.deckEnterOpacity)
       } else {
         Column() {
           this.unavailableState()
@@ -866,7 +919,9 @@ export struct ExploreRecommendationDeck {
         }
         .width(48)
         .height(48)
-        .backgroundColor($r('sys.color.comp_background_primary'))
+        .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+        .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
+        .border({ width: 0.5, color: materialCardBorderColor(this.materialEnabled) })
         .enabled(this.recommendations.length > 0 && !this.refreshing)
         .accessibilityText('再换一批推荐')
         .onClick(() => {

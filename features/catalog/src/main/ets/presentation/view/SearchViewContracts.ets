@@ -19,6 +19,7 @@ export interface CatalogSearchViewContract {
   readonly scroller: Scroller;
   readonly sharedState: CatalogSearchSharedState;
   readonly onOpenContent: (itemId: string, title: string) => void;
+  readonly materialEnabled: boolean;
 }
 
 /**
@@ -32,16 +33,19 @@ export class CatalogSearchViewInput implements CatalogSearchViewContract {
   readonly scroller: Scroller;
   readonly sharedState: CatalogSearchSharedState;
   readonly onOpenContent: (itemId: string, title: string) => void;
+  readonly materialEnabled: boolean;
 
   constructor(
     viewModel: CatalogSearchViewModel,
     scroller: Scroller,
     sharedState: CatalogSearchSharedState,
-    onOpenContent: (itemId: string, title: string) => void
+    onOpenContent: (itemId: string, title: string) => void,
+    materialEnabled: boolean = true
   ) {
     this.viewModel = viewModel;
     this.scroller = scroller;
     this.sharedState = sharedState;
     this.onOpenContent = onOpenContent;
+    this.materialEnabled = materialEnabled;
   }
 }

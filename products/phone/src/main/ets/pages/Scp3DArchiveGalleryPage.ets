@@ -1,3 +1,4 @@
+import { uiMaterial } from '@kit.ArkUI';
 import {
   HideMode,
   HdsNavDestination,
@@ -13,10 +14,12 @@ import {
   badgeInfoForegroundColor,
   badgeWarningBackgroundColor,
   badgeWarningForegroundColor,
+  CARD_PRESS_MODIFIER,
   PHONE_PAGE_MARGIN,
   createAppTitleBarStyle,
   pageContentTop
 } from 'anomiconbasic';
+import { SettingsViewModel } from 'settings';
 import {
   Scp3DAssetDelivery,
   Scp3DAssetManifestEntry,
@@ -90,6 +93,7 @@ const FILTER_VALUES: Scp3DArchiveGalleryFilter[] = [
   Scp3DArchiveGalleryFilter.DOWNLOADED,
   Scp3DArchiveGalleryFilter.PENDING
 ];
+const GALLERY_FILTER_BAR_HEIGHT: number = 48;
 
 /**
  * Manifest-driven archive index. Scene/renderer objects never cross this
@@ -106,12 +110,23 @@ struct Scp3DArchiveGalleryPage {
     defaultScp3DArchiveInstallStatus;
   @Param onOpenAsset: Scp3DArchiveAssetOpenHandler | undefined = undefined;
   @Param installActions: Scp3DArchiveInstallActions | undefined = undefined;
+  @Param settings: SettingsViewModel | undefined = undefined;
   @Local private selectedFilter: Scp3DArchiveGalleryFilter =
     Scp3DArchiveGalleryFilter.ALL;
   @Local private stateVersion: number = 0;
   @Local private activeActionAssetId: string = '';
   private readonly liveStates: Map<string, Scp3DArchiveInstallState> = new Map();
   private readonly stateUnsubscribers: Array<() => void> = [];
+  private readonly filterChipMaterial: uiMaterial.ImmersiveMaterial =
+    new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.THIN,
+      applyShadow: false,
+      interactive: true
+    });
+
+  private isMaterialEnabled(): boolean {
+    return this.settings?.immersiveMaterialEnabled ?? true;
+  }
 
   aboutToAppear(): void {
     const actions = this.installActions;
@@ -317,12 +332,17 @@ struct Scp3DArchiveGalleryPage {
           .fontColor(this.isFilterSelected(filter) ?
             accentPillForegroundColor() : $r('sys.color.font_secondary'))
           .backgroundColor(this.isFilterSelected(filter) ?
-            accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+            accentPillBackgroundColor() :
+            (this.isMaterialEnabled() ? Color.Transparent : $r('sys.color.comp_background_tertiary')))
+          .systemMaterial(!this.isFilterSelected(filter) && this.isMaterialEnabled() ?
+            this.filterChipMaterial : undefined)
           .onClick(() => this.selectFilter(filter))
           .accessibilityText(`${FILTER_LABELS[index]}，${this.countFor(filter)} 个`);
       }, (filter: Scp3DArchiveGalleryFilter) => filter);
     }
-    .width('100%');
+    .width('100%')
+    .height(GALLERY_FILTER_BAR_HEIGHT)
+    .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, top: 4, bottom: 8 });
   }
 
   @Builder
@@ -416,6 +436,8 @@ struct Scp3DArchiveGalleryPage {
         .justifyContent(FlexAlign.End);
       }
     }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .padding(16)
     .backgroundColor($r('sys.color.comp_background_primary'))
@@ -439,6 +461,11 @@ struct Scp3DArchiveGalleryPage {
     .justifyContent(FlexAlign.Center);
   }
 
+  @Builder
+  private filterBarBuilder() {
+    this.filterBar();
+  }
+
   build() {
     HdsNavDestination() {
       // HdsNavDestination supplies the route surface; keep a full-size
@@ -447,7 +474,6 @@ struct Scp3DArchiveGalleryPage {
       Stack({ alignContent: Alignment.Top }) {
         Scroll(this.scroller) {
           Column({ space: 14 }) {
-            this.filterBar();
             if (this.visibleEntries().length === 0) {
               this.emptyState();
             } else {
@@ -462,9 +488,9 @@ struct Scp3DArchiveGalleryPage {
             left: PHONE_PAGE_MARGIN,
             right: PHONE_PAGE_MARGIN,
             // The destination is laid out through the system bars. Keep
-            // interactive content below the status bar and MINI title bar;
+            // interactive content below the status bar, MINI title bar and bottom filter bar;
             // the surrounding background remains fully immersive.
-            top: pageContentTop(),
+            top: pageContentTop() + GALLERY_FILTER_BAR_HEIGHT + 4,
             bottom: 34
           });
         }
@@ -499,15 +525,20 @@ struct Scp3DArchiveGalleryPage {
           mainTitle: '三维档案馆',
           subTitle: `${this.manifest.length} 个档案`
         },
-        backIcon: { label: '返回', componentId: 'scp3dArchiveGalleryBackButton' }
+        backIcon: { label: '返回', componentId: 'scp3dArchiveGalleryBackButton' },
+        bottomBuilder: {
+          builder: (): void => this.filterBarBuilder(),
+          height: GALLERY_FILTER_BAR_HEIGHT
+        }
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.isMaterialEnabled())
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))
     .bindToScrollable([this.scroller])
     .dynamicHideTitleBar({
       hideTitleArea: true,
+      hideBottomBuilder: false,
       hideStatusBar: false,
       mode: HideMode.SCROLL_UP,
       hideRatio: 1.5
@@ -527,11 +558,13 @@ struct Scp3DArchiveGalleryPage {
 export function Scp3DArchiveGalleryPageBuilder(
   installStatus?: Scp3DArchiveInstallStatusResolver,
   onOpenAsset?: Scp3DArchiveAssetOpenHandler,
-  installActions?: Scp3DArchiveInstallActions
+  installActions?: Scp3DArchiveInstallActions,
+  settings?: SettingsViewModel
 ) {
   Scp3DArchiveGalleryPage({
     installStatus: installStatus ?? defaultScp3DArchiveInstallStatus,
     onOpenAsset: onOpenAsset,
-    installActions: installActions
+    installActions: installActions,
+    settings: settings
   });
 }

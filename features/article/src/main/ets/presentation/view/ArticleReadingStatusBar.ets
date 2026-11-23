@@ -15,6 +15,7 @@ export struct ArticleReadingStatusBar {
   @Require @Param experience: number;
   @Require @Param contentReady: boolean;
   @Param compactProfile: boolean = false;
+  @Param materialEnabled: boolean = true;
 
   private readonly material: uiMaterial.ImmersiveMaterial =
     new uiMaterial.ImmersiveMaterial({
@@ -83,8 +84,10 @@ export struct ArticleReadingStatusBar {
       .width('100%')
       .height(32)
       .padding({ left: 12, right: 12 })
-      .systemMaterial(this.material)
       .borderRadius(16)
+      .backgroundColor(this.materialEnabled ?
+        Color.Transparent : $r('sys.color.comp_background_primary'))
+      .systemMaterial(this.materialEnabled ? this.material : undefined)
       .accessibilityText(
         this.contentReady ?
           `本文已读${this.normalizedProgress()}%，等级${this.normalizedInteger(this.level, 1)}，` +

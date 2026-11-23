@@ -1,6 +1,5 @@
 import { ScpContentBlock } from '../../domain/ScpDocument';
-import { ImagePreviewActions } from 'anomiconbasic';
-import { AppTypography } from 'anomiconbasic';
+import { AppTypography, ImagePreviewActions, windowAvoidTop } from 'anomiconbasic';
 
 /** 单页图片：由原生 Scroll 负责双指缩放、边界约束与缩放后拖动。 */
 @ComponentV2
@@ -70,20 +69,29 @@ struct ScpPreviewPage {
     };
   }
 
-  private resetZoom(): void {
+  private resetZoom(animated: boolean = false): void {
     this.imageScroller.scrollTo({
       xOffset: 0,
       yOffset: 0,
-      animation: false,
+      animation: animated,
       canOverScroll: false
     });
-    this.zoomScale = 1;
+    if (animated) {
+      this.getUIContext().animateTo({
+        duration: 240,
+        curve: Curve.FastOutSlowIn
+      }, (): void => {
+        this.zoomScale = 1;
+      });
+    } else {
+      this.zoomScale = 1;
+    }
     this.onZoomedChange(false);
   }
 
   private toggleZoom(): void {
     if (this.zoomScale > 1) {
-      this.resetZoom();
+      this.resetZoom(true);
       return;
     }
     const targetScale: number = 2.5;
@@ -91,10 +99,15 @@ struct ScpPreviewPage {
     this.imageScroller.scrollTo({
       xOffset: this.viewportWidth * (targetScale - 1) / 2,
       yOffset: this.viewportHeight * (targetScale - 1) / 2,
-      animation: false,
+      animation: true,
       canOverScroll: true
     });
-    this.zoomScale = targetScale;
+    this.getUIContext().animateTo({
+      duration: 240,
+      curve: Curve.FastOutSlowIn
+    }, (): void => {
+      this.zoomScale = targetScale;
+    });
     this.onZoomedChange(true);
   }
 
@@ -201,6 +214,7 @@ export struct ScpImagePreviewer {
   @Require @Param images: ScpContentBlock[];
   @Require @Param initialIndex: number;
   @Require @Param actions: ImagePreviewActions;
+  @Param materialEnabled: boolean = true;
   @Event onClose: () => void;
   @Event onIndexChange: (index: number) => void;
   /** Product-owned system notice/effect boundary. */
@@ -325,11 +339,13 @@ export struct ScpImagePreviewer {
         Button({ type: ButtonType.Circle, stateEffect: false }) {
           SymbolGlyph($r('sys.symbol.xmark'))
             .fontSize(20)
-            .fontColor([$r('sys.color.icon_primary')])
+            .fontColor(['#FFFFFF'])
         }
         .width(40)
         .height(40)
-        .backgroundColor('#33FFFFFF')
+        .backgroundColor(this.materialEnabled ? '#66181E28' : '#A6181E28')
+        .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THIN : undefined)
+        .border({ width: 0.5, color: '#33FFFFFF' })
         .onClick(() => this.onClose())
 
         Blank()
@@ -344,14 +360,16 @@ export struct ScpImagePreviewer {
         Button('保存', { stateEffect: false })
           .fontSize(AppTypography.SUBTITLE_S)
           .height(36)
-          .backgroundColor('#33FFFFFF')
+          .backgroundColor(this.materialEnabled ? '#66181E28' : '#A6181E28')
+          .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THIN : undefined)
+          .border({ width: 0.5, color: '#33FFFFFF' })
           .fontColor('#FFFFFF')
           .onClick(() => this.saveCurrent())
       }
       .width('100%')
       .padding({ left: 16, right: 16 })
-      // 预览打开时宿主页已隐藏标题栏，控件贴顶布局（避开状态栏即可）。
-      .margin({ top: 48 })
+      // 预览打开时宿主页已隐藏标题栏，控件避开实时状态栏高度布局。
+      .margin({ top: windowAvoidTop() + 8 })
 
       // 底部图注：铺满高度的容器底部对齐。
       Column() {

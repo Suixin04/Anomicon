@@ -2,7 +2,7 @@ import {
   Quaternion
 } from '@kit.ArkGraphics3D';
 import { schedulingOptimization } from '@kit.FASTKit';
-import { FrameCallback } from '@kit.ArkUI';
+import { FrameCallback, uiMaterial } from '@kit.ArkUI';
 import {
   HideMode,
   HdsNavDestination,
@@ -17,8 +17,10 @@ import {
   badgeWarningForegroundColor,
   PHONE_PAGE_MARGIN,
   createAppTitleBarStyle,
-  pageContentTop
+  pageContentTop,
+  uiImmersiveMaterialSupported
 } from 'anomiconbasic';
+import { SettingsViewModel } from 'settings';
 import {
   ArchiveModelDescriptor,
   ArchiveSceneSource,
@@ -43,6 +45,7 @@ const MAX_PITCH: number = 1.05;
 // frame callback keeps the model responsive on 60/90 Hz screens without
 // making the idle scene a continuous renderer.
 const AUTO_ROTATE_SPEED_RAD_PER_SECOND: number = 0.28;
+const RESET_DURATION_SECONDS: number = 0.28;
 
 class ArchiveRenderFrameCallback extends FrameCallback {
   private readonly task: (frameTimeInNano: number) => void;
@@ -64,9 +67,10 @@ export type Scp3DArchiveSceneSourceResolver =
 /** Product route adapter; no native graphics object crosses the route seam. */
 @Builder
 export function Scp3DArchivePageBuilder(
-  resolveSceneSource?: Scp3DArchiveSceneSourceResolver
+  resolveSceneSource?: Scp3DArchiveSceneSourceResolver,
+  settings?: SettingsViewModel
 ) {
-  Scp3DArchivePage({ resolveSceneSource: resolveSceneSource });
+  Scp3DArchivePage({ resolveSceneSource: resolveSceneSource, settings: settings });
 }
 
 /**
@@ -107,6 +111,12 @@ struct Scp3DArchivePage {
   private interactionPitch: number = 0;
   private interactionScale: number = 1;
   private transformDirty: boolean = false;
+  private resetAnimating: boolean = false;
+  private resetElapsedSeconds: number = 0;
+  private resetStartYaw: number = 0;
+  private resetStartPitch: number = 0;
+  private resetStartScale: number = 1;
+  private resetTargetScale: number = 1;
 
   @Local private routeResolved: boolean = false;
   @Local private contentId: string = '';
@@ -122,6 +132,45 @@ struct Scp3DArchivePage {
   @Local private autoRotate: boolean = false;
   @Local private creditsVisible: boolean = false;
   @Param resolveSceneSource: Scp3DArchiveSceneSourceResolver | undefined = undefined;
+  @Param settings: SettingsViewModel | undefined = undefined;
+
+  private readonly sheetMaterial: uiMaterial.ImmersiveMaterial =
+    new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.THICK,
+      applyShadow: true
+    });
+
+  private isMaterialEnabled(): boolean {
+    return this.settings?.immersiveMaterialEnabled ?? true;
+  }
+
+  private creditsSheetOptions(): SheetOptions {
+    const options: SheetOptions = {
+      detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+      preferType: SheetType.BOTTOM,
+      dragBar: true,
+      showClose: true,
+      title: { title: '资源来源与许可', subtitle: this.contentId },
+      onWillDismiss: (action: DismissSheetAction): void => {
+        this.creditsVisible = false;
+        action.dismiss();
+      },
+      onDisappear: (): void => {
+        this.creditsVisible = false;
+      }
+    };
+    if (this.isMaterialEnabled()) {
+      if (uiImmersiveMaterialSupported()) {
+        options.systemMaterial = this.sheetMaterial;
+      } else {
+        options.blurStyle = BlurStyle.COMPONENT_THICK;
+      }
+      options.backgroundColor = Color.Transparent;
+    } else {
+      options.backgroundColor = $r('sys.color.comp_background_primary');
+    }
+    return options;
+  }
 
   aboutToAppear(): void {
     this.pageActive = false;
@@ -308,7 +357,26 @@ struct Scp3DArchivePage {
       return;
     }
 
-    if (this.autoRotate && this.sceneReady) {
+    if (this.resetAnimating && this.sceneReady) {
+      this.resetElapsedSeconds += this.frameDeltaSeconds(frameTimeInNano);
+      const t: number = Math.min(1, this.resetElapsedSeconds / RESET_DURATION_SECONDS);
+      const eased: number = 1 - Math.pow(1 - t, 3);
+      this.interactionYaw = this.resetStartYaw * (1 - eased);
+      this.interactionPitch = this.resetStartPitch * (1 - eased);
+      this.interactionScale =
+        this.resetStartScale + (this.resetTargetScale - this.resetStartScale) * eased;
+      this.transformDirty = true;
+      if (t >= 1) {
+        this.interactionYaw = 0;
+        this.interactionPitch = 0;
+        this.interactionScale = this.resetTargetScale;
+        this.cancelResetAnimation();
+        if (this.gestureDepth === 0 && !this.autoRotate) {
+          this.continuousRender = false;
+          this.lastRenderFrameTimeNano = 0;
+        }
+      }
+    } else if (this.autoRotate && this.sceneReady) {
       const deltaSeconds: number = this.frameDeltaSeconds(frameTimeInNano);
       this.interactionYaw += AUTO_ROTATE_SPEED_RAD_PER_SECOND * deltaSeconds;
       this.transformDirty = true;
@@ -391,11 +459,44 @@ struct Scp3DArchivePage {
     }
   }
 
+  private normalizeShortestAngle(angle: number): number {
+    const twoPi: number = Math.PI * 2;
+    let wrapped: number = angle % twoPi;
+    if (wrapped > Math.PI) {
+      wrapped -= twoPi;
+    } else if (wrapped < -Math.PI) {
+      wrapped += twoPi;
+    }
+    return wrapped;
+  }
+
+  private cancelResetAnimation(): void {
+    this.resetAnimating = false;
+    this.resetElapsedSeconds = 0;
+  }
+
   private resetView(): void {
-    this.interactionYaw = 0;
-    this.interactionPitch = 0;
-    this.interactionScale = this.asset?.initialScale ?? 1;
-    this.transformDirty = true;
+    const targetScale: number = this.asset?.initialScale ?? 1;
+    if (!this.sceneReady) {
+      this.cancelResetAnimation();
+      this.interactionYaw = 0;
+      this.interactionPitch = 0;
+      this.interactionScale = targetScale;
+      this.transformDirty = true;
+      this.requestRender();
+      return;
+    }
+    this.stopAutoRotate();
+    this.autoRotate = false;
+    this.interactionYaw = this.normalizeShortestAngle(this.interactionYaw);
+    this.resetStartYaw = this.interactionYaw;
+    this.resetStartPitch = this.interactionPitch;
+    this.resetStartScale = this.interactionScale;
+    this.resetTargetScale = targetScale;
+    this.resetAnimating = true;
+    this.resetElapsedSeconds = 0;
+    this.continuousRender = true;
+    this.lastRenderFrameTimeNano = 0;
     this.requestRender();
   }
 
@@ -411,6 +512,7 @@ struct Scp3DArchivePage {
     if (!this.sceneReady) {
       return;
     }
+    this.cancelResetAnimation();
     this.stopAutoRotate();
     this.autoRotate = false;
     this.panStartYaw = this.interactionYaw;
@@ -436,6 +538,7 @@ struct Scp3DArchivePage {
     if (!this.sceneReady) {
       return;
     }
+    this.cancelResetAnimation();
     this.stopAutoRotate();
     this.autoRotate = false;
     this.pinchStartScale = this.interactionScale;
@@ -459,6 +562,7 @@ struct Scp3DArchivePage {
     if (!this.sceneReady) {
       return;
     }
+    this.cancelResetAnimation();
     this.autoRotate = !this.autoRotate;
     if (this.autoRotate) {
       this.startAutoRotate();
@@ -510,6 +614,7 @@ struct Scp3DArchivePage {
   private pauseRenderer(): void {
     this.pageActive = false;
     this.invalidateLoad();
+    this.cancelResetAnimation();
     this.stopAutoRotate();
     this.autoRotate = false;
     this.gestureDepth = 0;
@@ -598,14 +703,16 @@ struct Scp3DArchivePage {
       Button('复位', { stateEffect: false })
         .height(36)
         .fontSize(12)
-        .fontColor($r('sys.color.font_primary'))
-        .backgroundColor($r('sys.color.comp_background_primary'))
+        .fontColor('#EAF0FF')
+        .backgroundColor('#2BFFFFFF')
         .onClick(() => this.resetView());
     }
     .width('100%')
     .padding({ left: 14, right: 14, top: 10, bottom: 12 })
-    .backgroundColor($r('sys.color.comp_background_tertiary'))
     .borderRadius(18)
+    .backgroundColor(this.isMaterialEnabled() ? '#88101826' : '#CC141C2B')
+    .backgroundBlurStyle(this.isMaterialEnabled() ? BlurStyle.COMPONENT_THIN : undefined)
+    .border({ width: 0.5, color: '#33FFFFFF' })
     .accessibilityText('三维模型控制：自动旋转与复位');
   }
 
@@ -885,21 +992,7 @@ struct Scp3DArchivePage {
       .width(LayoutPolicy.matchParent)
       .height(LayoutPolicy.matchParent)
       .clip(false)
-      .bindSheet(this.creditsVisible, this.creditsSheet(), {
-        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
-        preferType: SheetType.BOTTOM,
-        dragBar: true,
-        showClose: true,
-        title: { title: '资源来源与许可', subtitle: this.contentId },
-        backgroundColor: $r('sys.color.comp_background_primary'),
-        onWillDismiss: (action: DismissSheetAction): void => {
-          this.creditsVisible = false;
-          action.dismiss();
-        },
-        onDisappear: (): void => {
-          this.creditsVisible = false;
-        }
-      });
+      .bindSheet(this.creditsVisible, this.creditsSheet(), this.creditsSheetOptions());
     }
     .titleBar({
       avoidLayoutSafeArea: false,
@@ -913,7 +1006,7 @@ struct Scp3DArchivePage {
         },
         backIcon: { label: '返回', componentId: 'scp3dArchiveBackButton' }
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.isMaterialEnabled())
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))

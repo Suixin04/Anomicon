@@ -66,7 +66,10 @@ export function ArticleRouteAdapter() {
 
 @Builder
 export function SearchRouteAdapter() {
-  ScpSearchPageBuilder(AppContainer.getInstance().createCatalogSearchViewModel());
+  ScpSearchPageBuilder(
+    AppContainer.getInstance().createCatalogSearchViewModel(),
+    AppContainer.getInstance().settings()
+  );
 }
 
 @Builder
@@ -81,7 +84,10 @@ export function ExploreCollectionRouteAdapter() {
 
 @Builder
 export function Scp3DArchiveRouteAdapter() {
-  Scp3DArchivePageBuilder(resolveArchive3DSceneSource);
+  Scp3DArchivePageBuilder(
+    resolveArchive3DSceneSource,
+    AppContainer.getInstance().settings()
+  );
 }
 
 /**
@@ -164,6 +170,7 @@ export function Scp3DArchiveGalleryRouteAdapter() {
   Scp3DArchiveGalleryPageBuilder(
     undefined,
     undefined,
-    new Archive3DInstallActionsAdapter()
+    new Archive3DInstallActionsAdapter(),
+    AppContainer.getInstance().settings()
   );
 }

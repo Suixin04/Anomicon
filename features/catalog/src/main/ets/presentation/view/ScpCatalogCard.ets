@@ -1,6 +1,6 @@
 import { CatalogPreviewState, ScpCatalogEntry } from '../ScpCatalogItem';
 import { CatalogPreview } from '../../domain/CatalogContracts';
-import { AppTypography } from 'anomiconbasic';
+import { AppTypography, CARD_PRESS_MODIFIER } from 'anomiconbasic';
 
 /** Preview loading is supplied by the screen ViewModel; no service singleton crosses this View. */
 export type CatalogPreviewLoader = (
@@ -28,6 +28,7 @@ export struct ScpCatalogCard {
   @Param readCompleted: boolean = false;
   @Param refreshToken: number = 0;
 
+  @Local private loadedSource: string = '';
   private mounted: boolean = false;
 
   @Monitor('entry')
@@ -140,6 +141,23 @@ export struct ScpCatalogCard {
       this.entry.previewState === CatalogPreviewState.READY;
   }
 
+  private handleImageComplete(params: CatalogPreviewImageParams): void {
+    if (this.isCurrentImage(params)) {
+      this.loadedSource = params.source;
+    }
+  }
+
+  private imageCompleteHandler(params: CatalogPreviewImageParams): () => void {
+    const captured: CatalogPreviewImageParams = {
+      source: params.source,
+      entry: params.entry,
+      generation: params.generation
+    };
+    return (): void => {
+      this.handleImageComplete(captured);
+    };
+  }
+
   private handleImageError(params: CatalogPreviewImageParams): void {
     if (this.isCurrentImage(params)) {
       // Invalidate any delayed refresh callback for the failed source.  The
@@ -148,6 +166,7 @@ export struct ScpCatalogCard {
       this.entry.previewPath = '';
       this.entry.previewUrl = '';
       this.entry.previewState = CatalogPreviewState.FAILED;
+      this.loadedSource = '';
       // Do not retry on every WaterFlow reflow.  The parent Refresh clears the
       // failed projection and supplies the next forceRefresh attempt.
     }
@@ -178,6 +197,9 @@ export struct ScpCatalogCard {
       // 只约束宽度，让 ArkUI 按原图比例计算高度；Contain 避免默认 Cover 裁剪内容。
       .objectFit(ImageFit.Contain)
       .autoResize(true)
+      .opacity(this.loadedSource === $$.source ? 1 : 0)
+      .animation({ duration: 160, curve: Curve.EaseOut })
+      .onComplete(this.imageCompleteHandler($$))
       .onError(this.imageErrorHandler($$))
   }
 
@@ -259,6 +281,8 @@ export struct ScpCatalogCard {
       .alignItems(HorizontalAlign.Start)
       .padding(12)
     }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .clip(true)
     .backgroundColor($r('sys.color.comp_background_primary'))

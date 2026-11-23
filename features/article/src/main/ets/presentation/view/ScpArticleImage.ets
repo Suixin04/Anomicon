@@ -1,4 +1,4 @@
-import { ExternalUrlPolicy } from 'anomiconbasic';
+import { ExternalUrlPolicy, SkeletonBlock } from 'anomiconbasic';
 
 /**
  * 文章配图组件：直接使用 ArkUI Image 的网络图片管线。
@@ -99,26 +99,17 @@ export struct ScpArticleImage {
           .autoResize(true)
           .backgroundColor($r('sys.color.comp_background_primary'))
           .borderRadius(10)
+          .opacity(this.loading ? 0 : 1)
+          .animation({ duration: 180, curve: Curve.EaseOut })
           .onComplete(this.onImageComplete(this.loadEpoch))
           .onError(this.onImageError(this.loadEpoch))
           .onClick(() => this.onOpen())
 
         if (this.loading) {
-          Column({ space: 8 }) {
-            LoadingProgress()
-              .width(28)
-              .height(28)
-              .color($r('sys.color.icon_emphasize'))
-            Text('图片加载中…')
-              .fontSize(12)
-              .fontColor($r('sys.color.font_secondary'))
-          }
-          .width('100%')
-          .height(240)
-          .justifyContent(FlexAlign.Center)
-          .backgroundColor($r('sys.color.comp_background_primary'))
-          .borderRadius(10)
-          .hitTestBehavior(HitTestMode.None)
+          SkeletonBlock({ animated: true, radius: 10 })
+            .width('100%')
+            .height(240)
+            .hitTestBehavior(HitTestMode.None)
         }
       }
       .width('100%')

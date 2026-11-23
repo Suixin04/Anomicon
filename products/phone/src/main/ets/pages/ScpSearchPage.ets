@@ -4,6 +4,8 @@ import {
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
 import {
+  CATALOG_SEARCH_HEADER_HEIGHT,
+  CatalogSearchHeader,
   CatalogSearchView,
   CatalogSearchViewInput,
   CatalogSearchViewModel,
@@ -20,11 +22,16 @@ import {
 } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import { createAppTitleBarStyle } from 'anomiconbasic';
+import { SettingsViewModel } from 'settings';
 
 @Builder
-export function ScpSearchPageBuilder(viewModel: CatalogSearchViewModel) {
+export function ScpSearchPageBuilder(
+  viewModel: CatalogSearchViewModel,
+  settings?: SettingsViewModel
+) {
   ScpSearchPage({
-    viewModel: viewModel
+    viewModel: viewModel,
+    settings: settings
   });
 }
 
@@ -38,6 +45,7 @@ export function ScpSearchPageBuilder(viewModel: CatalogSearchViewModel) {
 @ComponentV2
 struct ScpSearchPage {
   @Require @Param viewModel: CatalogSearchViewModel;
+  @Param settings: SettingsViewModel | undefined = undefined;
   private pageStack: NavPathStack | undefined = undefined;
   private readonly contentScroller: Scroller = new Scroller();
   @Local private readonly searchState: ScpCatalogSearchState = sharedCatalogSearchState();
@@ -51,13 +59,23 @@ struct ScpSearchPage {
     AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
   }
 
+  @Builder
+  private searchHeaderBuilder() {
+    CatalogSearchHeader({
+      viewModel: this.viewModel,
+      sharedState: this.searchState,
+      materialEnabled: this.settings?.immersiveMaterialEnabled ?? true
+    });
+  }
+
   build() {
     HdsNavDestination() {
       CatalogSearchView(new CatalogSearchViewInput(
         this.viewModel,
         this.contentScroller,
         this.searchState,
-        (itemId: string, title: string): void => this.openContent(itemId, title)
+        (itemId: string, title: string): void => this.openContent(itemId, title),
+        this.settings?.immersiveMaterialEnabled ?? true
       ));
     }
     .titleBar({
@@ -65,15 +83,20 @@ struct ScpSearchPage {
       enableComponentSafeArea: false,
       content: {
         title: { mainTitle: '搜索' },
-        backIcon: { label: '返回', componentId: 'searchBackButton' }
+        backIcon: { label: '返回', componentId: 'searchBackButton' },
+        bottomBuilder: {
+          builder: (): void => this.searchHeaderBuilder(),
+          height: CATALOG_SEARCH_HEADER_HEIGHT
+        }
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.settings?.immersiveMaterialEnabled ?? true)
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))
     .bindToScrollable([this.contentScroller])
     .dynamicHideTitleBar({
       hideTitleArea: true,
+      hideBottomBuilder: false,
       hideStatusBar: false,
       mode: HideMode.SCROLL_UP,
       hideRatio: 1.5

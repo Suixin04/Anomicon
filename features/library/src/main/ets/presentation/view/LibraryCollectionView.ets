@@ -1,5 +1,6 @@
 import {
   AppTypography,
+  CARD_PRESS_MODIFIER,
   PHONE_PAGE_MARGIN,
   pageContentTop,
   ViewModelLoadState,
@@ -278,6 +279,8 @@ struct LibraryCollectionContent {
         .fontSize(14)
         .fontColor([$r('sys.color.icon_secondary')])
     }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .constraintSize({ minHeight: 82 })
     .alignItems(VerticalAlign.Center)

@@ -4,7 +4,13 @@ import {
   LibraryFavorite
 } from 'library';
 import { ReadingHistoryEntry } from 'library';
-import { AppTypography, materialCardBorderColor, materialCardSurfaceColor } from 'anomiconbasic';
+import {
+  AppTypography,
+  CARD_PRESS_MODIFIER,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
+  ROW_PRESS_MODIFIER
+} from 'anomiconbasic';
 
 const FAVORITE_CARD_WIDTH: number = 220;
 const FAVORITE_CARD_HEIGHT: number = 132;
@@ -97,6 +103,8 @@ export struct TerminalFavoriteCards {
       .alignItems(HorizontalAlign.Start)
       .padding(16)
     }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width(FAVORITE_CARD_WIDTH)
     .height(FAVORITE_CARD_HEIGHT)
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
@@ -307,6 +315,8 @@ struct TerminalReadingHistoryRow {
       .alignItems(VerticalAlign.Center)
       .padding({ left: 18, right: 16, top: 16, bottom: 16 })
     }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .height(128)
     .onClick(() => this.onOpenContent(this.entry.content))
@@ -347,6 +357,8 @@ struct TerminalReadingHistoryRow {
         .fontSize(13)
         .fontColor([$r('sys.color.icon_secondary')])
     }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .constraintSize({ minHeight: 72 })
     .alignItems(VerticalAlign.Center)

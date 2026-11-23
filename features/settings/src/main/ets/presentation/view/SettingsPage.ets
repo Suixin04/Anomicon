@@ -11,7 +11,8 @@ import {
 import {
   pageContentTop,
   PHONE_PAGE_MARGIN,
-  createAppTitleBarStyle
+  createAppTitleBarStyle,
+  ROW_PRESS_MODIFIER
 } from 'anomiconbasic';
 import { AppTypography, ReadingBodyText } from 'anomiconbasic';
 import {
@@ -489,6 +490,8 @@ export struct SettingsPage {
         .fontSize(18)
         .fontColor([$r('sys.color.icon_secondary')])
     }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
     .width('100%')
     .constraintSize({ minHeight: 68 })
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -520,6 +523,8 @@ export struct SettingsPage {
           .fontSize(18)
           .fontColor([$r('sys.color.icon_secondary')])
       }
+      .attributeModifier(ROW_PRESS_MODIFIER)
+      .animation({ duration: 120, curve: Curve.FastOutSlowIn })
       .width('100%')
       .constraintSize({ minHeight: 68 })
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -616,7 +621,7 @@ export struct SettingsPage {
         title: { mainTitle: '设置' },
         backIcon: { label: '返回', componentId: 'settingsBackButton' }
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.viewModel.immersiveMaterialEnabled)
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))
