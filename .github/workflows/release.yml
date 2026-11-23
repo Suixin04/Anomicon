@@ -3,19 +3,23 @@ name: Anomicon release
 on:
   push:
     branches: [main]
-    paths: [AppScope/app.json5]
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish if the configured version has no release or tag
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
 concurrency:
   group: anomicon-release-${{ github.ref }}
-  cancel-in-progress: false
+  queue: max
 
 jobs:
   prepare:
-    if: github.ref == 'refs/heads/main'
+    if: github.repository == 'Suixin04/Anomicon' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.metadata.outputs.tag }}
@@ -34,6 +38,7 @@ jobs:
         run: node scripts/release-metadata.mjs "$NOTES_FILE"
       - name: Skip existing releases and tags
         id: check
+        if: github.event_name == 'push' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.metadata.outputs.tag }}
@@ -50,11 +55,11 @@ jobs:
           name: release-notes
           path: ${{ runner.temp }}/anomicon-release-notes.md
           if-no-files-found: error
+          overwrite: true
 
   build:
     needs: prepare
-    if: needs.prepare.outputs.ready == 'true'
-    runs-on: [self-hosted, harmonyos-api26]
+    runs-on: [self-hosted, macOS, ARM64, harmonyos-api26]
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -78,9 +83,11 @@ jobs:
           name: phone-hap
           path: ${{ runner.temp }}/anomicon-${{ github.run_id }}-${{ github.run_attempt }}/*.hap
           if-no-files-found: error
+          overwrite: true
 
   release:
     needs: [prepare, build]
+    if: needs.prepare.outputs.ready == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
