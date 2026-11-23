@@ -1,6 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ViewModelLoadState } from 'anomiconbasic';
 import {
+  ALL_SERIES_ID,
   CatalogContentUseCase,
   CatalogEntry,
   CatalogRepository,
@@ -9,6 +10,7 @@ import {
   CatalogSnapshot,
   CatalogSnapshotSource,
   DEFAULT_SERIES_ID,
+  SCP_SERIES,
   ScpSeriesDescriptor,
   SearchHistoryRepository,
   SearchHistoryUseCase
@@ -158,6 +160,48 @@ class DeferredCatalogSearchRepository implements CatalogRepository {
   }
 }
 
+class MultiSeriesCatalogRepository implements CatalogRepository {
+  private readonly cachedBySeries: Map<string, CatalogSnapshot> = new Map();
+  private readonly networkBySeries: Map<string, CatalogSnapshot> = new Map();
+  private readonly failingSeries: Set<string> = new Set();
+
+  setCached(snapshot: CatalogSnapshot): void {
+    this.cachedBySeries.set(snapshot.seriesId, snapshot);
+  }
+
+  setNetwork(snapshot: CatalogSnapshot): void {
+    this.networkBySeries.set(snapshot.seriesId, snapshot);
+  }
+
+  setFailing(seriesId: string): void {
+    this.failingSeries.add(seriesId);
+  }
+
+  getCached(seriesId: string): Promise<CatalogSnapshot | undefined> {
+    return Promise.resolve(this.cachedBySeries.get(seriesId));
+  }
+
+  load(series: ScpSeriesDescriptor): Promise<CatalogSnapshot> {
+    if (this.failingSeries.has(series.id)) {
+      return Promise.reject(new Error(`offline:${series.id}`));
+    }
+    const configured = this.networkBySeries.get(series.id);
+    if (configured !== undefined) {
+      return Promise.resolve(configured);
+    }
+    return Promise.resolve(new CatalogSnapshot(series.id, [], CatalogSnapshotSource.NETWORK, 100));
+  }
+
+  refresh(series: ScpSeriesDescriptor): Promise<CatalogSnapshot> {
+    return this.load(series);
+  }
+
+  subscribe(_seriesId: string, _listener: (snapshot: CatalogSnapshot) => void): () => void {
+    return (): void => {
+    };
+  }
+}
+
 function searchCatalogSnapshot(
   fetchedAt: number,
   source: CatalogSnapshotSource = CatalogSnapshotSource.NETWORK
@@ -167,7 +211,8 @@ function searchCatalogSnapshot(
 
 function createSearchViewModel(
   repository: CatalogRepository,
-  timeout: ManualCatalogSearchTimeout = new ManualCatalogSearchTimeout()
+  timeout: ManualCatalogSearchTimeout = new ManualCatalogSearchTimeout(),
+  initialSeriesId: string = DEFAULT_SERIES_ID
 ): CatalogSearchViewModel {
   return new CatalogSearchViewModel(
     new CatalogSearchUseCase(
@@ -175,7 +220,8 @@ function createSearchViewModel(
       new SearchHistoryUseCase(new MemorySearchHistoryRepository())
     ),
     1,
-    (callback: () => void): () => void => timeout.schedule(callback)
+    (callback: () => void): () => void => timeout.schedule(callback),
+    initialSeriesId
   );
 }
 
@@ -329,6 +375,87 @@ export default function catalogSearchSnapshotTest(): void {
       await drainMicrotasks();
       expect(viewModel.snapshot.state).assertEqual(ViewModelLoadState.READY);
       expect(viewModel.snapshot.fetchedAt).assertEqual(400);
+      viewModel.dispose();
+    });
+
+    it('merges cached and progressive series snapshots and deduplicates items in ALL_SERIES_ID', 0, async () => {
+      const repository = new MultiSeriesCatalogRepository();
+      repository.setCached(new CatalogSnapshot(
+        SCP_SERIES[0].id,
+        [new CatalogEntry('SCP-173', '雕像'), new CatalogEntry('SCP-999', '痒痒怪')],
+        CatalogSnapshotSource.CACHE,
+        Date.now()
+      ));
+      repository.setNetwork(new CatalogSnapshot(
+        SCP_SERIES[1].id,
+        [new CatalogEntry('SCP-173', '重复雕像'), new CatalogEntry('SCP-1048', '泰迪熊建造者')],
+        CatalogSnapshotSource.NETWORK,
+        Date.now()
+      ));
+      repository.setNetwork(new CatalogSnapshot(
+        SCP_SERIES[9].id,
+        [new CatalogEntry('SCP-9000', '终点测试')],
+        CatalogSnapshotSource.NETWORK,
+        Date.now()
+      ));
+
+      const viewModel = createSearchViewModel(repository, new ManualCatalogSearchTimeout(), ALL_SERIES_ID);
+      viewModel.activate();
+      await drainMicrotasks(60);
+
+      const loaded = viewModel.snapshot;
+      expect(loaded.state).assertEqual(ViewModelLoadState.READY);
+      expect(loaded.data?.seriesId).assertEqual(ALL_SERIES_ID);
+      expect(loaded.data?.allSeriesLoading).assertFalse();
+      expect(loaded.data?.loadedSeriesCount).assertEqual(SCP_SERIES.length);
+      expect(loaded.data?.totalSeriesCount).assertEqual(SCP_SERIES.length);
+      expect(loaded.data?.entries.length).assertEqual(4);
+      expect(loaded.data?.entries[0].itemId).assertEqual('SCP-173');
+      expect(loaded.data?.entries[2].itemId).assertEqual('SCP-1048');
+      expect(loaded.data?.entries[3].itemId).assertEqual('SCP-9000');
+
+      viewModel.setQuery('9000');
+      expect(viewModel.snapshot.data?.entries.length).assertEqual(1);
+      expect(viewModel.snapshot.data?.entries[0].itemId).assertEqual('SCP-9000');
+      viewModel.dispose();
+    });
+
+    it('degrades partially failed ALL_SERIES_ID loads and preserves query across deactivate and activate', 0, async () => {
+      const repository = new MultiSeriesCatalogRepository();
+      repository.setCached(new CatalogSnapshot(
+        SCP_SERIES[0].id,
+        [new CatalogEntry('SCP-049', '疫医')],
+        CatalogSnapshotSource.CACHE,
+        Date.now()
+      ));
+      repository.setNetwork(new CatalogSnapshot(
+        SCP_SERIES[2].id,
+        [new CatalogEntry('SCP-2049', '跨系列示例')],
+        CatalogSnapshotSource.NETWORK,
+        Date.now()
+      ));
+      repository.setFailing(SCP_SERIES[1].id);
+
+      const viewModel = createSearchViewModel(repository, new ManualCatalogSearchTimeout(), ALL_SERIES_ID);
+      viewModel.activate();
+      await drainMicrotasks(60);
+
+      expect(viewModel.snapshot.state).assertEqual(ViewModelLoadState.PARTIAL);
+      expect(viewModel.snapshot.data?.loadedSeriesCount).assertEqual(SCP_SERIES.length - 1);
+      expect(viewModel.snapshot.error?.message.includes('部分系列目录加载失败')).assertTrue();
+      const initialRandomId = viewModel.snapshot.data?.random[0]?.itemId;
+
+      viewModel.setQuery('049');
+      expect(viewModel.snapshot.data?.entries.length).assertEqual(2);
+
+      viewModel.deactivate();
+      viewModel.activate();
+      await drainMicrotasks(60);
+
+      expect(viewModel.snapshot.data?.query).assertEqual('049');
+      expect(viewModel.snapshot.data?.seriesId).assertEqual(ALL_SERIES_ID);
+      expect(viewModel.snapshot.data?.entries.length).assertEqual(2);
+      expect(viewModel.snapshot.data?.random[0]?.itemId).assertEqual(initialRandomId);
       viewModel.dispose();
     });
   });

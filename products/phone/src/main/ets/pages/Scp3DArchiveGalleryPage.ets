@@ -4,7 +4,15 @@ import {
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
 import {
+  accentPillBackgroundColor,
+  accentPillForegroundColor,
   AppTypography,
+  badgeDangerBackgroundColor,
+  badgeDangerForegroundColor,
+  badgeInfoBackgroundColor,
+  badgeInfoForegroundColor,
+  badgeWarningBackgroundColor,
+  badgeWarningForegroundColor,
   PHONE_PAGE_MARGIN,
   createAppTitleBarStyle,
   pageContentTop
@@ -274,6 +282,26 @@ struct Scp3DArchiveGalleryPage {
     }
   }
 
+  private badgeForegroundColor(entry: Scp3DAssetManifestEntry): ResourceColor {
+    if (this.isReady(entry)) {
+      return badgeInfoForegroundColor();
+    }
+    if (this.currentState(entry) === Scp3DArchiveInstallState.FAILED) {
+      return badgeDangerForegroundColor();
+    }
+    return badgeWarningForegroundColor();
+  }
+
+  private badgeBackgroundColor(entry: Scp3DAssetManifestEntry): ResourceColor {
+    if (this.isReady(entry)) {
+      return badgeInfoBackgroundColor();
+    }
+    if (this.currentState(entry) === Scp3DArchiveInstallState.FAILED) {
+      return badgeDangerBackgroundColor();
+    }
+    return badgeWarningBackgroundColor();
+  }
+
   @Builder
   private filterBar() {
     Row({ space: 8 }) {
@@ -286,8 +314,10 @@ struct Scp3DArchiveGalleryPage {
           .height(36)
           .fontSize(AppTypography.CAPTION_L)
           .fontWeight(this.isFilterSelected(filter) ? FontWeight.Medium : FontWeight.Regular)
-          .fontColor(this.isFilterSelected(filter) ? '#FFFFFF' : $r('sys.color.font_secondary'))
-          .backgroundColor(this.isFilterSelected(filter) ? '#315B9E' : $r('sys.color.comp_background_tertiary'))
+          .fontColor(this.isFilterSelected(filter) ?
+            accentPillForegroundColor() : $r('sys.color.font_secondary'))
+          .backgroundColor(this.isFilterSelected(filter) ?
+            accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
           .onClick(() => this.selectFilter(filter))
           .accessibilityText(`${FILTER_LABELS[index]}，${this.countFor(filter)} 个`);
       }, (filter: Scp3DArchiveGalleryFilter) => filter);
@@ -300,9 +330,9 @@ struct Scp3DArchiveGalleryPage {
     Text(this.statusLabel(entry))
       .fontSize(AppTypography.CAPTION_M)
       .fontWeight(FontWeight.Medium)
-      .fontColor(this.isReady(entry) ? '#2F5C9E' : '#8B641E')
+      .fontColor(this.badgeForegroundColor(entry))
       .padding({ left: 9, right: 9, top: 5, bottom: 5 })
-      .backgroundColor(this.isReady(entry) ? '#E6EEFF' : '#FFF3D6')
+      .backgroundColor(this.badgeBackgroundColor(entry))
       .borderRadius(8);
   }
 
@@ -358,7 +388,7 @@ struct Scp3DArchiveGalleryPage {
             LoadingProgress()
               .width(20)
               .height(20)
-              .color('#315B9E');
+              .color(accentPillBackgroundColor());
             Text(this.statusLabel(entry))
               .fontSize(AppTypography.CAPTION_L)
               .fontColor($r('sys.color.font_secondary'));
@@ -366,8 +396,8 @@ struct Scp3DArchiveGalleryPage {
             Button('删除', { stateEffect: true })
               .height(32)
               .fontSize(AppTypography.CAPTION_L)
-              .fontColor('#9B3A3A')
-              .backgroundColor('#FCE8E8')
+              .fontColor(badgeDangerForegroundColor())
+              .backgroundColor(badgeDangerBackgroundColor())
               // The card opens the viewer on click; action buttons must stop
               // the hit test at this node so deleting never also navigates.
               .hitTestBehavior(HitTestMode.Block)
@@ -376,8 +406,8 @@ struct Scp3DArchiveGalleryPage {
             Button('下载', { stateEffect: true })
               .height(32)
               .fontSize(AppTypography.CAPTION_L)
-              .fontColor('#2F5C9E')
-              .backgroundColor('#E6EEFF')
+              .fontColor(badgeInfoForegroundColor())
+              .backgroundColor(badgeInfoBackgroundColor())
               .hitTestBehavior(HitTestMode.Block)
               .onClick(() => { this.installAsset(entry); });
           }

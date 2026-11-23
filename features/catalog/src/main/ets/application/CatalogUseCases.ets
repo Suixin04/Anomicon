@@ -128,8 +128,11 @@ export class CatalogSearchUseCase {
     this.history = history;
   }
 
-  load(series: ScpSeriesDescriptor): Promise<CatalogSnapshot> {
-    return this.catalog.load(series);
+  load(
+    series: ScpSeriesDescriptor,
+    priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.USER_INITIATED
+  ): Promise<CatalogSnapshot> {
+    return this.catalog.load(series, priority);
   }
 
   /** Explicit user retry: bypass the cached snapshot and revalidate the source. */

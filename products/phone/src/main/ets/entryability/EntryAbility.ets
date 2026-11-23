@@ -1,6 +1,7 @@
-import { AbilityConstant, UIAbility, Want } from '@kit.AbilityKit';
+import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { FrameCallback, window } from '@kit.ArkUI';
+import { ThemeMode } from 'settings';
 import { AppLifecycleCoordinator } from '../composition/AppLifecycleCoordinator';
 import { notifyStartingWindowReleased } from '../startup/StartupCoordinator';
 import { updateWindowAvoidArea } from 'anomiconbasic';
@@ -47,6 +48,16 @@ export default class EntryAbility extends UIAbility {
     // Settings are read synchronously while assembling the minimal shared VM.
     // Apply them before the first ArkUI frame to prevent a light/dark flash.
     lifecycle.applyInitialTheme(this.context);
+    const windowBackgroundColor = this.resolveWindowBackgroundColor(
+      lifecycle.initialThemeMode(this.context),
+      this.context.config.colorMode
+    );
+    try {
+      this.applyWindowBackground(windowStage.getMainWindowSync(), windowBackgroundColor);
+    } catch (error) {
+      const businessError = error as BusinessError;
+      hilog.warn(DOMAIN, TAG, 'Set initial window background failed: %{public}s', businessError.message);
+    }
 
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
@@ -55,6 +66,15 @@ export default class EntryAbility extends UIAbility {
         return;
       }
       hilog.info(DOMAIN, TAG, 'Succeeded in loading the content.');
+      try {
+        this.applyWindowBackground(windowStage.getMainWindowSync(), this.resolveWindowBackgroundColor(
+          lifecycle.initialThemeMode(this.context),
+          this.context.config.colorMode
+        ));
+      } catch (error) {
+        const businessError = error as BusinessError;
+        hilog.warn(DOMAIN, TAG, 'Sync window background failed: %{public}s', businessError.message);
+      }
       this.releaseStartingWindow(windowStage);
       if (!lifecycle.isCurrentAbility(this.context)) {
         return;
@@ -162,6 +182,40 @@ export default class EntryAbility extends UIAbility {
       const message = error instanceof Error ? error.message : 'unknown error';
       hilog.warn(DOMAIN, TAG, 'Flush persistence failed: %{public}s', message);
     });
+  }
+
+  onConfigurationUpdate(newConfig: Configuration): void {
+    if (this.avoidAreaWindow !== undefined) {
+      this.applyWindowBackground(
+        this.avoidAreaWindow,
+        this.resolveWindowBackgroundColor(
+          this.lifecycle.initialThemeMode(this.context),
+          newConfig.colorMode
+        )
+      );
+    }
+  }
+
+  private resolveWindowBackgroundColor(
+    mode: ThemeMode,
+    colorMode: ConfigurationConstant.ColorMode | undefined
+  ): string {
+    if (mode === ThemeMode.DARK) {
+      return '#000000';
+    }
+    if (mode === ThemeMode.LIGHT) {
+      return '#F1F3F5';
+    }
+    return colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK ? '#000000' : '#F1F3F5';
+  }
+
+  private applyWindowBackground(mainWindow: window.Window, color: string): void {
+    try {
+      mainWindow.setWindowBackgroundColor(color);
+    } catch (error) {
+      const businessError = error as BusinessError;
+      hilog.warn(DOMAIN, TAG, 'Set window background color failed: %{public}s', businessError.message);
+    }
   }
 
   private releaseWindowAvoidAreaListener(): void {

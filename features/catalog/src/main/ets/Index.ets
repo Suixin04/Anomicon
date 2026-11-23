@@ -31,6 +31,8 @@ export {
   TalePayload
 } from './domain/StaticCatalogContracts';
 export {
+  ALL_SERIES_ID,
+  ALL_SERIES_LABEL,
   DEFAULT_SERIES_ID,
   SCP_SERIES,
   ScpSeriesDescriptor,

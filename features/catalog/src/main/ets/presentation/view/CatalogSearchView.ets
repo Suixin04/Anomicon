@@ -7,6 +7,7 @@ import {
   ViewModelLoadState
 } from 'anomiconbasic';
 import { CatalogEntry } from '../../domain/CatalogContracts';
+import { ALL_SERIES_ID } from '../../domain/ScpSeriesItem';
 import {
   CatalogSearchViewModel
 } from '../viewmodel/CatalogSearchViewModel';
@@ -44,14 +45,9 @@ struct CatalogSearchContent {
   @Require @Param onOpenContent: (itemId: string, title: string) => void;
 
   aboutToAppear(): void {
-    // Seed the screen VM before activation so the Catalog tab and route page
-    // keep sharing exactly one series/query value through the product bridge.
-    const initialData = this.viewModel.snapshot.data;
-    if (this.sharedState.seriesId !== (initialData?.seriesId ?? '')) {
-      this.viewModel.selectSeries(this.sharedState.seriesId);
-    }
     const selectedData = this.viewModel.snapshot.data;
-    if (this.sharedState.query !== (selectedData?.query ?? '')) {
+    if (this.sharedState.query.length > 0 &&
+      this.sharedState.query !== (selectedData?.query ?? '')) {
       this.viewModel.setQuery(this.sharedState.query);
     }
     this.viewModel.activate();
@@ -65,7 +61,9 @@ struct CatalogSearchContent {
     if (this.viewModel.snapshot.data?.seriesId === id) {
       return;
     }
-    this.sharedState.setSeriesId(id);
+    if (id !== ALL_SERIES_ID) {
+      this.sharedState.setSeriesId(id);
+    }
     this.viewModel.selectSeries(id);
   }
 
@@ -76,7 +74,13 @@ struct CatalogSearchContent {
 
   private emptyMessage(fallback: string): string {
     const snapshot = this.viewModel.snapshot;
-    if (snapshot.data?.catalogPending ?? false) {
+    const data = snapshot.data;
+    if (data?.seriesId === ALL_SERIES_ID && (data?.allSeriesLoading ?? false)) {
+      return data.loadedSeriesCount > 0 ?
+        `正在检索全部系列（已加载 ${data.loadedSeriesCount}/${data.totalSeriesCount}）…` :
+        '正在加载全部系列目录，请稍候…';
+    }
+    if (data?.catalogPending ?? false) {
       return '该系列目录正在加载，请稍候…';
     }
     if (snapshot.state === ViewModelLoadState.ERROR && snapshot.error !== undefined) {
@@ -254,8 +258,9 @@ struct CatalogSearchContent {
         }
       }
       .width('100%')
-      .padding({ top: 8, bottom: 120 })
+      .padding({ top: 4, bottom: 120 })
     }
+    .align(Alignment.Top)
     .scrollBar(BarState.Off)
     .layoutWeight(1)
     .width('100%')
@@ -263,24 +268,38 @@ struct CatalogSearchContent {
 
   @Builder
   private resultsContent() {
-    List({ scroller: this.scroller }) {
-      Repeat<CatalogEntry>(this.viewModel.snapshot.data?.entries ?? [])
-        .each((row: RepeatItem<CatalogEntry>) => {
-          ListItem() {
-            this.resultRow(row)
-          }
-        })
-        .key((entry: CatalogEntry) => entry.itemId)
-        .virtualScroll()
+    Column({ space: 4 }) {
+      if ((this.viewModel.snapshot.data?.seriesId ?? '') === ALL_SERIES_ID &&
+        (this.viewModel.snapshot.data?.allSeriesLoading ?? false)) {
+        Text(`正在检索全部系列（已加载 ${this.viewModel.snapshot.data?.loadedSeriesCount ?? 0}/${this.viewModel.snapshot.data?.totalSeriesCount ?? 0}）…`)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_tertiary'))
+          .padding({ left: PHONE_PAGE_MARGIN, right: PHONE_PAGE_MARGIN, bottom: 2 })
+          .width('100%')
+      }
+
+      List({ scroller: this.scroller }) {
+        Repeat<CatalogEntry>(this.viewModel.snapshot.data?.entries ?? [])
+          .each((row: RepeatItem<CatalogEntry>) => {
+            ListItem() {
+              this.resultRow(row)
+            }
+          })
+          .key((entry: CatalogEntry) => entry.itemId)
+          .virtualScroll()
+      }
+      .scrollBar(BarState.Off)
+      .contentEndOffset(32)
+      .layoutWeight(1)
+      .width('100%')
     }
-    .scrollBar(BarState.Off)
     .layoutWeight(1)
     .width('100%')
   }
 
   @Builder
   private searchContent() {
-    Column({ space: 8 }) {
+    Column({ space: 6 }) {
       Search({
         placeholder: '搜索编号或名称',
         value: this.viewModel.snapshot.data?.query ?? ''
@@ -292,7 +311,8 @@ struct CatalogSearchContent {
         .onChange((value: string) => this.applyQuery(value))
 
       CatalogSeriesSelector({
-        selectedSeriesId: this.viewModel.snapshot.data?.seriesId ?? this.sharedState.seriesId,
+        selectedSeriesId: this.viewModel.snapshot.data?.seriesId ?? ALL_SERIES_ID,
+        includeAll: true,
         onSelect: (seriesId: string) => this.selectSeries(seriesId)
       })
 

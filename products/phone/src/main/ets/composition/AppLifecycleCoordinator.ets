@@ -1,4 +1,5 @@
 import { common } from '@kit.AbilityKit';
+import { ThemeMode } from 'settings';
 import { AppContainer } from './AppContainer';
 
 /** Phone-product lifecycle composition root. */
@@ -22,6 +23,10 @@ export class AppLifecycleCoordinator {
 
   applyInitialTheme(context: common.UIAbilityContext): void {
     AppContainer.getInstance().applyInitialTheme(context);
+  }
+
+  initialThemeMode(context: common.UIAbilityContext): ThemeMode {
+    return AppContainer.getInstance().initialThemeMode(context);
   }
 
   setForeground(context: common.UIAbilityContext, foreground: boolean): void {

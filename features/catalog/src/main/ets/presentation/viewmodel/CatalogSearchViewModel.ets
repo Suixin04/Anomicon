@@ -7,12 +7,14 @@ import {
 import {
   CatalogSearchUseCase
 } from '../../application/CatalogUseCases';
+import { ScpHtmlRequestPriority } from '../../domain/ArticleHtmlRepository';
 import {
   CatalogEntry,
   CatalogSnapshot
 } from '../../domain/CatalogContracts';
 import { filterCatalogEntries } from '../../domain/CatalogRepositories';
 import {
+  ALL_SERIES_ID,
   DEFAULT_SERIES_ID,
   SCP_SERIES,
   ScpSeriesDescriptor
@@ -34,6 +36,9 @@ export class CatalogSearchScreenData {
   readonly random: CatalogEntry[];
   readonly history: string[];
   readonly catalogPending: boolean;
+  readonly loadedSeriesCount: number;
+  readonly totalSeriesCount: number;
+  readonly allSeriesLoading: boolean;
 
   constructor(
     query: string,
@@ -41,7 +46,10 @@ export class CatalogSearchScreenData {
     entries: CatalogEntry[],
     random: CatalogEntry[],
     history: string[],
-    catalogPending: boolean
+    catalogPending: boolean,
+    loadedSeriesCount: number = 0,
+    totalSeriesCount: number = 0,
+    allSeriesLoading: boolean = false
   ) {
     this.query = query;
     this.seriesId = seriesId;
@@ -49,6 +57,9 @@ export class CatalogSearchScreenData {
     this.random = random.slice();
     this.history = history.slice();
     this.catalogPending = catalogPending;
+    this.loadedSeriesCount = loadedSeriesCount;
+    this.totalSeriesCount = totalSeriesCount;
+    this.allSeriesLoading = allSeriesLoading;
   }
 }
 
@@ -62,6 +73,8 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   @Trace randomItems: CatalogEntry[] = [];
   @Trace history: string[] = [];
   @Trace catalogPending: boolean = false;
+  @Trace loadedSeriesCount: number = 0;
+  @Trace allSeriesLoading: boolean = false;
   @Trace status: ViewModelLoadState = ViewModelLoadState.IDLE;
   @Trace errorMessage: string = '';
   @Trace fetchedAt: number = 0;
@@ -75,23 +88,37 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   private active: boolean = false;
   private disposed: boolean = false;
   private initialized: boolean = false;
-  private unsubscribe: (() => void) | undefined = undefined;
+  private unsubscribes: Array<() => void> = [];
   private cancelPendingTimeout: (() => void) | undefined = undefined;
   private loadTimedOut: boolean = false;
   private appliedCatalog: CatalogSnapshot | undefined = undefined;
+  private readonly allSeriesSnapshots: Map<string, CatalogSnapshot> = new Map();
   private snapshotRevision: number = 0;
 
   constructor(
     search: CatalogSearchUseCase,
     randomCount: number = 10,
-    scheduleTimeout: CatalogSearchTimeoutScheduler = scheduleCatalogSearchTimeout
+    scheduleTimeout?: CatalogSearchTimeoutScheduler,
+    initialSeriesId: string = DEFAULT_SERIES_ID
   ) {
     this.search = search;
     this.randomCount = randomCount;
-    this.scheduleTimeout = scheduleTimeout;
+    this.scheduleTimeout = scheduleTimeout ?? scheduleCatalogSearchTimeout;
+    this.seriesId = initialSeriesId === ALL_SERIES_ID ?
+      ALL_SERIES_ID : this.descriptor(initialSeriesId).id;
     this.snapshot = new ViewModelSnapshot<CatalogSearchScreenData>(
       ViewModelLoadState.IDLE,
-      new CatalogSearchScreenData('', DEFAULT_SERIES_ID, [], [], [], false)
+      new CatalogSearchScreenData(
+        '',
+        this.seriesId,
+        [],
+        [],
+        [],
+        false,
+        0,
+        this.seriesId === ALL_SERIES_ID ? SCP_SERIES.length : 1,
+        false
+      )
     );
   }
 
@@ -111,9 +138,9 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
         this.history = [];
         console.warn(`Read search history failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       }
-      this.observeSeries(this.seriesId);
+      this.observeCurrentScope();
     } else {
-      this.observeSeries(this.seriesId);
+      this.observeCurrentScope();
     }
   }
 
@@ -124,6 +151,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.active = false;
     this.token++;
     this.stopObservation();
+    this.allSeriesLoading = false;
     this.publishSnapshot();
   }
 
@@ -136,6 +164,8 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.entries = [];
     this.visibleEntries = [];
     this.randomItems = [];
+    this.allSeriesSnapshots.clear();
+    this.loadedSeriesCount = 0;
     this.publishSnapshot();
   }
 
@@ -149,7 +179,12 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   }
 
   selectSeries(seriesId: string): void {
-    if (this.disposed || this.seriesId === seriesId) {
+    if (this.disposed) {
+      return;
+    }
+    const normalizedId = seriesId === ALL_SERIES_ID ?
+      ALL_SERIES_ID : this.descriptor(seriesId).id;
+    if (this.seriesId === normalizedId) {
       return;
     }
     // Do not project the previous series while the new cache snapshot is
@@ -157,19 +192,22 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     // sequence and keeps search results tied to the selected series.
     this.token++;
     this.stopObservation();
-    this.seriesId = this.descriptor(seriesId).id;
+    this.allSeriesSnapshots.clear();
+    this.seriesId = normalizedId;
     this.initialized = false;
     this.entries = [];
     this.visibleEntries = [];
     this.randomItems = [];
     this.catalogPending = false;
+    this.loadedSeriesCount = 0;
+    this.allSeriesLoading = false;
     this.fetchedAt = 0;
     this.stale = false;
     this.errorMessage = '';
     this.status = ViewModelLoadState.IDLE;
     this.publishSnapshot();
     if (this.active) {
-      this.observeSeries(this.seriesId);
+      this.observeCurrentScope();
     }
   }
 
@@ -195,22 +233,31 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     if (this.active) {
       // A retry is an explicit user action.  Do not read the same stale or
       // corrupt cache again; go through the repository's force-refresh path.
-      this.observeSeries(this.seriesId, true);
+      this.observeCurrentScope(true);
     }
+  }
+
+  private observeCurrentScope(forceRefresh: boolean = false): void {
+    if (this.seriesId === ALL_SERIES_ID) {
+      this.observeAllSeries(forceRefresh);
+      return;
+    }
+    this.observeSeries(this.seriesId, forceRefresh);
   }
 
   private observeSeries(id: string, forceRefresh: boolean = false): void {
     const token = ++this.token;
     this.stopObservation();
+    this.allSeriesLoading = false;
     const hasEntries = this.entries.length > 0;
     this.catalogPending = forceRefresh && !hasEntries;
     this.status = forceRefresh && hasEntries ?
       ViewModelLoadState.REFRESHING : ViewModelLoadState.LOADING;
     this.errorMessage = '';
     this.publishSnapshot();
-    this.unsubscribe = this.search.observe(id, (snapshot: CatalogSnapshot): void => {
+    this.unsubscribes.push(this.search.observe(id, (snapshot: CatalogSnapshot): void => {
       this.applyCurrentSnapshot(id, token, snapshot);
-    });
+    }));
     if (this.catalogPending) {
       this.armPendingTimeout(id, token);
     }
@@ -269,6 +316,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     // on lifecycle/state projection and request-token guards.
     this.randomItems = this.search.pickRandom(this.entries, this.randomCount);
     this.catalogPending = false;
+    this.loadedSeriesCount = 1;
     this.fetchedAt = snapshot.fetchedAt;
     this.stale = snapshot.stale;
     this.errorMessage = snapshot.error;
@@ -277,6 +325,170 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.appliedCatalog = snapshot;
     this.loadTimedOut = false;
     this.stopPendingTimeout();
+    this.publishVisible();
+    this.publishSnapshot();
+  }
+
+  private observeAllSeries(forceRefresh: boolean = false): void {
+    const token = ++this.token;
+    this.stopObservation();
+    if (forceRefresh) {
+      this.allSeriesSnapshots.clear();
+      this.loadedSeriesCount = 0;
+    }
+    this.allSeriesLoading = true;
+    this.errorMessage = '';
+    const hasEntries = this.entries.length > 0;
+    this.catalogPending = !hasEntries;
+    this.status = hasEntries ? ViewModelLoadState.REFRESHING : ViewModelLoadState.LOADING;
+    this.publishSnapshot();
+    for (let index: number = 0; index < SCP_SERIES.length; index++) {
+      const descriptor = SCP_SERIES[index];
+      this.unsubscribes.push(this.search.observe(descriptor.id, (snapshot: CatalogSnapshot): void => {
+        this.applyAllSeriesSnapshot(descriptor.id, token, snapshot);
+      }));
+    }
+    if (this.catalogPending) {
+      this.armPendingTimeout(ALL_SERIES_ID, token);
+    }
+    this.loadAllSeries(token, forceRefresh);
+  }
+
+  private async loadAllSeries(token: number, forceRefresh: boolean): Promise<void> {
+    if (!forceRefresh) {
+      const cachedSnapshots = await Promise.all(
+        SCP_SERIES.map((series: ScpSeriesDescriptor): Promise<CatalogSnapshot | undefined> =>
+          this.search.cached(series.id))
+      );
+      if (!this.isCurrent(token, ALL_SERIES_ID)) {
+        return;
+      }
+      for (let index: number = 0; index < SCP_SERIES.length; index++) {
+        const snapshot = cachedSnapshots[index];
+        if (snapshot !== undefined) {
+          this.allSeriesSnapshots.set(SCP_SERIES[index].id, snapshot);
+        }
+      }
+      if (this.allSeriesSnapshots.size > 0) {
+        this.projectAllSeriesSnapshots(token, false, 0);
+      }
+    }
+
+    const missing: ScpSeriesDescriptor[] = forceRefresh ?
+      SCP_SERIES.slice() :
+      SCP_SERIES.filter((series: ScpSeriesDescriptor): boolean => !this.allSeriesSnapshots.has(series.id));
+
+    if (missing.length === 0) {
+      this.allSeriesLoading = false;
+      this.projectAllSeriesSnapshots(token, true, 0);
+      return;
+    }
+
+    let failedCount: number = 0;
+    let lastError: string = '';
+    for (let index: number = 0; index < missing.length; index++) {
+      if (!this.isCurrent(token, ALL_SERIES_ID)) {
+        return;
+      }
+      const descriptor = missing[index];
+      const priority = this.allSeriesSnapshots.size === 0 ?
+        ScpHtmlRequestPriority.USER_INITIATED : ScpHtmlRequestPriority.BACKGROUND;
+      try {
+        const loaded = forceRefresh ?
+          await this.search.refresh(descriptor) :
+          await this.search.load(descriptor, priority);
+        if (!this.isCurrent(token, ALL_SERIES_ID)) {
+          return;
+        }
+        this.allSeriesSnapshots.set(descriptor.id, loaded);
+        this.projectAllSeriesSnapshots(token, false, failedCount);
+      } catch (error) {
+        if (!this.isCurrent(token, ALL_SERIES_ID)) {
+          return;
+        }
+        failedCount++;
+        lastError = error instanceof Error ? error.message : '目录加载失败';
+      }
+    }
+
+    if (!this.isCurrent(token, ALL_SERIES_ID)) {
+      return;
+    }
+    this.allSeriesLoading = false;
+    this.stopPendingTimeout();
+    if (this.allSeriesSnapshots.size === 0) {
+      if (!this.loadTimedOut) {
+        this.catalogPending = false;
+        this.status = ViewModelLoadState.ERROR;
+        this.errorMessage = lastError.length > 0 ? lastError : '全部系列目录读取失败';
+        this.publishSnapshot();
+      }
+      return;
+    }
+    this.projectAllSeriesSnapshots(token, true, failedCount);
+  }
+
+  private applyAllSeriesSnapshot(seriesId: string, token: number, snapshot: CatalogSnapshot): void {
+    if (!this.isCurrent(token, ALL_SERIES_ID) || snapshot.seriesId !== seriesId) {
+      return;
+    }
+    const existing = this.allSeriesSnapshots.get(seriesId);
+    if (existing !== undefined &&
+      (snapshot.fetchedAt < existing.fetchedAt || this.isSameProjection(existing, snapshot))) {
+      return;
+    }
+    this.allSeriesSnapshots.set(seriesId, snapshot);
+    this.projectAllSeriesSnapshots(token, !this.allSeriesLoading, 0);
+  }
+
+  private projectAllSeriesSnapshots(token: number, finished: boolean, failedCount: number): void {
+    if (!this.isCurrent(token, ALL_SERIES_ID)) {
+      return;
+    }
+    const merged: CatalogEntry[] = [];
+    const seen: Set<string> = new Set<string>();
+    let latestFetchedAt: number = 0;
+    let anyStale: boolean = false;
+    let loadedCount: number = 0;
+
+    for (let seriesIndex: number = 0; seriesIndex < SCP_SERIES.length; seriesIndex++) {
+      const snapshot = this.allSeriesSnapshots.get(SCP_SERIES[seriesIndex].id);
+      if (snapshot === undefined) {
+        continue;
+      }
+      loadedCount++;
+      if (snapshot.fetchedAt > latestFetchedAt) {
+        latestFetchedAt = snapshot.fetchedAt;
+      }
+      if (snapshot.stale || snapshot.partial) {
+        anyStale = true;
+      }
+      for (let entryIndex: number = 0; entryIndex < snapshot.entries.length; entryIndex++) {
+        const entry = snapshot.entries[entryIndex];
+        if (!seen.has(entry.itemId)) {
+          seen.add(entry.itemId);
+          merged.push(entry);
+        }
+      }
+    }
+
+    this.entries = merged;
+    if (this.randomItems.length === 0 && merged.length > 0) {
+      this.randomItems = this.search.pickRandom(merged, this.randomCount);
+    }
+    this.loadedSeriesCount = loadedCount;
+    this.catalogPending = false;
+    this.loadTimedOut = false;
+    this.stopPendingTimeout();
+    this.fetchedAt = latestFetchedAt;
+    this.stale = anyStale;
+    if (finished && failedCount > 0) {
+      this.status = ViewModelLoadState.PARTIAL;
+      this.errorMessage = `部分系列目录加载失败，已检索 ${loadedCount}/${SCP_SERIES.length} 个系列`;
+    } else {
+      this.errorMessage = '';
+      this.status = anyStale ? ViewModelLoadState.PARTIAL : ViewModelLoadState.READY;
+    }
     this.publishVisible();
     this.publishSnapshot();
   }
@@ -326,8 +538,10 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.stopPendingTimeout();
     this.loadTimedOut = false;
     this.appliedCatalog = undefined;
-    this.unsubscribe?.();
-    this.unsubscribe = undefined;
+    const listeners = this.unsubscribes.splice(0, this.unsubscribes.length);
+    for (let index: number = 0; index < listeners.length; index++) {
+      listeners[index]();
+    }
   }
 
   private isCurrent(token: number, id: string): boolean {
@@ -338,6 +552,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     const error = this.errorMessage.length > 0 &&
       (this.status === ViewModelLoadState.ERROR || this.status === ViewModelLoadState.PARTIAL) ?
       new ViewModelErrorInfo(this.errorMessage) : undefined;
+    const totalCount = this.seriesId === ALL_SERIES_ID ? SCP_SERIES.length : 1;
     this.snapshotRevision += 1;
     this.snapshot = new ViewModelSnapshot<CatalogSearchScreenData>(
       this.status,
@@ -347,7 +562,10 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
         this.visibleEntries,
         this.randomItems,
         this.history,
-        this.catalogPending
+        this.catalogPending,
+        this.loadedSeriesCount,
+        totalCount,
+        this.allSeriesLoading
       ),
       error,
       this.fetchedAt > 0 ? this.fetchedAt : undefined,

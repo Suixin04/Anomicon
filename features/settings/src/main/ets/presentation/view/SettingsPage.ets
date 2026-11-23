@@ -358,19 +358,16 @@ export struct SettingsPage {
         content: '项目须始终收容于上锁的标准收容室内。',
         fontSize: this.fontSizeDraft,
         lineHeightMultiple: this.lineHeightDraft,
-        color: $r('sys.color.font_primary'),
-        maxLines: 2,
-        overflow: TextOverflow.Ellipsis
+        color: $r('sys.color.font_primary')
       })
     }
     .alignItems(HorizontalAlign.Start)
     .justifyContent(FlexAlign.Center)
     .width('100%')
-    .height(88)
-    .padding({ left: 14, right: 14 })
+    .constraintSize({ minHeight: 88 })
+    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
     .backgroundColor($r('sys.color.comp_background_tertiary'))
     .borderRadius(12)
-    .clip(true)
   }
 
   @Builder
@@ -384,19 +381,16 @@ export struct SettingsPage {
         content: '进入收容室的人员不得少于三人，\n且须在离开前始终保持直接视线接触。',
         fontSize: this.fontSizeDraft,
         lineHeightMultiple: this.lineHeightDraft,
-        color: $r('sys.color.font_primary'),
-        maxLines: 2,
-        overflow: TextOverflow.Ellipsis
+        color: $r('sys.color.font_primary')
       })
     }
     .alignItems(HorizontalAlign.Start)
     .justifyContent(FlexAlign.Center)
     .width('100%')
-    .height(128)
-    .padding({ left: 14, right: 14 })
+    .constraintSize({ minHeight: 128 })
+    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
     .backgroundColor($r('sys.color.comp_background_tertiary'))
     .borderRadius(12)
-    .clip(true)
   }
 
   @Builder

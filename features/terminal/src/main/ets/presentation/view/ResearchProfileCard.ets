@@ -1,4 +1,4 @@
-import { AppTypography } from 'anomiconbasic';
+import { AppTypography, materialCardBorderColor, materialCardSurfaceColor } from 'anomiconbasic';
 
 const PROFILE_CARD_MAX_WIDTH: number = 680;
 const STATISTICS_WIDE_BREAKPOINT: string = '520vp';
@@ -374,8 +374,9 @@ export struct ResearchProfileCard {
     .width('100%')
     .constraintSize({ maxWidth: PROFILE_CARD_MAX_WIDTH })
     .padding(20)
-    .backgroundColor(this.materialEnabled ?
-      Color.Transparent : $r('sys.color.comp_background_primary'))
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(24)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
   }

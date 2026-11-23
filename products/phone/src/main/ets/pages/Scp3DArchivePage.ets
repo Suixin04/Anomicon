@@ -9,7 +9,12 @@ import {
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
 import {
+  accentPillBackgroundColor,
+  accentPillForegroundColor,
   AppTypography,
+  badgeInfoBackgroundColor,
+  badgeInfoForegroundColor,
+  badgeWarningForegroundColor,
   PHONE_PAGE_MARGIN,
   createAppTitleBarStyle,
   pageContentTop
@@ -516,6 +521,7 @@ struct Scp3DArchivePage {
 
   /** Mark the destination hidden and release its renderer. */
   private hidePage(): void {
+    this.creditsVisible = false;
     this.pageShown = false;
     this.pauseRenderer();
   }
@@ -585,15 +591,15 @@ struct Scp3DArchivePage {
       Button(this.autoRotate ? '停止自动旋转' : '自动旋转', { stateEffect: false })
         .height(36)
         .fontSize(12)
-        .fontColor('#DCE8FF')
-        .backgroundColor('#263B64')
+        .fontColor(this.autoRotate ? accentPillForegroundColor() : badgeInfoForegroundColor())
+        .backgroundColor(this.autoRotate ? accentPillBackgroundColor() : badgeInfoBackgroundColor())
         .onClick(() => this.toggleAutoRotate());
       Blank().layoutWeight(1);
       Button('复位', { stateEffect: false })
         .height(36)
         .fontSize(12)
-        .fontColor('#DCE8FF')
-        .backgroundColor('#1C2C4B')
+        .fontColor($r('sys.color.font_primary'))
+        .backgroundColor($r('sys.color.comp_background_primary'))
         .onClick(() => this.resetView());
     }
     .width('100%')
@@ -699,9 +705,6 @@ struct Scp3DArchivePage {
       } else if (this.errorMessage.length > 0) {
         this.errorOverlay();
       }
-      if (this.creditsVisible) {
-        this.creditsOverlay();
-      }
     }
     .width('100%')
     .height(VIEWER_HEIGHT)
@@ -712,73 +715,56 @@ struct Scp3DArchivePage {
   }
 
   @Builder
-  private creditsOverlay() {
+  private creditsSheet() {
     if (this.asset !== undefined) {
       Scroll() {
         Column({ space: 12 }) {
-          Row() {
-            Text('资源来源与许可')
-              .fontSize(AppTypography.SUBTITLE_M)
-              .fontWeight(FontWeight.Bold)
-              .fontColor('#F2F6FF')
-              .layoutWeight(1);
-            Button('关闭', { stateEffect: false })
-              .height(32)
-              .fontSize(12)
-              .fontColor('#DCE8FF')
-              .backgroundColor('#263B64')
-              .onClick(() => this.creditsVisible = false);
-          }
-          .width('100%');
           Text(this.asset.attribution)
             .fontSize(AppTypography.BODY_S)
-            .fontColor('#DCE8FF')
+            .fontColor($r('sys.color.font'))
             .width('100%')
             .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT);
           Text(this.asset.contentAttribution)
             .fontSize(AppTypography.BODY_S)
-            .fontColor('#DCE8FF')
+            .fontColor($r('sys.color.font'))
             .width('100%')
             .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT);
           Text(`许可：${this.asset.license}`)
             .fontSize(AppTypography.BODY_S)
-            .fontColor('#AAB9D3')
+            .fontColor($r('sys.color.font_secondary'))
             .width('100%');
           Hyperlink(this.asset.licenseUrl, '查看许可文本')
-            .color('#9FC0FF')
+            .color($r('sys.color.font_emphasize'))
             .width('100%');
           Text(this.asset.sourceLabel)
             .fontSize(AppTypography.CAPTION_L)
-            .fontColor('#AAB9D3')
+            .fontColor($r('sys.color.font_secondary'))
             .width('100%')
             .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT);
           Hyperlink(this.asset.sourceUrl, '查看模型来源')
-            .color('#9FC0FF')
+            .color($r('sys.color.font_emphasize'))
             .width('100%');
           Hyperlink(this.asset.contentSourceUrl, '查看条目来源')
-            .color('#9FC0FF')
+            .color($r('sys.color.font_emphasize'))
             .width('100%');
           Text(this.asset.notice)
             .fontSize(AppTypography.CAPTION_L)
-            .fontColor('#F0C77A')
+            .fontColor(badgeWarningForegroundColor())
             .width('100%')
             .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT);
           Text(this.asset.modificationNote)
             .fontSize(AppTypography.CAPTION_L)
-            .fontColor('#AAB9D3')
+            .fontColor($r('sys.color.font_tertiary'))
             .width('100%')
             .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT);
         }
-        .width('100%');
+        .width('100%')
+        .padding({ left: 20, right: 20, top: 4, bottom: 28 });
       }
-      .width('92%')
-      .height('92%')
-      .padding(18)
-      .backgroundColor('#F01A2942')
-      .borderRadius(22)
-      .align(Alignment.Center)
-      .scrollBar(BarState.Off)
-      .hitTestBehavior(HitTestMode.Default);
+      .width('100%')
+      .height('100%')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Off);
     }
   }
 
@@ -828,8 +814,8 @@ struct Scp3DArchivePage {
           Button('来源', { stateEffect: false })
             .height(34)
             .fontSize(12)
-            .fontColor('#2F5C9E')
-            .backgroundColor('#E6EEFF')
+            .fontColor(badgeInfoForegroundColor())
+            .backgroundColor(badgeInfoBackgroundColor())
             .onClick(() => this.creditsVisible = true);
         }
         .width('100%');
@@ -898,7 +884,22 @@ struct Scp3DArchivePage {
       }
       .width(LayoutPolicy.matchParent)
       .height(LayoutPolicy.matchParent)
-      .clip(false);
+      .clip(false)
+      .bindSheet(this.creditsVisible, this.creditsSheet(), {
+        detents: [SheetSize.MEDIUM, SheetSize.LARGE],
+        preferType: SheetType.BOTTOM,
+        dragBar: true,
+        showClose: true,
+        title: { title: '资源来源与许可', subtitle: this.contentId },
+        backgroundColor: $r('sys.color.comp_background_primary'),
+        onWillDismiss: (action: DismissSheetAction): void => {
+          this.creditsVisible = false;
+          action.dismiss();
+        },
+        onDisappear: (): void => {
+          this.creditsVisible = false;
+        }
+      });
     }
     .titleBar({
       avoidLayoutSafeArea: false,

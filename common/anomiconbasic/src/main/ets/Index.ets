@@ -40,6 +40,17 @@ export {
 } from './media/Index';
 export {
   objectClassColor,
+  materialCardSurfaceColor,
+  materialCardBorderColor,
+  recommendationFallbackBackgroundColor,
+  badgeInfoForegroundColor,
+  badgeInfoBackgroundColor,
+  badgeWarningForegroundColor,
+  badgeWarningBackgroundColor,
+  badgeDangerForegroundColor,
+  badgeDangerBackgroundColor,
+  accentPillBackgroundColor,
+  accentPillForegroundColor,
   ContentUpdateNotice,
   PHONE_TAB_CONTENT_MAX_WIDTH,
   PHONE_TAB_CONTENT_TOP_GAP,

@@ -412,7 +412,8 @@ export struct ArticleNativeRenderer {
     .lineHeightMultiple(this.lineHeightMultiple)
     .fontColor($r('sys.color.font'))
     .textAlign(TextAlign.JUSTIFY)
-    .wordBreak(WordBreak.BREAK_ALL)
+    .wordBreak(WordBreak.BREAK_WORD)
+    .enableAutoSpacing(true)
     .width('100%')
     .onAreaChange((_oldArea: Area, newArea: Area) => {
       this.recordOffset(row.key, newArea);

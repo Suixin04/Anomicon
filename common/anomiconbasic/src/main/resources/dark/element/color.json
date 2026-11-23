@@ -3,6 +3,66 @@
     {
       "name": "navigation_bar_scroll_background",
       "value": "#00000000"
+    },
+    {
+      "name": "material_card_surface",
+      "value": "#CC1C1C1F"
+    },
+    {
+      "name": "material_card_border",
+      "value": "#1FFFFFFF"
+    },
+    {
+      "name": "recommendation_fallback_bg",
+      "value": "#121215"
+    },
+    {
+      "name": "class_safe",
+      "value": "#22C55E"
+    },
+    {
+      "name": "class_euclid",
+      "value": "#F97316"
+    },
+    {
+      "name": "class_keter",
+      "value": "#EF4444"
+    },
+    {
+      "name": "class_thaumiel",
+      "value": "#3B82F6"
+    },
+    {
+      "name": "badge_info_fg",
+      "value": "#8AB4F8"
+    },
+    {
+      "name": "badge_info_bg",
+      "value": "#1D3152"
+    },
+    {
+      "name": "badge_warning_fg",
+      "value": "#F5C469"
+    },
+    {
+      "name": "badge_warning_bg",
+      "value": "#3A2C12"
+    },
+    {
+      "name": "badge_danger_fg",
+      "value": "#F28B82"
+    },
+    {
+      "name": "badge_danger_bg",
+      "value": "#3F1D20"
+    },
+    {
+      "name": "accent_pill_bg",
+      "value": "#3B6EC2"
+    },
+    {
+      "name": "accent_pill_fg",
+      "value": "#F4F8FF"
     }
   ]
 }

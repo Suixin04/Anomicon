@@ -33,7 +33,7 @@ export function ScpSearchPageBuilder(viewModel: CatalogSearchViewModel) {
  *
  * The Catalog HAR owns the complete search content and ViewModel projection;
  * this product seam owns the HDS destination, app-scoped search-state binding,
- * NavPathStack and the replace-to-Article effect.
+ * NavPathStack and the push-to-Article navigation.
  */
 @ComponentV2
 struct ScpSearchPage {
@@ -46,15 +46,9 @@ struct ScpSearchPage {
     const params: ScpArticleRouteParams = {
       content: createLibraryContentRef(LibraryContentKind.SCP, itemId, title)
     };
-    // Search is replaced by Article, so returning from Article lands directly
-    // on Catalog. Keep the shared query until the replacement is confirmed;
-    // a failed navigation must leave the user's search recoverable.
-    AppNavigationCoordinator.replace(this.pageStack, AppRoutes.ARTICLE, params)
-      .then((success: boolean): void => {
-        if (success) {
-          this.searchState.clear();
-        }
-      });
+    // Push Article above Search so returning from Article preserves the
+    // user's query, scope and filtered results.
+    AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
   }
 
   build() {
@@ -96,6 +90,9 @@ struct ScpSearchPage {
     .onBackPressed(() => {
       this.searchState.clear();
       return false;
+    })
+    .onWillDisappear(() => {
+      this.searchState.clear();
     })
     .ignoreLayoutSafeArea(
       [LayoutSafeAreaType.SYSTEM],

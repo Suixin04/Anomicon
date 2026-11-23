@@ -1,4 +1,17 @@
-export { objectClassColor } from './VisualTokens';
+export {
+  objectClassColor,
+  materialCardSurfaceColor,
+  materialCardBorderColor,
+  recommendationFallbackBackgroundColor,
+  badgeInfoForegroundColor,
+  badgeInfoBackgroundColor,
+  badgeWarningForegroundColor,
+  badgeWarningBackgroundColor,
+  badgeDangerForegroundColor,
+  badgeDangerBackgroundColor,
+  accentPillBackgroundColor,
+  accentPillForegroundColor
+} from './VisualTokens';
 export { AppBodyText, ReadingBodyText } from './TypographyText';
 export { SkeletonBlock } from './Skeleton';
 export { ContentUpdateNotice } from './ContentUpdateNotice';

@@ -9,18 +9,28 @@ import {
   uiMaterial
 } from '@kit.ArkUI';
 import {
+  ALL_SERIES_ID,
+  ALL_SERIES_LABEL,
   SCP_SERIES,
   ScpSeriesDescriptor
 } from '../../domain/ScpSeriesItem';
 
-function createSeriesItems(): ChipGroupV2Items {
-  const configs: ChipGroupV2ItemConfig[] = SCP_SERIES.map(
-    (series: ScpSeriesDescriptor): ChipGroupV2ItemConfig => ({
+function createSeriesItems(includeAll: boolean): ChipGroupV2Items {
+  const configs: ChipGroupV2ItemConfig[] = [];
+  if (includeAll) {
+    configs.push({
+      label: { text: ALL_SERIES_LABEL },
+      accessibilityDescription: '切换检索范围为全部 SCP 系列',
+      accessibilityLevel: 'yes'
+    });
+  }
+  SCP_SERIES.forEach((series: ScpSeriesDescriptor): void => {
+    configs.push({
       label: { text: series.label },
       accessibilityDescription: `切换图鉴到 SCP 系列 ${series.label}`,
       accessibilityLevel: 'yes'
-    })
-  );
+    });
+  });
   return new ChipGroupV2Items(configs);
 }
 
@@ -34,9 +44,10 @@ function createSeriesItems(): ChipGroupV2Items {
 @ComponentV2
 export struct CatalogSeriesSelector {
   @Require @Param selectedSeriesId: string;
+  @Param includeAll: boolean = false;
   @Event onSelect: (seriesId: string) => void = (_seriesId: string): void => {};
 
-  private readonly items: ChipGroupV2Items = createSeriesItems();
+  @Local private items: ChipGroupV2Items = createSeriesItems(false);
   private readonly itemSpace: ChipGroupV2Space = new ChipGroupV2Space({
     itemSpace: 8,
     startSpace: 16,
@@ -66,7 +77,22 @@ export struct CatalogSeriesSelector {
     selectedBackgroundSystemMaterial: this.selectedMaterial
   });
 
+  aboutToAppear(): void {
+    this.items = createSeriesItems(this.includeAll);
+  }
+
   private selectedIndexes(): number[] {
+    if (this.includeAll) {
+      if (this.selectedSeriesId === ALL_SERIES_ID) {
+        return [0];
+      }
+      for (let index: number = 0; index < SCP_SERIES.length; index++) {
+        if (SCP_SERIES[index].id === this.selectedSeriesId) {
+          return [index + 1];
+        }
+      }
+      return [0];
+    }
     for (let index: number = 0; index < SCP_SERIES.length; index++) {
       if (SCP_SERIES[index].id === this.selectedSeriesId) {
         return [index];
@@ -80,6 +106,17 @@ export struct CatalogSeriesSelector {
       return;
     }
     const index = indexes[0];
+    if (this.includeAll) {
+      const maxIndex = SCP_SERIES.length;
+      if (index < 0 || index > maxIndex) {
+        return;
+      }
+      const seriesId = index === 0 ? ALL_SERIES_ID : SCP_SERIES[index - 1].id;
+      if (seriesId !== this.selectedSeriesId) {
+        this.onSelect(seriesId);
+      }
+      return;
+    }
     if (index < 0 || index >= SCP_SERIES.length) {
       return;
     }

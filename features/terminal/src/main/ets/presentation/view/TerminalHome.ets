@@ -15,8 +15,14 @@ import { LibraryContentRef, LibraryFavorite } from 'library';
 import { ReadingHistoryEntry } from 'library';
 import { ResearchProgress } from 'library';
 import { LibraryCollectionMode } from 'library';
-import { pageContentTop, PHONE_PAGE_MARGIN, PHONE_TAB_CONTENT_MAX_WIDTH } from 'anomiconbasic';
-import { AppTypography } from 'anomiconbasic';
+import {
+  AppTypography,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
+  pageContentTop,
+  PHONE_PAGE_MARGIN,
+  PHONE_TAB_CONTENT_MAX_WIDTH
+} from 'anomiconbasic';
 import { TerminalViewModel } from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
 
@@ -486,8 +492,9 @@ export struct TerminalHome {
         }, (item: FoundationKnowledgeItem) => item.key)
       }
       .width('100%')
-      .backgroundColor(this.isImmersiveMaterialEnabled() ?
-        Color.Transparent : $r('sys.color.comp_background_primary'))
+      .backgroundColor(materialCardSurfaceColor(this.isImmersiveMaterialEnabled()))
+      .border(this.isImmersiveMaterialEnabled() ?
+        { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
       .borderRadius(18)
       .clip(true)
       .backgroundBlurStyle(this.isImmersiveMaterialEnabled() ? BlurStyle.COMPONENT_REGULAR : undefined)

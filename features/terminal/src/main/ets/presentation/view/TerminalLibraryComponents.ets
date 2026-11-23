@@ -4,7 +4,7 @@ import {
   LibraryFavorite
 } from 'library';
 import { ReadingHistoryEntry } from 'library';
-import { AppTypography } from 'anomiconbasic';
+import { AppTypography, materialCardBorderColor, materialCardSurfaceColor } from 'anomiconbasic';
 
 const FAVORITE_CARD_WIDTH: number = 220;
 const FAVORITE_CARD_HEIGHT: number = 132;
@@ -99,8 +99,9 @@ export struct TerminalFavoriteCards {
     }
     .width(FAVORITE_CARD_WIDTH)
     .height(FAVORITE_CARD_HEIGHT)
-    .backgroundColor(this.materialEnabled ?
-      Color.Transparent : $r('sys.color.comp_background_primary'))
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(20)
     .clip(true)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
@@ -393,8 +394,9 @@ export struct TerminalReadingHistoryList {
         .key((entry: ReadingHistoryEntry) => entry.content.key)
     }
     .width('100%')
-    .backgroundColor(this.materialEnabled ?
-      Color.Transparent : $r('sys.color.comp_background_primary'))
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(this.continueReading ? 22 : 18)
     .clip(true)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)

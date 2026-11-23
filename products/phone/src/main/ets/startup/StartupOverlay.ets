@@ -3,6 +3,7 @@ import {
   SYSTEM_START_MARK_PX
 } from './StartupCoordinator';
 import { ExploreRecommendationSkeleton } from 'explore';
+import { ThemeMode } from 'settings';
 
 /**
  * First-page continuation of the system Starting Window.
@@ -13,6 +14,17 @@ import { ExploreRecommendationSkeleton } from 'explore';
 @ComponentV2
 export struct StartupOverlay {
   @Require @Param coordinator: StartupCoordinator;
+  @Param themeMode: ThemeMode = ThemeMode.SYSTEM;
+
+  private backdropColor(): ResourceColor {
+    if (this.themeMode === ThemeMode.DARK) {
+      return '#000000';
+    }
+    if (this.themeMode === ThemeMode.LIGHT) {
+      return '#F1F3F5';
+    }
+    return $r('app.color.start_window_background');
+  }
 
   private markSize(): number {
     return this.getUIContext().px2vp(SYSTEM_START_MARK_PX);
@@ -105,7 +117,7 @@ export struct StartupOverlay {
       Column() {}
         .width(LayoutPolicy.matchParent)
         .height(LayoutPolicy.matchParent)
-        .background($r('app.color.start_window_background'), {
+        .background(this.backdropColor(), {
           ignoresLayoutSafeAreaEdges: [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]
         })
         .opacity(this.coordinator.backdropOpacity)

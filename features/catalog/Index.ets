@@ -19,6 +19,8 @@ export {
   ScpCatalogPayload,
   TaleRawEntry,
   TalePayload,
+  ALL_SERIES_ID,
+  ALL_SERIES_LABEL,
   DEFAULT_SERIES_ID,
   SCP_SERIES,
   ScpSeriesDescriptor,

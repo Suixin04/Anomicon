@@ -1,5 +1,12 @@
 import { ExploreRecommendation } from '../../domain/ExploreContracts';
-import { AppTypography, SkeletonBlock, ViewModelLoadState } from 'anomiconbasic';
+import {
+  AppTypography,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
+  recommendationFallbackBackgroundColor,
+  SkeletonBlock,
+  ViewModelLoadState
+} from 'anomiconbasic';
 import { ExploreHeroAnchor } from './ExploreViewContracts';
 
 const CARD_DISMISS_THRESHOLD: number = 88;
@@ -16,6 +23,7 @@ class ExploreRecommendationRowState {
   @Trace depth: number;
   @Trace imageFailed: boolean = false;
   @Trace imageGeneration: number = 0;
+  @Trace loadedSource: string = '';
 
   constructor(recommendation: ExploreRecommendation, depth: number = 4) {
     this.itemId = recommendation.entry.itemId;
@@ -233,6 +241,7 @@ struct ExploreRecommendationCard {
     // callbacks from the same Image node cannot flip the row back to failure.
     this.row.imageGeneration++;
     this.row.imageFailed = false;
+    this.row.loadedSource = params.source;
   }
 
   private handleImageError(params: ExploreRecommendationImageParams): void {
@@ -243,6 +252,7 @@ struct ExploreRecommendationCard {
     // unavailable. The deck-level "再换一批" action remains batch retry.
     this.row.imageGeneration++;
     this.row.imageFailed = true;
+    this.row.loadedSource = '';
   }
 
   private imageCompleteHandler(params: ExploreRecommendationImageParams): () => void {
@@ -269,17 +279,28 @@ struct ExploreRecommendationCard {
 
   @Builder
   private previewImage($$: ExploreRecommendationImageParams) {
-    Image($$.source)
-      .width('100%')
-      .height(176)
-      .objectFit(ImageFit.Cover)
-      // Recommendation cards never display the source at full resolution;
-      // let ImageKit decode to the measured card bounds to reduce memory and
-      // texture upload cost while keeping the original URL/cache contract.
-      .autoResize(true)
-      // Snapshot the reactive builder proxy before delayed image events arrive.
-      .onComplete(this.imageCompleteHandler($$))
-      .onError(this.imageErrorHandler($$))
+    Stack({ alignContent: Alignment.Center }) {
+      Image($$.source)
+        .width('100%')
+        .height(176)
+        .objectFit(ImageFit.Cover)
+        // Recommendation cards never display the source at full resolution;
+        // let ImageKit decode to the measured card bounds to reduce memory and
+        // texture upload cost while keeping the original URL/cache contract.
+        .autoResize(true)
+        // Snapshot the reactive builder proxy before delayed image events arrive.
+        .onComplete(this.imageCompleteHandler($$))
+        .onError(this.imageErrorHandler($$))
+
+      if (this.row.loadedSource !== $$.source) {
+        SkeletonBlock({ animated: this.row.depth === 0, radius: 0 })
+          .width('100%')
+          .height(176)
+          .hitTestBehavior(HitTestMode.None)
+      }
+    }
+    .width('100%')
+    .height(176)
   }
 
   private imageHasFailed(): boolean {
@@ -305,7 +326,8 @@ struct ExploreRecommendationCard {
     .width('100%')
     .height(176)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('sys.color.comp_background_tertiary'))
+    .backgroundColor(recommendationFallbackBackgroundColor())
+    .border({ width: { bottom: 0.5 }, color: $r('sys.color.comp_divider') })
     .accessibilityText(this.imageHasFailed() ? '图片加载失败，档案正文仍可打开' : '暂无预览图')
   }
 
@@ -359,9 +381,9 @@ struct ExploreRecommendationCard {
     .width('100%')
     .height(RECOMMENDATION_CARD_HEIGHT)
     // 叠卡升层只改变位置和透明度，不切换材质。卡组仅挂载当前四层。
-    .backgroundColor(this.materialEnabled ? Color.Transparent : $r('sys.color.comp_background_primary'))
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
-    .border({ width: 1, color: $r('sys.color.comp_divider') })
+    .border({ width: 1, color: materialCardBorderColor(this.materialEnabled) })
     .borderRadius(24)
     .clip(true)
     .scale({ x: this.scaleOfDepth(), y: this.scaleOfDepth() })
@@ -458,10 +480,14 @@ export struct ExploreRecommendationDeck {
       if (row === undefined) {
         row = new ExploreRecommendationRowState(recommendation);
       } else {
+        const previousPreview = row.recommendation.preview;
         const previewChanged = !this.samePreview(row.recommendation, recommendation);
+        const imageSourceChanged = previousPreview.path !== recommendation.preview.path ||
+          previousPreview.url !== recommendation.preview.url ||
+          previousPreview.failed !== recommendation.preview.failed;
         if (previewChanged || row.recommendation.entry.title !== recommendation.entry.title) {
           row.recommendation = recommendation;
-          if (previewChanged) {
+          if (imageSourceChanged) {
             row.imageGeneration++;
             row.imageFailed = false;
           }

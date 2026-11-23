@@ -29,7 +29,7 @@ import {
   SettingsFeatureGraph,
   createSettingsFeatureGraph
 } from 'settings';
-import { SettingsViewModel } from 'settings';
+import { SettingsViewModel, ThemeMode } from 'settings';
 import {
   ExploreContentUseCase,
   ExploreCollectionVM,
@@ -39,6 +39,7 @@ import {
   createExploreFeatureGraph
 } from 'explore';
 import {
+  ALL_SERIES_ID,
   CatalogContentUseCase,
   CatalogPreviewUseCase,
   CatalogSearchUseCase,
@@ -367,7 +368,12 @@ export class AppContainer {
     }
     const catalogUseCase = new CatalogContentUseCase(this.catalogRepository);
     const historyUseCase = new SearchHistoryUseCase(this.searchHistoryRepository);
-    return new CatalogSearchViewModel(new CatalogSearchUseCase(catalogUseCase, historyUseCase));
+    return new CatalogSearchViewModel(
+      new CatalogSearchUseCase(catalogUseCase, historyUseCase),
+      10,
+      undefined,
+      ALL_SERIES_ID
+    );
   }
 
   createArticleViewModel(): ArticleViewModel {
@@ -479,6 +485,11 @@ export class AppContainer {
     if (this.abilityScopeOwner.owns(context)) {
       this.settingsState?.applyThemeMode();
     }
+  }
+
+  initialThemeMode(context: common.UIAbilityContext): ThemeMode {
+    return this.abilityScopeOwner.owns(context) && this.settingsState !== undefined ?
+      this.settingsState.themeMode : ThemeMode.SYSTEM;
   }
 
   setReadingActivityForeground(context: common.UIAbilityContext, foreground: boolean): void {

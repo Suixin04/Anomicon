@@ -29,6 +29,10 @@ export const SCP_SERIES: ScpSeriesDescriptor[] = buildSeriesDescriptors();
 
 export const DEFAULT_SERIES_ID: string = 'scp-series';
 
+export const ALL_SERIES_ID: string = 'all';
+
+export const ALL_SERIES_LABEL: string = '全部系列';
+
 /** 编号 → 文章页地址（wikidot 对大小写不敏感，统一小写）。 */
 export function articleUrlOf(itemId: string): string {
   return `${WIKI_BASE}${itemId.toLowerCase()}`;

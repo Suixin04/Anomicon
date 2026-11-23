@@ -3,38 +3,6 @@
     {
       "name": "start_window_background",
       "value": "#F1F3F5"
-    },
-    {
-      "name": "class_safe",
-      "value": "#16A34A"
-    },
-    {
-      "name": "class_euclid",
-      "value": "#EA6C0A"
-    },
-    {
-      "name": "class_keter",
-      "value": "#DC2626"
-    },
-    {
-      "name": "class_thaumiel",
-      "value": "#2563EB"
-    },
-    {
-      "name": "class_safe_bg",
-      "value": "#1F16A34A"
-    },
-    {
-      "name": "class_euclid_bg",
-      "value": "#1FEA6C0A"
-    },
-    {
-      "name": "class_keter_bg",
-      "value": "#1FDC2626"
-    },
-    {
-      "name": "class_thaumiel_bg",
-      "value": "#1F2563EB"
     }
   ]
 }

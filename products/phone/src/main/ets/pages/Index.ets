@@ -50,7 +50,10 @@ struct PhoneIndex {
       });
 
       if (this.startupCoordinator.visible) {
-        StartupOverlay({ coordinator: this.startupCoordinator })
+        StartupOverlay({
+          coordinator: this.startupCoordinator,
+          themeMode: this.settings.themeMode
+        })
       }
     }
     .width('100%')
