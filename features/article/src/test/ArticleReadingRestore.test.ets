@@ -153,5 +153,31 @@ export default function articleReadingRestoreTest(): void {
       expect(viewModel.restoredScrollOffset).assertEqual(640);
       viewModel.dispose();
     });
+
+    it('preserves readingPercent updated while inactive without notifying listeners', 0, async () => {
+      const history = new DeferredArticleHistory();
+      const viewModel = createRestoreViewModel(history);
+      openArticle(viewModel);
+      await drainMicrotasks();
+
+      viewModel.setReadingPercent(11);
+      expect(viewModel.readingPercent).assertEqual(11);
+
+      viewModel.deactivate();
+      let notifications: number = 0;
+      const unsubscribe = viewModel.subscribe(() => {
+        notifications += 1;
+      });
+      viewModel.setReadingPercent(51);
+
+      expect(notifications).assertEqual(0);
+      expect(viewModel.readingPercent).assertEqual(51);
+
+      viewModel.activate();
+      expect(viewModel.readingPercent).assertEqual(51);
+
+      unsubscribe();
+      viewModel.dispose();
+    });
   });
 }

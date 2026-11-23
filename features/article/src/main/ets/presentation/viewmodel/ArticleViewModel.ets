@@ -697,7 +697,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
   }
 
   setReadingPercent(percent: number): void {
-    if (this.disposed || !this.active) {
+    if (this.disposed) {
       return;
     }
     // Math.min/Math.max propagate NaN.  Ignoring an invalid measurement keeps
@@ -709,7 +709,9 @@ export class ArticleViewModel implements ViewModelLifecycle {
     const normalized = Math.max(0, Math.min(100, Math.round(percent)));
     if (normalized !== this.readingPercent) {
       this.readingPercent = normalized;
-      this.notifyListeners();
+      if (this.active) {
+        this.notifyListeners();
+      }
     }
   }
 

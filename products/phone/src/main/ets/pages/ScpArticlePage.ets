@@ -723,9 +723,13 @@ struct ScpArticlePage {
             galleryAfterBody: this.isStoryDetail(),
             galleryReturnIndex: this.previewIndex,
             galleryReturnEpoch: this.galleryReturnEpoch,
+            materialEnabled: this.settings.immersiveMaterialEnabled,
             onRetryPartial: () => this.retryArticle(),
             onReadingProgressChange: (percent: number) => this.applyReadingPercent(percent),
-            onAnchorJump: () => this.hapticService.playSelection(this.settings.hapticEnabled),
+            onAnchorJump: () => {
+              this.hapticService.playSelection(this.settings.hapticEnabled);
+              this.noteReadingInteraction();
+            },
             onScrollDidScroll: () => {
               this.captureReadingOffset();
             },

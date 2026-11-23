@@ -1,11 +1,12 @@
-import { LengthMetrics } from '@kit.ArkUI';
+import { LengthMetrics, uiMaterial } from '@kit.ArkUI';
 import {
   AppTypography,
   badgeInfoBackgroundColor,
   ContentUpdateNotice,
   objectClassColor,
   PHONE_PAGE_MARGIN,
-  ROW_PRESS_MODIFIER
+  ROW_PRESS_MODIFIER,
+  uiImmersiveMaterialSupported
 } from 'anomiconbasic';
 import { ArticleRelatedTale } from '../../domain/ArticleContracts';
 import {
@@ -16,7 +17,7 @@ import {
   ScpTextSpan,
   ScpTextStyle
 } from '../../domain/ScpDocument';
-import { ArticleRenderer } from './ArticleRenderer';
+import { ArticleRenderer, FootnoteSheetHeader } from './ArticleRenderer';
 import { ScpArticleImage } from './ScpArticleImage';
 
 /**
@@ -410,6 +411,7 @@ export struct ArticleNativeRenderer {
   @Param galleryReturnIndex: number = 0;
   /** Monotonic token that makes repeated returns to the same index observable. */
   @Param galleryReturnEpoch: number = 0;
+  @Param materialEnabled: boolean = true;
 
   @Event onRetryPartial: () => void = () => {};
   @Event onReadingProgressChange: (percent: number) => void = (_percent: number) => {};
@@ -433,7 +435,18 @@ export struct ArticleNativeRenderer {
   @Local private relatedTaleRows: ArticleRelatedTaleRowState[] = [];
   @Local private highlightedAnchorKey: string = '';
   @Local private highlightOpacity: number = 0;
+  @Local private footnoteSheetVisible: boolean = false;
+  @Local private activeFootnoteIndex: number = -1;
   private readonly galleryController: SwiperController = new SwiperController();
+  private readonly footnoteSheetScroller: Scroller = new Scroller();
+  private readonly footnoteSheetDetents: [SheetSize, SheetSize, SheetSize] =
+    [SheetSize.FIT_CONTENT, SheetSize.MEDIUM, SheetSize.LARGE];
+  private readonly footnoteSheetMaterial: uiMaterial.ImmersiveMaterial =
+    new uiMaterial.ImmersiveMaterial({
+      style: uiMaterial.ImmersiveStyle.THICK,
+      applyShadow: true
+    });
+  private lastDocumentItemId: string = '';
   private viewportHeight: number = 0;
   private visibleStartIndex: number = -1;
   private visibleEndIndex: number = -1;
@@ -445,14 +458,22 @@ export struct ArticleNativeRenderer {
 
   aboutToAppear(): void {
     this.syncDocumentAndSections();
+    this.lastDocumentItemId = this.document.itemId;
   }
 
   aboutToDisappear(): void {
     this.clearHighlightTimer();
+    this.closeFootnoteSheet();
   }
 
   @Monitor('document')
   onDocumentChange(): void {
+    const sameItem = this.lastDocumentItemId.length > 0 &&
+      this.lastDocumentItemId === this.document.itemId;
+    const activeId = (sameItem && this.footnoteSheetVisible) ?
+      (this.currentFootnoteRow()?.footnote.id ?? '') : '';
+    const previousIndex = this.activeFootnoteIndex;
+
     this.clearHighlightTimer();
     this.highlightedAnchorKey = '';
     this.highlightOpacity = 0;
@@ -461,7 +482,23 @@ export struct ArticleNativeRenderer {
     this.visibleEndIndex = -1;
     this.lastReportedPercent = -1;
     this.syncDocumentAndSections();
+    this.lastDocumentItemId = this.document.itemId;
     this.galleryController.changeIndex(0, false);
+
+    if (!sameItem || !this.footnoteSheetVisible || this.footnoteRows.length === 0) {
+      this.closeFootnoteSheet();
+      return;
+    }
+    const remapped = activeId.length > 0 ?
+      ArticleRenderer.findFootnoteIndex(this.document.footnotes, activeId) : -1;
+    if (remapped >= 0) {
+      this.activeFootnoteIndex = remapped;
+    } else {
+      this.activeFootnoteIndex = Math.max(
+        0,
+        Math.min(previousIndex >= 0 ? previousIndex : 0, this.footnoteRows.length - 1)
+      );
+    }
   }
 
   @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody')
@@ -820,6 +857,129 @@ export struct ArticleNativeRenderer {
     this.triggerAnchorHighlight(key);
   }
 
+  private currentFootnoteRow(): ArticleFootnoteRowState | undefined {
+    if (this.activeFootnoteIndex >= 0 && this.activeFootnoteIndex < this.footnoteRows.length) {
+      return this.footnoteRows[this.activeFootnoteIndex];
+    }
+    return undefined;
+  }
+
+  private currentFootnoteBlocks(): ArticleBlockRowState[] {
+    return this.currentFootnoteRow()?.blocks ?? [];
+  }
+
+  private hasPreviousFootnote(): boolean {
+    return this.activeFootnoteIndex > 0 && this.footnoteRows.length > 0;
+  }
+
+  private hasNextFootnote(): boolean {
+    return this.activeFootnoteIndex >= 0 && this.activeFootnoteIndex < this.footnoteRows.length - 1;
+  }
+
+  private scrollFootnoteSheetToTop(): void {
+    try {
+      this.footnoteSheetScroller.scrollEdge(Edge.Top);
+    } catch (_error) {
+      // Sheet Scroll is not bound yet on initial open; ignore harmless 100004 error.
+    }
+  }
+
+  private openFootnoteSheet(referenceId: string, labelText: string): void {
+    const targetIndex = ArticleRenderer.findFootnoteIndex(
+      this.document.footnotes,
+      referenceId,
+      labelText
+    );
+    if (targetIndex < 0 || targetIndex >= this.footnoteRows.length) {
+      this.jumpTo(`fn:${referenceId}`);
+      return;
+    }
+    this.activeFootnoteIndex = targetIndex;
+    this.footnoteSheetVisible = true;
+    this.onAnchorJump();
+    this.scrollFootnoteSheetToTop();
+  }
+
+  private closeFootnoteSheet(): void {
+    this.footnoteSheetVisible = false;
+    this.activeFootnoteIndex = -1;
+  }
+
+  private stepFootnote(delta: number): void {
+    const next = ArticleRenderer.stepFootnoteIndex(
+      this.activeFootnoteIndex,
+      delta,
+      this.footnoteRows.length
+    );
+    if (next < 0 || next === this.activeFootnoteIndex) {
+      return;
+    }
+    this.activeFootnoteIndex = next;
+    this.scrollFootnoteSheetToTop();
+    const row = this.currentFootnoteRow();
+    if (row !== undefined) {
+      const refKey = `ref:${row.footnote.id}`;
+      if (this.anchorIndexByKey.has(refKey)) {
+        this.jumpTo(refKey);
+        return;
+      }
+    }
+    this.onAnchorJump();
+  }
+
+  private handleOpenArticleLink(url: string, title: string): void {
+    if (this.footnoteSheetVisible && !url.trim().startsWith('#')) {
+      this.closeFootnoteSheet();
+    }
+    this.onOpenArticleLink(url, title);
+  }
+
+  private handleOpenUrl(url: string): void {
+    if (this.footnoteSheetVisible) {
+      this.closeFootnoteSheet();
+    }
+    this.onOpenUrl(url);
+  }
+
+  private footnoteSheetOptions(): SheetOptions {
+    const row = this.currentFootnoteRow();
+    const header: FootnoteSheetHeader = row !== undefined ?
+      ArticleRenderer.footnoteSheetHeader(
+        row.footnote,
+        this.activeFootnoteIndex,
+        this.footnoteRows.length
+      ) :
+      { title: '脚注', subtitle: '' };
+    const options: SheetOptions = {
+      detents: this.footnoteSheetDetents,
+      scrollSizeMode: ScrollSizeMode.CONTINUOUS,
+      preferType: SheetType.CENTER,
+      dragBar: true,
+      showClose: true,
+      title: header.subtitle.length > 0 ?
+        { title: header.title, subtitle: header.subtitle } :
+        { title: header.title },
+      onWillDismiss: (action: DismissSheetAction): void => {
+        this.closeFootnoteSheet();
+        action.dismiss();
+      },
+      onDisappear: (): void => {
+        this.closeFootnoteSheet();
+      }
+    };
+    if (this.materialEnabled) {
+      if (uiImmersiveMaterialSupported()) {
+        options.systemMaterial = this.footnoteSheetMaterial;
+      } else {
+        options.blurStyle = BlurStyle.COMPONENT_THICK;
+      }
+      options.backgroundColor = Color.Transparent;
+    } else {
+      options.backgroundColor = $r('sys.color.comp_background_primary');
+    }
+    return options;
+  }
+
   private isParagraphHighlighted(block: ScpContentBlock): boolean {
     if (this.highlightedAnchorKey.length === 0) {
       return false;
@@ -868,7 +1028,7 @@ export struct ArticleNativeRenderer {
             .fontSize(this.fontSize * 0.75)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('sys.color.font_emphasize'))
-            .onClick(() => this.jumpTo(`fn:${spanRow.span.referenceId}`))
+            .onClick(() => this.openFootnoteSheet(spanRow.span.referenceId, spanRow.span.text))
         } else {
           Span(spanRow.span.text)
             .fontWeight(spanRow.span.style === ScpTextStyle.STRONG ? FontWeight.Bold : FontWeight.Regular)
@@ -883,7 +1043,7 @@ export struct ArticleNativeRenderer {
             .fontColor(spanRow.span.style === ScpTextStyle.CODE || spanRow.span.style === ScpTextStyle.LINK ?
               $r('sys.color.font_emphasize') : $r('sys.color.font'))
             .onClick(spanRow.span.style === ScpTextStyle.LINK ?
-              () => this.onOpenArticleLink(spanRow.span.target, spanRow.span.text) : () => {
+              () => this.handleOpenArticleLink(spanRow.span.target, spanRow.span.text) : () => {
               })
         }
       }, (spanRow: ArticleSpanRowState) => spanRow.key)
@@ -1008,7 +1168,7 @@ export struct ArticleNativeRenderer {
       Button('在浏览器中打开', { stateEffect: false })
         .fontSize(AppTypography.CAPTION_L)
         .height(32)
-        .onClick(() => this.onOpenUrl(row.block.source))
+        .onClick(() => this.handleOpenUrl(row.block.source))
     }
     .width('100%')
     .padding(12)
@@ -1021,8 +1181,8 @@ export struct ArticleNativeRenderer {
     Column({ space: 6 }) {
       ScpArticleImage({
         url: row.block.source,
-        onOpen: () => this.onOpenUrl(row.block.source),
-        onOpenInBrowser: (url: string) => this.onOpenUrl(url)
+        onOpen: () => this.handleOpenUrl(row.block.source),
+        onOpenInBrowser: (url: string) => this.handleOpenUrl(url)
       })
       if (row.block.caption.length > 0) {
         Text(row.block.caption)
@@ -1197,6 +1357,7 @@ export struct ArticleNativeRenderer {
     Row({ space: 6 }) {
       Text(`${row.footnote.index}.`)
         .fontSize(this.fontSize)
+        .lineHeightMultiple(this.lineHeightMultiple)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('sys.color.font_emphasize'))
       Column({ space: 6 }) {
@@ -1224,7 +1385,7 @@ export struct ArticleNativeRenderer {
       .alignItems(HorizontalAlign.Start)
     }
     .width('100%')
-    .padding({ left: 4, right: 4, top: 4, bottom: 4 })
+    .padding({ top: 4, bottom: 4 })
     .background(this.anchorHighlightBackdrop(this.isFootnoteHighlighted(row.footnote.id)))
     .alignItems(VerticalAlign.Top)
   }
@@ -1356,6 +1517,101 @@ export struct ArticleNativeRenderer {
     }
   }
 
+  @Builder
+  private footnoteStepButton(delta: number) {
+    Row() {
+      Row({ space: 4 }) {
+        if (delta < 0) {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(14)
+            .fontColor([$r('sys.color.font')])
+        }
+        Text(delta < 0 ? '上一条' : '下一条')
+          .fontSize(AppTypography.CAPTION_L)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font'))
+        if (delta > 0) {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(14)
+            .fontColor([$r('sys.color.font')])
+        }
+      }
+      .attributeModifier(ROW_PRESS_MODIFIER)
+      .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+      .constraintSize({ minHeight: 36 })
+      .padding({
+        left: delta < 0 ? 12 : 14,
+        right: delta < 0 ? 14 : 12,
+        top: 6,
+        bottom: 6
+      })
+      .backgroundColor($r('sys.color.comp_background_tertiary'))
+      .borderRadius(18)
+      .onClick(() => this.stepFootnote(delta))
+    }
+    .opacity((delta < 0 ? this.hasPreviousFootnote() : this.hasNextFootnote()) ? 1 : 0.38)
+    .enabled(delta < 0 ? this.hasPreviousFootnote() : this.hasNextFootnote())
+    .accessibilityText(delta < 0 ? '上一条脚注' : '下一条脚注')
+  }
+
+  @Builder
+  private footnoteSheetBuilder() {
+    Column() {
+      if (this.currentFootnoteRow() !== undefined) {
+        Scroll(this.footnoteSheetScroller) {
+          Column({ space: 10 }) {
+            ForEach(this.currentFootnoteBlocks(), (block: ArticleBlockRowState) => {
+              this.blockView(block)
+            }, (block: ArticleBlockRowState) => block.key)
+          }
+          .width('100%')
+          .alignItems(HorizontalAlign.Start)
+          .padding({
+            left: PHONE_PAGE_MARGIN,
+            right: PHONE_PAGE_MARGIN,
+            top: 4,
+            bottom: this.footnoteRows.length > 1 ? 16 : 24
+          })
+        }
+        .width('100%')
+        .flexShrink(1)
+        .constraintSize({ minHeight: 56 })
+        .align(Alignment.Top)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+        .nestedScroll({
+          scrollForward: NestedScrollMode.PARENT_FIRST,
+          scrollBackward: NestedScrollMode.SELF_FIRST
+        })
+
+        if (this.footnoteRows.length > 1) {
+          Divider()
+            .strokeWidth(0.5)
+            .color($r('sys.color.comp_divider'))
+            .flexShrink(0)
+
+          Row({ space: 8 }) {
+            this.footnoteStepButton(-1)
+
+            Blank()
+
+            this.footnoteStepButton(1)
+          }
+          .width('100%')
+          .padding({
+            left: PHONE_PAGE_MARGIN,
+            right: PHONE_PAGE_MARGIN,
+            top: 10,
+            bottom: 20
+          })
+          .alignItems(VerticalAlign.Center)
+          .flexShrink(0)
+        }
+      }
+    }
+    .width('100%')
+  }
+
   build() {
     List({ scroller: this.scroller }) {
       Repeat<ArticleSectionRow>(this.sectionRows)
@@ -1407,5 +1663,6 @@ export struct ArticleNativeRenderer {
       this.publishReadingProgress();
       this.onScrollStop();
     })
+    .bindSheet(this.footnoteSheetVisible, this.footnoteSheetBuilder(), this.footnoteSheetOptions())
   }
 }
