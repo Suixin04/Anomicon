@@ -57,6 +57,9 @@ function arkStore(db) {
       return db.prepare(`INSERT OR REPLACE INTO ${table} (${keys}) VALUES (${args})`)
         .run(...Object.values(values)).lastInsertRowid;
     },
+    delete(predicate) {
+      return db.prepare(`DELETE FROM offline_articles WHERE ${predicate.key}=?`).run(predicate.value).changes;
+    },
     query(predicate, columns) {
       const row = db.prepare(`SELECT ${columns} FROM offline_articles WHERE ${predicate.key}=?`).get(predicate.value);
       return { goToFirstRow: () => !!row, getColumnIndex: key => columns.indexOf(key),
@@ -259,10 +262,12 @@ test('embedded body timeout and stale fallback keep v1; confirmed nested retry p
   await assertReopened('v2');
 });
 
-test('a same-URL image refresh bypasses both caches and publishes current GIF bytes after retry', async t => {
+async function checkImageRefresh(t, initialFormat) {
   const scenario = createScenario(t);
-  const red = Buffer.from('47494638396101000100800000ff00000000002c00000000010001000002024401003b', 'hex');
-  const blue = Buffer.from(red);
+  const redGif = Buffer.from('47494638396101000100800000ff00000000002c00000000010001000002024401003b', 'hex');
+  const redPng = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC', 'base64');
+  const red = initialFormat === 'png' ? redPng : redGif;
+  const blue = Buffer.from(redGif);
   blue.set([0, 0, 255], 13);
   let response = red;
   let statusCode = 200;
@@ -276,19 +281,26 @@ test('a same-URL image refresh bypasses both caches and publishes current GIF by
       return { updateSync: ({ data }) => hash.update(data), digestSync: () => ({ data: hash.digest() }) };
     } },
     image: { createImageSource(bytes) {
-      const gif = typeof bytes === 'number' ? fs.readFileSync(bytes) : Buffer.from(bytes);
-      assert.equal(gif.toString('ascii', 0, 6), 'GIF89a');
-      return { getImageInfo: () => ({ size: { width: gif.readUInt16LE(6), height: gif.readUInt16LE(8) }, mimeType: 'image/gif' }),
+      const data = typeof bytes === 'number' ? fs.readFileSync(bytes) : Buffer.from(bytes);
+      const png = data.equals(redPng);
+      if (!png) assert.equal(data.toString('ascii', 0, 6), 'GIF89a');
+      const size = png ? { width: data.readUInt32BE(16), height: data.readUInt32BE(20) } :
+        { width: data.readUInt16LE(6), height: data.readUInt16LE(8) };
+      return { getImageInfo: () => ({ size, mimeType: png ? 'image/png' : 'image/gif' }),
         createPixelMap: () => ({ release() {} }), release() {} };
     } },
     rcp: { Request: class { constructor(url) { this.url = url; } }, createSession: () => ({ fetch(request) {
       requests.push(request.url);
       if (statusCode === 200) request.destination(Uint8Array.from(response).buffer);
-      return { statusCode, headers: { 'content-type': 'image/gif' } };
+      return { statusCode, headers: { 'content-type': response === redPng ? 'image/png' : 'image/gif' } };
     } }) }
   });
-  const service = new ScpImageCacheService();
-  service.initialize({ cacheDir: scenario.root });
+  const openImageCache = () => {
+    const service = new ScpImageCacheService();
+    service.initialize({ cacheDir: scenario.root });
+    return service;
+  };
+  let service = openImageCache();
   const open = () => scenario.reopen({ fetchToLocalFile: (url, forceNetwork) => service.load(url, forceNetwork) });
   const url = imageUrl('diagram');
   const original = document('v1', ['diagram']);
@@ -307,8 +319,23 @@ test('a same-URL image refresh bypasses both caches and publishes current GIF by
   assert.deepEqual(requests, [url]);
   await assert.rejects(open().save(content, updated, JSON.stringify(updated), undefined, true), /仍缺 1 张图/);
   await assertReopened(original, red);
+  assert.deepEqual(fs.readFileSync(await service.load(url)), red);
   statusCode = 200;
   await open().save(content, updated, JSON.stringify(updated), undefined, true);
   assert.deepEqual(requests, [url, url, url]);
   await assertReopened(updated, blue);
-});
+
+  await open().remove(content.key);
+  assert.equal(await open().loadDocument(content), undefined);
+  service = openImageCache();
+  const ordinaryPath = await service.load(url);
+  await open().save(content, updated, JSON.stringify(updated));
+  await assertReopened(updated, blue);
+  assert.deepEqual(fs.readFileSync(ordinaryPath), blue);
+  assert.deepEqual(requests, [url, url, url]);
+}
+
+test('a same-URL image refresh bypasses both caches and publishes current GIF bytes after retry', t =>
+  checkImageRefresh(t, 'gif'));
+test('a PNG replaced by a GIF stays current after removing and saving the article again', t =>
+  checkImageRefresh(t, 'png'));

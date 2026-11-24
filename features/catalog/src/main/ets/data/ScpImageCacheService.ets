@@ -206,7 +206,7 @@ export class ScpImageCacheService {
     if (existing !== undefined) {
       return existing;
     }
-    const task = this.downloadToCache(normalizedUrl, stem);
+    const task = this.downloadToCache(normalizedUrl, stem, forceNetwork);
     this.inflight.set(normalizedUrl, task);
     task.then(() => {
       this.inflight.delete(normalizedUrl);
@@ -283,7 +283,7 @@ export class ScpImageCacheService {
     }
   }
 
-  private async downloadToCache(normalizedUrl: string, stem: string): Promise<string> {
+  private async downloadToCache(normalizedUrl: string, stem: string, refresh: boolean): Promise<string> {
     const downloaded = await this.downloadWithSlot(normalizedUrl);
     const inspection = await this.inspectBuffer(downloaded.bytes);
     const declaredExtension = this.extensionForMimeType(downloaded.declaredMimeType);
@@ -294,6 +294,18 @@ export class ScpImageCacheService {
     }
     const path = `${this.imageDir}/${stem}.${inspection.extension}`;
     await this.writeAtomically(path, downloaded.bytes);
+    if (refresh) {
+      // 普通取图按后缀查找。新图就绪后移除同一 URL 的旧格式，再发布本次刷新。
+      for (const extension of CACHE_EXTENSIONS) {
+        if (extension !== inspection.extension) {
+          const previousPath = `${this.imageDir}/${stem}.${extension}`;
+          if (await this.existsAsync(previousPath)) {
+            await fs.unlink(previousPath);
+          }
+          this.validatedPaths.delete(previousPath);
+        }
+      }
+    }
     this.validatedPaths.add(path);
     return path;
   }
