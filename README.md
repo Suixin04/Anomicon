@@ -91,6 +91,18 @@ Anomicon/
 └── tools/archive3d/             # 三维资源批量审查与 GLB 预处理脚本
 ```
 
+## 主机测试
+
+配置 DevEco Studio 的 API 26 SDK、`ohpm` 和 `hvigorw` 后，在仓库根目录运行：
+
+```bash
+ohpm install --all
+node scripts/test-host.mjs                 # 全部有主机用例的模块
+node scripts/test-host.mjs catalog article # 仅运行指定模块
+```
+
+发布流水线使用同一命令。它读取每个模块本次运行的 Hypium 逐例报告，列出失败用例并返回非零退出码。
+
 ## 数据与权限
 
 应用从 [SCP 基金会中文 Wiki](https://scp-wiki-cn.wikidot.com/) 获取公开页面，并在设备上保存目录、文章和图片缓存，以及个人收藏、设置与阅读记录。4 项经典三维模型随应用内置提供，其余 6 项按需模型从资源清单锁定的上游提交通过 HTTPS 下载，并在加载前严格校验文件字节数和 SHA-256。
