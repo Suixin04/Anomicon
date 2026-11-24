@@ -1,5 +1,6 @@
 /** Feature-owned Catalog views; product shells inject navigation effects. */
 export {
+  CatalogSearchSelection,
   CatalogSearchSharedState,
   CatalogSearchViewContract,
   CatalogSearchViewInput
@@ -10,6 +11,7 @@ export {
   CatalogSearchView
 } from './CatalogSearchView';
 export { CatalogSeriesSelector } from './CatalogSeriesSelector';
+export { CatalogBranchSeriesBar } from './CatalogBranchSeriesBar';
 export { ScpCatalogHome } from './ScpCatalogHome';
 export { CatalogPreviewLoader, ScpCatalogCard } from './ScpCatalogCard';
 export { TaleList } from './TaleList';

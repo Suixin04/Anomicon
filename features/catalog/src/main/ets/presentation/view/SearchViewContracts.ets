@@ -1,4 +1,25 @@
+import { CatalogSearchTargetKind } from '../../domain/CatalogDirectTarget';
 import { CatalogSearchViewModel } from '../viewmodel/CatalogSearchViewModel';
+
+/** 统一检索点击或直达动作产生的打开意图。 */
+export class CatalogSearchSelection {
+  readonly kind: CatalogSearchTargetKind;
+  readonly itemId: string;
+  readonly title: string;
+  readonly anchor?: string;
+
+  constructor(
+    kind: CatalogSearchTargetKind,
+    itemId: string,
+    title: string,
+    anchor?: string
+  ) {
+    this.kind = kind;
+    this.itemId = itemId;
+    this.title = title;
+    this.anchor = anchor;
+  }
+}
 
 /**
  * App-scoped series/query bridge supplied by the product host.
@@ -18,7 +39,7 @@ export interface CatalogSearchViewContract {
   readonly viewModel: CatalogSearchViewModel;
   readonly scroller: Scroller;
   readonly sharedState: CatalogSearchSharedState;
-  readonly onOpenContent: (itemId: string, title: string) => void;
+  readonly onOpenContent: (selection: CatalogSearchSelection) => void;
   readonly materialEnabled: boolean;
 }
 
@@ -32,14 +53,14 @@ export class CatalogSearchViewInput implements CatalogSearchViewContract {
   readonly viewModel: CatalogSearchViewModel;
   readonly scroller: Scroller;
   readonly sharedState: CatalogSearchSharedState;
-  readonly onOpenContent: (itemId: string, title: string) => void;
+  readonly onOpenContent: (selection: CatalogSearchSelection) => void;
   readonly materialEnabled: boolean;
 
   constructor(
     viewModel: CatalogSearchViewModel,
     scroller: Scroller,
     sharedState: CatalogSearchSharedState,
-    onOpenContent: (itemId: string, title: string) => void,
+    onOpenContent: (selection: CatalogSearchSelection) => void,
     materialEnabled: boolean = true
   ) {
     this.viewModel = viewModel;

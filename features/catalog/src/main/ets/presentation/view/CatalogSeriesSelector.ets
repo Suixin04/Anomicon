@@ -10,22 +10,24 @@ import {
 } from '@kit.ArkUI';
 import { PHONE_PAGE_MARGIN } from 'anomiconbasic';
 import {
+  ALL_CATALOG_SERIES,
   ALL_SERIES_ID,
   ALL_SERIES_LABEL,
-  SCP_SERIES,
+  catalogSeriesForBranch,
+  ScpCatalogBranch,
   ScpSeriesDescriptor
 } from '../../domain/ScpSeriesItem';
 
-function createSeriesItems(includeAll: boolean): ChipGroupV2Items {
+function createSeriesItems(seriesList: ScpSeriesDescriptor[], includeAll: boolean): ChipGroupV2Items {
   const configs: ChipGroupV2ItemConfig[] = [];
   if (includeAll) {
     configs.push({
       label: { text: ALL_SERIES_LABEL },
-      accessibilityDescription: '切换检索范围为全部 SCP 系列',
+      accessibilityDescription: '切换检索范围为全部系列与故事',
       accessibilityLevel: 'yes'
     });
   }
-  SCP_SERIES.forEach((series: ScpSeriesDescriptor): void => {
+  seriesList.forEach((series: ScpSeriesDescriptor): void => {
     configs.push({
       label: { text: series.label },
       accessibilityDescription: `切换图鉴到 SCP 系列 ${series.label}`,
@@ -45,12 +47,13 @@ function createSeriesItems(includeAll: boolean): ChipGroupV2Items {
 @ComponentV2
 export struct CatalogSeriesSelector {
   @Require @Param selectedSeriesId: string;
+  @Param branch: ScpCatalogBranch | undefined = undefined;
   @Param includeAll: boolean = false;
   @Param materialEnabled: boolean = true;
   @Param horizontalMargin: number = PHONE_PAGE_MARGIN;
   @Event onSelect: (seriesId: string) => void = (_seriesId: string): void => {};
 
-  @Local private items: ChipGroupV2Items = createSeriesItems(false);
+  @Local private items: ChipGroupV2Items = createSeriesItems(ALL_CATALOG_SERIES, false);
   @Local private itemSpace: ChipGroupV2Space = new ChipGroupV2Space({
     itemSpace: 8,
     startSpace: PHONE_PAGE_MARGIN,
@@ -74,7 +77,7 @@ export struct CatalogSeriesSelector {
     });
   private readonly materialItemStyle: ChipGroupV2ItemStyle = new ChipGroupV2ItemStyle({
     // Use the native size enum instead of fixed dimensions so font-scale
-    // adaptation remains available while fitting the 48 vp title toolbar.
+    // adaptation remains available while fitting the toolbar row cleanly.
     size: ChipV2Size.SMALL,
     backgroundSystemMaterial: this.normalMaterial,
     selectedBackgroundSystemMaterial: this.selectedMaterial
@@ -84,13 +87,29 @@ export struct CatalogSeriesSelector {
   });
 
   aboutToAppear(): void {
-    this.items = createSeriesItems(this.includeAll);
+    this.refreshItems();
     this.updateHorizontalSpace();
+  }
+
+  @Monitor('branch', 'includeAll')
+  onSeriesScopeChange(): void {
+    this.refreshItems();
   }
 
   @Monitor('horizontalMargin')
   onHorizontalMarginChange(): void {
     this.updateHorizontalSpace();
+  }
+
+  private activeSeries(): ScpSeriesDescriptor[] {
+    if (this.branch === undefined) {
+      return ALL_CATALOG_SERIES;
+    }
+    return catalogSeriesForBranch(this.branch);
+  }
+
+  private refreshItems(): void {
+    this.items = createSeriesItems(this.activeSeries(), this.includeAll);
   }
 
   private updateHorizontalSpace(): void {
@@ -102,19 +121,20 @@ export struct CatalogSeriesSelector {
   }
 
   private selectedIndexes(): number[] {
+    const seriesList = this.activeSeries();
     if (this.includeAll) {
       if (this.selectedSeriesId === ALL_SERIES_ID) {
         return [0];
       }
-      for (let index: number = 0; index < SCP_SERIES.length; index++) {
-        if (SCP_SERIES[index].id === this.selectedSeriesId) {
+      for (let index: number = 0; index < seriesList.length; index++) {
+        if (seriesList[index].id === this.selectedSeriesId) {
           return [index + 1];
         }
       }
       return [0];
     }
-    for (let index: number = 0; index < SCP_SERIES.length; index++) {
-      if (SCP_SERIES[index].id === this.selectedSeriesId) {
+    for (let index: number = 0; index < seriesList.length; index++) {
+      if (seriesList[index].id === this.selectedSeriesId) {
         return [index];
       }
     }
@@ -126,21 +146,22 @@ export struct CatalogSeriesSelector {
       return;
     }
     const index = indexes[0];
+    const seriesList = this.activeSeries();
     if (this.includeAll) {
-      const maxIndex = SCP_SERIES.length;
+      const maxIndex = seriesList.length;
       if (index < 0 || index > maxIndex) {
         return;
       }
-      const seriesId = index === 0 ? ALL_SERIES_ID : SCP_SERIES[index - 1].id;
+      const seriesId = index === 0 ? ALL_SERIES_ID : seriesList[index - 1].id;
       if (seriesId !== this.selectedSeriesId) {
         this.onSelect(seriesId);
       }
       return;
     }
-    if (index < 0 || index >= SCP_SERIES.length) {
+    if (index < 0 || index >= seriesList.length) {
       return;
     }
-    const seriesId = SCP_SERIES[index].id;
+    const seriesId = seriesList[index].id;
     if (seriesId !== this.selectedSeriesId) {
       this.onSelect(seriesId);
     }

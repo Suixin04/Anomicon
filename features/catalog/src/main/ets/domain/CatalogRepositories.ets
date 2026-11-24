@@ -63,14 +63,65 @@ export interface CatalogTitleResolver {
   resolveMany(itemIds: string[]): Promise<Map<string, string>>;
 }
 
-/** 供纯 application 用例过滤，避免把 UI DTO 放入 domain。 */
+function compactSearchToken(value: string): string {
+  return value.toLowerCase().replace(/[\s-]+/g, '');
+}
+
+/** 供纯 application 用例过滤，避免把 UI DTO 放入 domain；按精确/前缀/包含分段保持稳定排序。 */
 export function filterCatalogEntries(entries: CatalogEntry[], query: string): CatalogEntry[] {
   const normalized = query.trim().toLowerCase();
   if (normalized.length === 0) {
     return entries.slice();
   }
-  return entries.filter((entry: CatalogEntry): boolean =>
-    entry.itemId.toLowerCase().includes(normalized) || entry.title.toLowerCase().includes(normalized));
+  const compact = compactSearchToken(normalized);
+  if (compact.length === 0) {
+    return entries.slice();
+  }
+  const prefixedCompact = compact.startsWith('scp') ? compact : `scp${compact}`;
+  const exactBucket: CatalogEntry[] = [];
+  const idPrefixBucket: CatalogEntry[] = [];
+  const titlePrefixBucket: CatalogEntry[] = [];
+  const containsBucket: CatalogEntry[] = [];
+
+  for (let index = 0; index < entries.length; index++) {
+    const entry = entries[index];
+    const idLower = entry.itemId.toLowerCase();
+    const titleLower = entry.title.toLowerCase();
+    const compactId = compactSearchToken(idLower);
+
+    if (
+      idLower === normalized ||
+      titleLower === normalized ||
+      compactId === compact ||
+      compactId === prefixedCompact
+    ) {
+      exactBucket.push(entry);
+      continue;
+    }
+    if (
+      idLower.startsWith(normalized) ||
+      compactId.startsWith(compact) ||
+      compactId.startsWith(prefixedCompact)
+    ) {
+      idPrefixBucket.push(entry);
+      continue;
+    }
+    if (titleLower.startsWith(normalized)) {
+      titlePrefixBucket.push(entry);
+      continue;
+    }
+    if (
+      idLower.includes(normalized) ||
+      titleLower.includes(normalized) ||
+      compactId.includes(compact)
+    ) {
+      containsBucket.push(entry);
+    }
+  }
+  return exactBucket
+    .concat(idPrefixBucket)
+    .concat(titlePrefixBucket)
+    .concat(containsBucket);
 }
 
 export function filterTaleEntries(
@@ -80,14 +131,34 @@ export function filterTaleEntries(
 ): CatalogTaleEntry[] {
   const normalizedQuery = query.trim().toLowerCase();
   const normalizedLetter = letter.trim().toUpperCase();
-  return tales.filter((tale: CatalogTaleEntry): boolean => {
+  const compactQuery = compactSearchToken(normalizedQuery);
+  const exactBucket: CatalogTaleEntry[] = [];
+  const prefixBucket: CatalogTaleEntry[] = [];
+  const containsBucket: CatalogTaleEntry[] = [];
+
+  for (let index = 0; index < tales.length; index++) {
+    const tale = tales[index];
     if (normalizedLetter.length > 0 && tale.id.charAt(0).toUpperCase() !== normalizedLetter) {
-      return false;
+      continue;
     }
     if (normalizedQuery.length === 0) {
-      return true;
+      exactBucket.push(tale);
+      continue;
     }
-    return tale.id.toLowerCase().includes(normalizedQuery) ||
-      tale.title.toLowerCase().includes(normalizedQuery);
-  });
+    const idLower = tale.id.toLowerCase();
+    const titleLower = tale.title.toLowerCase();
+    const compactId = compactSearchToken(idLower);
+    if (idLower === normalizedQuery || titleLower === normalizedQuery) {
+      exactBucket.push(tale);
+    } else if (idLower.startsWith(normalizedQuery) || titleLower.startsWith(normalizedQuery)) {
+      prefixBucket.push(tale);
+    } else if (
+      idLower.includes(normalizedQuery) ||
+      titleLower.includes(normalizedQuery) ||
+      (compactQuery.length > 0 && compactId.includes(compactQuery))
+    ) {
+      containsBucket.push(tale);
+    }
+  }
+  return exactBucket.concat(prefixBucket).concat(containsBucket);
 }

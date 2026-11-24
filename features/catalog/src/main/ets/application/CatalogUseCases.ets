@@ -118,14 +118,24 @@ export class SearchHistoryUseCase {
   }
 }
 
-/** 搜索结果组合用例，集中处理目录过滤与随机发现。 */
+/** 统一检索组合用例：集中处理主站/CN 目录、故事目录过滤与随机发现。 */
 export class CatalogSearchUseCase {
   private readonly catalog: CatalogContentUseCase;
   private readonly history: SearchHistoryUseCase;
+  private readonly tales?: TaleContentUseCase;
 
-  constructor(catalog: CatalogContentUseCase, history: SearchHistoryUseCase) {
+  constructor(
+    catalog: CatalogContentUseCase,
+    history: SearchHistoryUseCase,
+    tales?: TaleContentUseCase
+  ) {
     this.catalog = catalog;
     this.history = history;
+    this.tales = tales;
+  }
+
+  hasTales(): boolean {
+    return this.tales !== undefined;
   }
 
   load(
@@ -146,6 +156,36 @@ export class CatalogSearchUseCase {
 
   observe(seriesId: string, listener: (snapshot: CatalogSnapshot) => void): () => void {
     return this.catalog.observe(seriesId, listener);
+  }
+
+  async cachedTales(): Promise<TaleSnapshot | undefined> {
+    if (this.tales === undefined) {
+      return undefined;
+    }
+    return this.tales.cached();
+  }
+
+  async loadTales(
+    priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.BACKGROUND
+  ): Promise<TaleSnapshot | undefined> {
+    if (this.tales === undefined) {
+      return undefined;
+    }
+    return this.tales.load(priority);
+  }
+
+  async refreshTales(): Promise<TaleSnapshot | undefined> {
+    if (this.tales === undefined) {
+      return undefined;
+    }
+    return this.tales.refresh(ScpHtmlRequestPriority.USER_INITIATED);
+  }
+
+  observeTales(listener: (snapshot: TaleSnapshot) => void): () => void {
+    if (this.tales === undefined) {
+      return (): void => {};
+    }
+    return this.tales.observe(listener);
   }
 
   listHistory(): string[] {

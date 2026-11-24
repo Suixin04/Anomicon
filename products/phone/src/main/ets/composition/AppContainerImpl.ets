@@ -377,13 +377,18 @@ export class AppContainer {
   }
 
   createCatalogSearchViewModel(): CatalogSearchViewModel {
-    if (this.catalogRepository === undefined || this.searchHistoryRepository === undefined) {
+    if (
+      this.catalogRepository === undefined ||
+      this.searchHistoryRepository === undefined ||
+      this.taleRepository === undefined
+    ) {
       throw new Error('AppContainer must be initialized before creating Search ViewModels');
     }
     const catalogUseCase = new CatalogContentUseCase(this.catalogRepository);
     const historyUseCase = new SearchHistoryUseCase(this.searchHistoryRepository);
+    const taleUseCase = new TaleContentUseCase(this.taleRepository);
     return new CatalogSearchViewModel(
-      new CatalogSearchUseCase(catalogUseCase, historyUseCase),
+      new CatalogSearchUseCase(catalogUseCase, historyUseCase, taleUseCase),
       10,
       undefined,
       ALL_SERIES_ID

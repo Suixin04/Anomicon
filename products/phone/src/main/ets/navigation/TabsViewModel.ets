@@ -20,7 +20,7 @@ export class TabsViewModel {
       new TabItem(
         HomeTabId.EXPLORE,
         '探索',
-        undefined,
+        this.createSearchMenu(actions.onCatalogSearch),
         $r('sys.symbol.discover'),
         $r('sys.symbol.discover_fill')
       ),
@@ -66,6 +66,18 @@ export class TabsViewModel {
     return true;
   }
 
+  private createSearchMenu(action: () => void): HdsNavigationMenuContentOptions {
+    return {
+      value: [{
+        content: {
+          icon: $r('sys.symbol.magnifyingglass'),
+          label: '搜索',
+          action: action
+        }
+      }]
+    };
+  }
+
   /**
    * Keep both catalog actions in the same title-bar menu.  HDS can expose the
    * entries directly while retaining its normal overflow behaviour on narrow
@@ -84,7 +96,7 @@ export class TabsViewModel {
         {
           content: {
             icon: $r('sys.symbol.magnifyingglass'),
-            label: '搜索图鉴',
+            label: '搜索',
             action: searchAction
           }
         },

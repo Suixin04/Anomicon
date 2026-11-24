@@ -31,13 +31,26 @@ export {
   TalePayload
 } from './domain/StaticCatalogContracts';
 export {
+  ALL_CATALOG_SERIES,
   ALL_SERIES_ID,
   ALL_SERIES_LABEL,
+  branchOfSeriesId,
+  catalogSeriesForBranch,
+  DEFAULT_CN_SERIES_ID,
   DEFAULT_SERIES_ID,
+  findCatalogSeriesById,
+  isCnScpItemId,
+  SCP_CN_SERIES,
   SCP_SERIES,
+  ScpCatalogBranch,
   ScpSeriesDescriptor,
   articleUrlOf
 } from './domain/ScpSeriesItem';
+export {
+  CatalogDirectTarget,
+  CatalogSearchTargetKind,
+  resolveCatalogDirectTarget
+} from './domain/CatalogDirectTarget';
 export { DailyContentPolicy } from './domain/DailyContentPolicy';
 export {
   CATALOG_TOOLBAR_HEIGHT,
@@ -77,6 +90,7 @@ export {
   CatalogSearchViewModel
 } from './presentation/viewmodel/CatalogSearchViewModel';
 export {
+  CatalogSearchSelection,
   CatalogSearchSharedState,
   CatalogSearchViewContract,
   CatalogSearchViewInput,
@@ -84,6 +98,7 @@ export {
   CatalogSearchHeader,
   CatalogSearchView,
   CatalogSeriesSelector,
+  CatalogBranchSeriesBar,
   ScpCatalogHome,
   TaleList,
   StoryFilterBar

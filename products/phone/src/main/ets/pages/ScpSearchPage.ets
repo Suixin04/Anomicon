@@ -7,6 +7,8 @@ import {
 import {
   CATALOG_SEARCH_HEADER_HEIGHT,
   CatalogSearchHeader,
+  CatalogSearchSelection,
+  CatalogSearchTargetKind,
   CatalogSearchView,
   CatalogSearchViewInput,
   CatalogSearchViewModel,
@@ -88,10 +90,13 @@ struct ScpSearchPage {
     }
   }
 
-  private openContent(itemId: string, title: string): void {
-    const params: ScpArticleRouteParams = {
-      content: createLibraryContentRef(LibraryContentKind.SCP, itemId, title)
-    };
+  private openContent(selection: CatalogSearchSelection): void {
+    const kind = selection.kind === CatalogSearchTargetKind.TALE ?
+      LibraryContentKind.TALE : LibraryContentKind.SCP;
+    const content = createLibraryContentRef(kind, selection.itemId, selection.title);
+    const params: ScpArticleRouteParams = selection.anchor !== undefined && selection.anchor.length > 0 ?
+      { content: content, anchor: selection.anchor } :
+      { content: content };
     // Push Article above Search so returning from Article preserves the
     // user's query, scope and filtered results.
     AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
@@ -102,7 +107,8 @@ struct ScpSearchPage {
     CatalogSearchHeader({
       viewModel: this.viewModel,
       sharedState: this.searchState,
-      materialEnabled: this.settings?.immersiveMaterialEnabled ?? true
+      materialEnabled: this.settings?.immersiveMaterialEnabled ?? true,
+      onSubmitSelection: (selection: CatalogSearchSelection): void => this.openContent(selection)
     });
   }
 
@@ -112,7 +118,7 @@ struct ScpSearchPage {
         this.viewModel,
         this.contentScroller,
         this.searchState,
-        (itemId: string, title: string): void => this.openContent(itemId, title),
+        (selection: CatalogSearchSelection): void => this.openContent(selection),
         this.settings?.immersiveMaterialEnabled ?? true
       ));
     }

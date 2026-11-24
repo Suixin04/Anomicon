@@ -1,19 +1,26 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ViewModelLoadState } from 'anomiconbasic';
 import {
+  ALL_CATALOG_SERIES,
   ALL_SERIES_ID,
   CatalogContentUseCase,
   CatalogEntry,
   CatalogRepository,
+  CatalogSearchTargetKind,
   CatalogSearchUseCase,
   CatalogSearchViewModel,
   CatalogSnapshot,
   CatalogSnapshotSource,
+  CatalogTaleEntry,
   DEFAULT_SERIES_ID,
+  SCP_CN_SERIES,
   SCP_SERIES,
   ScpSeriesDescriptor,
   SearchHistoryRepository,
-  SearchHistoryUseCase
+  SearchHistoryUseCase,
+  TaleContentUseCase,
+  TaleRepository,
+  TaleSnapshot
 } from '../main/ets/Index';
 
 /** In-memory cold catalog used to verify the no-cache application path. */
@@ -209,15 +216,40 @@ function searchCatalogSnapshot(
   return new CatalogSnapshot(DEFAULT_SERIES_ID, [new CatalogEntry('SCP-173', '雕像')], source, fetchedAt);
 }
 
+class FakeUnifiedTaleRepository implements TaleRepository {
+  cachedSnapshot: TaleSnapshot | undefined = undefined;
+  networkSnapshot: TaleSnapshot = new TaleSnapshot([], CatalogSnapshotSource.NETWORK, Date.now());
+  private listeners: Array<(snapshot: TaleSnapshot) => void> = [];
+
+  getCached(): Promise<TaleSnapshot | undefined> {
+    return Promise.resolve(this.cachedSnapshot);
+  }
+
+  load(): Promise<TaleSnapshot> {
+    return Promise.resolve(this.networkSnapshot);
+  }
+
+  refresh(): Promise<TaleSnapshot> {
+    return Promise.resolve(this.networkSnapshot);
+  }
+
+  subscribe(listener: (snapshot: TaleSnapshot) => void): () => void {
+    this.listeners.push(listener);
+    return (): void => {};
+  }
+}
+
 function createSearchViewModel(
   repository: CatalogRepository,
   timeout: ManualCatalogSearchTimeout = new ManualCatalogSearchTimeout(),
-  initialSeriesId: string = DEFAULT_SERIES_ID
+  initialSeriesId: string = DEFAULT_SERIES_ID,
+  taleRepository?: TaleRepository
 ): CatalogSearchViewModel {
   return new CatalogSearchViewModel(
     new CatalogSearchUseCase(
       new CatalogContentUseCase(repository),
-      new SearchHistoryUseCase(new MemorySearchHistoryRepository())
+      new SearchHistoryUseCase(new MemorySearchHistoryRepository()),
+      taleRepository !== undefined ? new TaleContentUseCase(taleRepository) : undefined
     ),
     1,
     (callback: () => void): () => void => timeout.schedule(callback),
@@ -407,8 +439,8 @@ export default function catalogSearchSnapshotTest(): void {
       expect(loaded.state).assertEqual(ViewModelLoadState.READY);
       expect(loaded.data?.seriesId).assertEqual(ALL_SERIES_ID);
       expect(loaded.data?.allSeriesLoading).assertFalse();
-      expect(loaded.data?.loadedSeriesCount).assertEqual(SCP_SERIES.length);
-      expect(loaded.data?.totalSeriesCount).assertEqual(SCP_SERIES.length);
+      expect(loaded.data?.loadedSeriesCount).assertEqual(ALL_CATALOG_SERIES.length);
+      expect(loaded.data?.totalSeriesCount).assertEqual(ALL_CATALOG_SERIES.length);
       expect(loaded.data?.entries.length).assertEqual(4);
       expect(loaded.data?.entries[0].itemId).assertEqual('SCP-173');
       expect(loaded.data?.entries[2].itemId).assertEqual('SCP-1048');
@@ -441,7 +473,7 @@ export default function catalogSearchSnapshotTest(): void {
       await drainMicrotasks(60);
 
       expect(viewModel.snapshot.state).assertEqual(ViewModelLoadState.PARTIAL);
-      expect(viewModel.snapshot.data?.loadedSeriesCount).assertEqual(SCP_SERIES.length - 1);
+      expect(viewModel.snapshot.data?.loadedSeriesCount).assertEqual(ALL_CATALOG_SERIES.length - 1);
       expect(viewModel.snapshot.error?.message.includes('部分系列目录加载失败')).assertTrue();
       const initialRandomId = viewModel.snapshot.data?.random[0]?.itemId;
 
@@ -456,6 +488,65 @@ export default function catalogSearchSnapshotTest(): void {
       expect(viewModel.snapshot.data?.seriesId).assertEqual(ALL_SERIES_ID);
       expect(viewModel.snapshot.data?.entries.length).assertEqual(2);
       expect(viewModel.snapshot.data?.random[0]?.itemId).assertEqual(initialRandomId);
+      viewModel.dispose();
+    });
+
+    it('unifies CN archives, tales, and Wiki direct-open targets in ALL_SERIES_ID', 0, async () => {
+      const repository = new MultiSeriesCatalogRepository();
+      repository.setCached(new CatalogSnapshot(
+        SCP_SERIES[0].id,
+        [new CatalogEntry('SCP-055', '[未知]')],
+        CatalogSnapshotSource.CACHE,
+        Date.now()
+      ));
+      repository.setNetwork(new CatalogSnapshot(
+        SCP_CN_SERIES[2].id,
+        [
+          new CatalogEntry('SCP-CN-2000', '混沌理论'),
+          new CatalogEntry('SCP-CN-2111', '逆模因联动')
+        ],
+        CatalogSnapshotSource.NETWORK,
+        Date.now()
+      ));
+
+      const taleRepository = new FakeUnifiedTaleRepository();
+      taleRepository.cachedSnapshot = new TaleSnapshot(
+        [
+          new CatalogTaleEntry('antimemetics-division-hub', '逆模因部中心页'),
+          new CatalogTaleEntry('we-need-to-talk-about-fifty-five', '谈谈055')
+        ],
+        CatalogSnapshotSource.CACHE,
+        Date.now()
+      );
+      taleRepository.networkSnapshot = taleRepository.cachedSnapshot;
+
+      const viewModel = createSearchViewModel(
+        repository,
+        new ManualCatalogSearchTimeout(),
+        ALL_SERIES_ID,
+        taleRepository
+      );
+      viewModel.activate();
+      await drainMicrotasks(80);
+
+      viewModel.setQuery('CN-2000');
+      expect(viewModel.snapshot.data?.directTarget?.kind).assertEqual(CatalogSearchTargetKind.SCP);
+      expect(viewModel.snapshot.data?.directTarget?.itemId).assertEqual('SCP-CN-2000');
+      expect(viewModel.snapshot.data?.directTarget?.title).assertEqual('混沌理论');
+      expect(viewModel.snapshot.data?.entries[0].itemId).assertEqual('SCP-CN-2000');
+      expect(viewModel.snapshot.data?.tales.length).assertEqual(0);
+
+      viewModel.setQuery('逆模因');
+      expect(viewModel.snapshot.data?.directTarget === undefined).assertTrue();
+      expect(viewModel.snapshot.data?.entries.length).assertEqual(1);
+      expect(viewModel.snapshot.data?.entries[0].itemId).assertEqual('SCP-CN-2111');
+      expect(viewModel.snapshot.data?.tales.length).assertEqual(1);
+      expect(viewModel.snapshot.data?.tales[0].id).assertEqual('antimemetics-division-hub');
+
+      viewModel.setQuery('https://scp-wiki-cn.wikidot.com/task-forces#alpha-1');
+      expect(viewModel.snapshot.data?.directTarget?.kind).assertEqual(CatalogSearchTargetKind.TALE);
+      expect(viewModel.snapshot.data?.directTarget?.itemId).assertEqual('task-forces');
+      expect(viewModel.snapshot.data?.directTarget?.anchor).assertEqual('alpha-1');
       viewModel.dispose();
     });
   });

@@ -25,8 +25,9 @@ import {
   ScpCatalogHome,
   TaleList,
   StoryFilterBar,
-  CatalogSeriesSelector,
+  CatalogBranchSeriesBar,
   CATALOG_TOOLBAR_HEIGHT,
+  ScpCatalogBranch,
   ScpCatalogSearchState,
   sharedCatalogSearchState,
   TALE_FILTER_BAR_HEIGHT,
@@ -447,7 +448,7 @@ export struct MainTabIndex {
     return this.titleTabIndex === HomeTabId.CATALOG || this.titleTabIndex === HomeTabId.STORY;
   }
 
-  /** 工具栏高度：图鉴 chips 行 48vp；故事搜索框+字母索引 88vp。 */
+  /** 工具栏高度：图鉴分支切换+系列 chips 行 86vp；故事搜索框+字母索引 88vp。 */
   private toolbarHeight(): number {
     if (this.titleTabIndex === HomeTabId.CATALOG) {
       return CATALOG_TOOLBAR_HEIGHT;
@@ -458,14 +459,20 @@ export struct MainTabIndex {
     return 0;
   }
 
-  /** 图鉴 Tab 工具栏：原生 ChipGroupV2 负责横滚、单选语义和状态反馈。 */
+  /** 图鉴 Tab 工具栏：切换主站译文 / 中文原创，并在下行用原生 ChipGroupV2 切换系列。 */
   @Builder
   private catalogToolbar() {
-    CatalogSeriesSelector({
+    CatalogBranchSeriesBar({
+      branch: this.searchState.branch,
       selectedSeriesId: this.searchState.seriesId,
       materialEnabled: this.settings.immersiveMaterialEnabled,
       horizontalMargin: this.toolbarHorizontalMargin(),
-      onSelect: (seriesId: string) => {
+      onSelectBranch: (branch: ScpCatalogBranch) => {
+        this.hapticService.playSelection(this.settings.hapticEnabled);
+        this.searchState.clear();
+        this.searchState.selectBranch(branch);
+      },
+      onSelectSeries: (seriesId: string) => {
         this.hapticService.playSelection(this.settings.hapticEnabled);
         this.searchState.clear();
         this.searchState.setSeriesId(seriesId);

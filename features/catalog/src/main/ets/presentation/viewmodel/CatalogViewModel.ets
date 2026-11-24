@@ -15,6 +15,7 @@ import {
 } from '../../domain/CatalogRepositories';
 import {
   DEFAULT_SERIES_ID,
+  findCatalogSeriesById,
   SCP_SERIES,
   ScpSeriesDescriptor
 } from '../../domain/ScpSeriesItem';
@@ -470,12 +471,7 @@ export class CatalogViewModel implements ViewModelLifecycle {
   }
 
   private descriptor(id: string): ScpSeriesDescriptor {
-    for (let index = 0; index < SCP_SERIES.length; index++) {
-      if (SCP_SERIES[index].id === id) {
-        return SCP_SERIES[index];
-      }
-    }
-    return SCP_SERIES[0];
+    return findCatalogSeriesById(id) ?? SCP_SERIES[0];
   }
 
 }
