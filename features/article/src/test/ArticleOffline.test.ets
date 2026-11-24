@@ -13,6 +13,7 @@ import {
 } from '../main/ets/domain/ArticleContracts';
 import {
   ArticleOfflineDocumentRecord,
+  ArticleOfflineSaveAction,
   ArticleOfflineSaveProgress,
   ArticleOfflineSnapshot,
   ArticleOfflineStatus,
@@ -34,12 +35,16 @@ import { ArticleViewModel } from '../main/ets/presentation/viewmodel/ArticleView
 
 class OfflineMemoryHtmlPort implements ArticleHtmlPort {
   fail: boolean = false;
+  html: string = '<html></html>';
+  source: ArticleHtmlSource = ArticleHtmlSource.NETWORK;
+  requests: boolean[] = [];
 
-  load(_sourceUrl: string, _forceNetwork?: boolean): Promise<ArticleHtmlSnapshot> {
+  load(_sourceUrl: string, forceNetwork: boolean = false): Promise<ArticleHtmlSnapshot> {
+    this.requests.push(forceNetwork);
     if (this.fail) {
       return Promise.reject(new Error('network offline'));
     }
-    return Promise.resolve(new ArticleHtmlSnapshot('<html></html>', ArticleHtmlSource.NETWORK, 100));
+    return Promise.resolve(new ArticleHtmlSnapshot(this.html, this.source, 100));
   }
 }
 
@@ -80,6 +85,7 @@ class StaticDocParserPort implements ArticleDocumentParserPort {
 class MemoryOfflineStore implements ArticleOfflineStoragePort {
   records: Map<string, ArticleOfflineDocumentRecord> = new Map();
   saveCount: number = 0;
+  requireAllImages: boolean = false;
 
   initialize(): Promise<void> {
     return Promise.resolve();
@@ -97,9 +103,11 @@ class MemoryOfflineStore implements ArticleOfflineStoragePort {
     content: LibraryContentRef,
     document: ScpArticleDocument,
     rawPayloadJson: string,
-    onProgress?: (progress: ArticleOfflineSaveProgress) => void
+    onProgress?: (progress: ArticleOfflineSaveProgress) => void,
+    requireAllImages: boolean = false
   ): Promise<ArticleOfflineSnapshot> {
     this.saveCount++;
+    this.requireAllImages = requireAllImages;
     const urls = collectArticleImageUrls(document);
     onProgress?.({ completedImages: 0, totalImages: urls.length });
     const localUris: Map<string, string> = new Map();
@@ -218,6 +226,56 @@ function makeSample2521Document(): ScpArticleDocument {
   );
 }
 
+const REVISION_URL: string = 'https://scp-wiki-cn.wikidot.com/scp-2521';
+
+function revisionDocument(revision: string): ScpArticleDocument {
+  return new ScpArticleDocument('SCP-2521', revision, '', REVISION_URL, 100,
+    [new ScpContentBlock('img', ScpBlockType.IMAGE, [], `${REVISION_URL}/${revision}.png`)]);
+}
+
+class RevisionParser implements ArticleDocumentParserPort {
+  useWebExtractor: boolean = false;
+
+  parse(payload: string, _sourceUrl: string, _fetchedAt: number): ScpArticleDocument {
+    return revisionDocument(JSON.parse(payload) as string);
+  }
+
+  parseHtmlPayload(html: string): Promise<string> {
+    if (this.useWebExtractor) {
+      return Promise.reject(new Error('use web extractor'));
+    }
+    return Promise.resolve(JSON.stringify(html));
+  }
+
+  currentSchemaVersion(): number {
+    return 1;
+  }
+}
+
+class RevisionCache extends EmptyDocCachePort {
+  get(itemId: string): Promise<ArticleDocumentCacheRecord | undefined> {
+    const cached: ArticleDocumentCacheRecord = { itemId, json: '"v2"', schemaVersion: 1, parsedAt: 101 };
+    return Promise.resolve(cached);
+  }
+}
+
+class ShelfScenario {
+  readonly content: LibraryContentRef = createLibraryContentRef(LibraryContentKind.SCP, 'scp-2521', 'SCP-2521');
+  readonly store: MemoryOfflineStore = new MemoryOfflineStore();
+  readonly html: OfflineMemoryHtmlPort = new OfflineMemoryHtmlPort();
+  readonly parser: RevisionParser = new RevisionParser();
+  readonly gateway: ContentGateway = new ContentGateway(this.html, new RevisionCache(), this.parser, this.store);
+  readonly vm: ArticleViewModel = new ArticleViewModel(new ArticleContentUseCase(this.gateway, undefined, this.store));
+
+  async open(offlineCopy: boolean): Promise<void> {
+    this.html.html = 'v2';
+    await this.store.save(this.content, revisionDocument('v1'), '"v1"');
+    this.vm.setRouteContent(this.content, offlineCopy);
+    this.vm.activate();
+    await drainMicrotasks();
+  }
+}
+
 export default function articleOfflineTest(): void {
   describe('ArticleOfflineContractsAndGateway', () => {
     it('normalizes image URLs, strips control whitespace, and rejects unsafe schemes', 0, () => {
@@ -283,6 +341,75 @@ export default function articleOfflineTest(): void {
         []
       );
       expect(requiresNetworkForInteractiveDocument(interactiveDoc)).assertTrue();
+    });
+
+    it('opens shelf body and images from v1 beside cached v2, then publishes the confirmed update', 0, async () => {
+      const scenario = new ShelfScenario();
+      await scenario.open(false);
+      expect(scenario.vm.document?.title).assertEqual('v2');
+      scenario.vm.setRouteContent(scenario.content, true);
+      await drainMicrotasks();
+      expect(scenario.vm.document?.title).assertEqual('v1');
+      expect(scenario.vm.resolveLocalImageUri(`${REVISION_URL}/v1.png`).startsWith('file://')).assertTrue();
+      expect(scenario.vm.resolveLocalImageUri(`${REVISION_URL}/v2.png`)).assertEqual('');
+      expect(scenario.html.requests.length).assertEqual(0);
+
+      const updated = await scenario.vm.saveForOffline(ArticleOfflineSaveAction.UPDATE);
+      expect(scenario.html.requests.length).assertEqual(1);
+      expect(scenario.html.requests[0]).assertTrue();
+      expect(scenario.store.requireAllImages).assertTrue();
+      expect(updated?.title).assertEqual('v2');
+      expect(scenario.vm.document?.title).assertEqual('v2');
+      expect(scenario.vm.resolveLocalImageUri(`${REVISION_URL}/v2.png`).startsWith('file://')).assertTrue();
+      expect((await scenario.store.loadDocument(scenario.content))?.rawPayloadJson).assertEqual('"v2"');
+      scenario.vm.dispose();
+    });
+
+    it('keeps the old shelf revision when a forced request yields stale HTML or the fallback archive', 0, async () => {
+      const scenario = new ShelfScenario();
+      await scenario.open(true);
+      scenario.html.source = ArticleHtmlSource.STALE_CACHE;
+      for (let index = 0; index < 2; index++) {
+        scenario.html.fail = index === 1;
+        let failure = '';
+        try {
+          await scenario.vm.saveForOffline(ArticleOfflineSaveAction.UPDATE);
+        } catch (error) {
+          failure = (error as Error).message;
+        }
+        expect(failure.includes('已保留原离线副本')).assertTrue();
+        expect(scenario.vm.document?.title).assertEqual('v1');
+        expect(scenario.vm.offlineSnapshot?.title).assertEqual('v1');
+        expect(scenario.store.saveCount).assertEqual(1);
+      }
+      scenario.vm.dispose();
+    });
+
+    it('accepts a conditionally confirmed page through the compatibility extractor', 0, async () => {
+      const scenario = new ShelfScenario();
+      await scenario.open(true);
+      scenario.html.source = ArticleHtmlSource.FRESH_CACHE;
+      scenario.parser.useWebExtractor = true;
+      const saving = scenario.vm.saveForOffline(ArticleOfflineSaveAction.UPDATE);
+      await drainMicrotasks();
+      expect(scenario.vm.document?.title).assertEqual('v1');
+      expect(scenario.vm.pendingExtraction?.html).assertEqual('v2');
+      scenario.vm.onExtractionResult(scenario.vm.pendingExtraction!.requestId, '"v2"');
+      expect((await saving)?.title).assertEqual('v2');
+      expect(scenario.store.saveCount).assertEqual(2);
+      scenario.vm.dispose();
+    });
+
+    it('repairs the saved revision even when the ordinary reader is showing a newer document', 0, async () => {
+      const scenario = new ShelfScenario();
+      await scenario.open(false);
+      const repaired = await scenario.vm.saveForOffline(ArticleOfflineSaveAction.REPAIR_IMAGES);
+      expect(scenario.html.requests.length).assertEqual(0);
+      expect(scenario.store.requireAllImages).assertFalse();
+      expect(repaired?.title).assertEqual('v1');
+      expect(scenario.vm.document?.title).assertEqual('v2');
+      expect((await scenario.store.loadDocument(scenario.content))?.rawPayloadJson).assertEqual('"v1"');
+      scenario.vm.dispose();
     });
 
     it('loads saved offline archive when temporary document cache is cleared and resolves local image URIs', 0, async () => {

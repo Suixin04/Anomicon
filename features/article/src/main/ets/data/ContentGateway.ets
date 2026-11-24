@@ -72,15 +72,7 @@ export class ContentGateway implements ArticleContentGateway {
         try {
           const offline = await this.offlineStore.loadDocument(content);
           if (offline !== undefined) {
-            return new ArticleLoadResult(
-              offline.document,
-              undefined,
-              ArticleContentSource.OFFLINE_ARCHIVE,
-              offline.savedAt,
-              false,
-              '',
-              offline.rawPayloadJson
-            );
+            return ArticleLoadResult.fromArchive(offline);
           }
         } catch (_offlineError) {
           // Fall through to HTML pipeline if permanent offline lookup fails.
@@ -155,15 +147,7 @@ export class ContentGateway implements ArticleContentGateway {
         try {
           const offline = await this.offlineStore.loadDocument(content);
           if (offline !== undefined) {
-            return new ArticleLoadResult(
-              offline.document,
-              undefined,
-              ArticleContentSource.OFFLINE_ARCHIVE,
-              offline.savedAt,
-              false,
-              '',
-              offline.rawPayloadJson
-            );
+            return ArticleLoadResult.fromArchive(offline);
           }
         } catch (_offlineFallbackError) {
         }

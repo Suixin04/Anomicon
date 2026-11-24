@@ -19,6 +19,7 @@ export {
 } from './domain/ArticleContracts';
 export {
   ArticleOfflineStatus,
+  ArticleOfflineSaveAction,
   ArticleOfflineImageEntry,
   ArticleOfflineReadiness,
   ArticleOfflineSnapshot,

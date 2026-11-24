@@ -5,7 +5,6 @@ import { fileIo as fs, fileUri } from '@kit.CoreFileKit';
 import { ANOMICON_DATABASE_NAME } from 'anomiconbasic';
 import { LibraryContentKind, LibraryContentRef } from 'library';
 import {
-  ArticleDocumentCachePort,
   ArticleDocumentParserPort
 } from '../domain/ArticleContracts';
 import {
@@ -69,7 +68,6 @@ interface VerifiedManifestResult {
 interface ImageDownloadSlot {
   readonly index: number;
   readonly url: string;
-  readonly existingFileName: string;
 }
 
 /**
@@ -81,7 +79,6 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
   private readonly context: common.UIAbilityContext;
   private readonly parser: ArticleDocumentParserPort;
   private readonly imageFetcher: ArticleOfflineImageFetcher | undefined;
-  private readonly documentCache: ArticleDocumentCachePort | undefined;
   private readonly filesDir: string;
   private readonly vaultRootDir: string;
   private readonly encoder: util.TextEncoder = util.TextEncoder.create('utf-8');
@@ -91,7 +88,7 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
   });
   private readonly operationLock: ArkTSUtils.locks.AsyncLock =
     new ArkTSUtils.locks.AsyncLock();
-  private readonly activeSaveKeys: Set<string> = new Set();
+  private readonly activeMutationKeys: Set<string> = new Set();
   private readonly listeners: ArticleOfflineStoreListener[] = [];
   private store: relationalStore.RdbStore | undefined = undefined;
   private initialization: Promise<void> | undefined = undefined;
@@ -99,13 +96,11 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
   constructor(
     context: common.UIAbilityContext,
     parser: ArticleDocumentParserPort,
-    imageFetcher?: ArticleOfflineImageFetcher,
-    documentCache?: ArticleDocumentCachePort
+    imageFetcher?: ArticleOfflineImageFetcher
   ) {
     this.context = context;
     this.parser = parser;
     this.imageFetcher = imageFetcher;
-    this.documentCache = documentCache;
     this.filesDir = context.getApplicationContext().filesDir;
     this.vaultRootDir = `${this.filesDir}/offline_articles/v1`;
   }
@@ -177,53 +172,40 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
     content: LibraryContentRef,
     document: ScpArticleDocument,
     rawPayloadJson: string,
-    onProgress?: (progress: ArticleOfflineSaveProgress) => void
+    onProgress?: (progress: ArticleOfflineSaveProgress) => void,
+    requireAllImages: boolean = false
   ): Promise<ArticleOfflineSnapshot> {
-    if (this.activeSaveKeys.has(content.key)) {
-      throw new Error('正在保存该文章的离线副本，请稍候');
-    }
-    this.activeSaveKeys.add(content.key);
+    this.beginMutation(content.key);
+    let unpublishedDir: string = '';
     try {
       await this.initialize();
       const sourceUrl = document.sourceUrl.length > 0 ?
         document.sourceUrl : `https://scp-wiki-cn.wikidot.com/${content.id.toLowerCase()}`;
       const savedAt = Date.now();
-      let payload = rawPayloadJson.trim();
-      if (payload.length === 0 && this.documentCache !== undefined) {
-        try {
-          const cached = await this.documentCache.get(content.id);
-          if (cached !== undefined && cached.json.trim().length > 0) {
-            payload = cached.json.trim();
-          }
-        } catch (_cacheError) {
-        }
+      const payload = rawPayloadJson.trim();
+      if (payload.length === 0) {
+        throw new Error('当前正文数据未就绪，请刷新文章后再保存');
       }
+      // Derive the manifest from the exact bytes the reader will reopen.
+      const savedDocument = this.parser.parse(payload, sourceUrl, savedAt);
       const safeDirName = this.safeDirectoryName(content.key);
       const articleDir = `${this.vaultRootDir}/${safeDirName}`;
-      const imagesDir = `${articleDir}/images`;
-      const documentPath = `${articleDir}/document.json`;
+      const version = `version-${util.generateRandomUUID(true).toLowerCase()}`;
+      unpublishedDir = `${articleDir}/${version}`;
+      const imagesDir = `${unpublishedDir}/images`;
+      const documentPath = `${unpublishedDir}/document.json`;
+      await this.ensureDirectoryChain(['offline_articles', 'v1', safeDirName, version, 'images']);
 
       let existingRow: StoredOfflineRow | undefined = undefined;
       await this.enqueueOperation(async (): Promise<void> => {
         existingRow = await this.findRowNow(content);
       });
-      if (payload.length === 0 && existingRow !== undefined) {
-        const existingDoc = await this.readTextFile((existingRow as StoredOfflineRow).documentPath);
-        if (existingDoc !== undefined && existingDoc.trim().length > 0) {
-          payload = existingDoc.trim();
-        }
-      }
-      if (payload.length === 0) {
-        throw new Error('当前正文数据未就绪，请刷新文章后再保存');
-      }
-      // Validate document payload parses cleanly before creating/updating files on disk.
-      this.parser.parse(payload, sourceUrl, savedAt);
-
-      await this.ensureDirectoryChain(['offline_articles', 'v1', safeDirName, 'images']);
-
+      let previousImagesDir = '';
       const existingFileByUrl: Map<string, string> = new Map();
       if (existingRow !== undefined) {
-        const prevManifest = this.parseManifest((existingRow as StoredOfflineRow).manifestJson);
+        const previous = existingRow as StoredOfflineRow;
+        previousImagesDir = `${previous.documentPath.substring(0, previous.documentPath.lastIndexOf('/'))}/images`;
+        const prevManifest = this.parseManifest(previous.manifestJson);
         for (let index = 0; index < prevManifest.length; index++) {
           const entry = prevManifest[index];
           if (entry.saved && entry.fileName.length > 0) {
@@ -232,7 +214,7 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         }
       }
 
-      const imageUrls = collectArticleImageUrls(document);
+      const imageUrls = collectArticleImageUrls(savedDocument);
       const totalImages = imageUrls.length;
       const results: ArticleOfflineImageEntry[] = new Array(totalImages);
       const pendingSlots: ImageDownloadSlot[] = [];
@@ -242,8 +224,10 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         const imageUrl = imageUrls[index];
         const prevName = existingFileByUrl.get(imageUrl) ?? '';
         if (prevName.length > 0) {
-          const existingSize = await this.regularFileSize(`${imagesDir}/${prevName}`);
+          const previousImage = `${previousImagesDir}/${prevName}`;
+          const existingSize = await this.regularFileSize(previousImage);
           if (existingSize > 0) {
+            await this.copyFileAtomically(previousImage, `${imagesDir}/${prevName}`);
             results[index] = {
               url: imageUrl,
               fileName: prevName,
@@ -256,8 +240,7 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         }
         pendingSlots.push({
           index,
-          url: imageUrl,
-          existingFileName: prevName
+          url: imageUrl
         });
       }
 
@@ -288,7 +271,6 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         throw new Error('离线正文写入验证失败');
       }
 
-      const keepNames: Set<string> = new Set();
       let savedImages: number = 0;
       let totalImageBytes: number = 0;
       const localImageUris: Map<string, string> = new Map();
@@ -304,7 +286,6 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
               bytes: verifiedBytes,
               saved: true
             };
-            keepNames.add(entry.fileName);
             savedImages++;
             totalImageBytes += verifiedBytes;
             localImageUris.set(entry.url, fileUri.getUriFromPath(fullImagePath));
@@ -318,12 +299,14 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
           saved: false
         };
       }
-      await this.pruneUnusedImageFiles(imagesDir, keepNames);
 
-      const requiresInteractive = requiresNetworkForInteractiveDocument(document);
+      if (requireAllImages && savedImages < totalImages) {
+        throw new Error(`更新副本失败，仍缺 ${totalImages - savedImages} 张图。已保留原副本，请稍后重试`);
+      }
+      const requiresInteractive = requiresNetworkForInteractiveDocument(savedDocument);
       const readiness = evaluateOfflineReadiness(totalImages, savedImages, requiresInteractive);
       const totalBytes = docBytes + totalImageBytes;
-      const title = document.title.trim().length > 0 ? document.title.trim() : content.title;
+      const title = savedDocument.title.trim().length > 0 ? savedDocument.title.trim() : content.title;
       const manifestJson = JSON.stringify(results);
 
       const row: StoredOfflineRow = {
@@ -342,8 +325,11 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         savedAt
       };
       await this.enqueueOperation(async (): Promise<void> => {
+        // One SQLite row publishes the document path and its image manifest together.
         await this.upsertRowNow(row);
+        unpublishedDir = '';
       });
+      await this.removeSupersededVersions(articleDir, version);
       this.notifyListeners();
 
       return new ArticleOfflineSnapshot(
@@ -364,11 +350,30 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         localImageUris
       );
     } finally {
-      this.activeSaveKeys.delete(content.key);
+      if (unpublishedDir.length > 0) {
+        await this.removeDirectoryRecursive(unpublishedDir);
+      }
+      this.activeMutationKeys.delete(content.key);
     }
   }
 
+  private beginMutation(key: string): void {
+    if (this.activeMutationKeys.has(key)) {
+      throw new Error('正在处理该文章的离线副本，请稍后再试');
+    }
+    this.activeMutationKeys.add(key);
+  }
+
   async remove(contentKey: string): Promise<void> {
+    this.beginMutation(contentKey);
+    try {
+      await this.removeNow(contentKey);
+    } finally {
+      this.activeMutationKeys.delete(contentKey);
+    }
+  }
+
+  private async removeNow(contentKey: string): Promise<void> {
     const safeDirName = this.safeDirectoryName(contentKey);
     const articleDir = `${this.vaultRootDir}/${safeDirName}`;
     let existingDocPath: string = '';
@@ -794,19 +799,21 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
     }
   }
 
-  private async pruneUnusedImageFiles(imagesDir: string, keepNames: Set<string>): Promise<void> {
+  /** After publication, reclaim old versions (including any left by an interrupted save).
+   * The pre-versioned archive had its document and images directly under articleDir. */
+  private async removeSupersededVersions(articleDir: string, publishedVersion: string): Promise<void> {
     try {
-      if (!(await fs.access(imagesDir))) {
-        return;
-      }
-      const names = await fs.listFile(imagesDir);
+      const names = await fs.listFile(articleDir);
       for (let index = 0; index < names.length; index++) {
         const name = names[index];
-        if (!keepNames.has(name)) {
-          await this.unlinkIfExistsQuietly(`${imagesDir}/${name}`);
+        if (name === 'document.json') {
+          await this.unlinkIfExistsQuietly(`${articleDir}/${name}`);
+        } else if (name === 'images' || (name.startsWith('version-') && name !== publishedVersion)) {
+          await this.removeDirectoryRecursive(`${articleDir}/${name}`);
         }
       }
-    } catch (_error) {
+    } catch (error) {
+      console.warn(`Clean old offline versions failed: ${this.errorMessage(error)}`);
     }
   }
 

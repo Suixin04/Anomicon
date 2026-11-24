@@ -166,8 +166,7 @@ export function createArticleFeatureGraph(
   const offlineStore = new RdbOfflineArticleStore(
     context,
     parser,
-    dependencies.imageFetcher,
-    cache
+    dependencies.imageFetcher
   );
   const gateway = new ContentGateway(dependencies.html, cache, parser, offlineStore);
   const viewState = new ArticleViewStateRepo(context);
