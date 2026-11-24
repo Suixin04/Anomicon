@@ -254,11 +254,9 @@ export struct MainTabIndex {
     );
   }
 
-  private openContent(content: LibraryContentRef, seriesId: string = ''): void {
+  private openContent(content: LibraryContentRef, seriesId: string = '', offlineCopy: boolean = false): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    const params: ScpArticleRouteParams = seriesId.length > 0 ?
-      { content: content, seriesId: seriesId } :
-      { content: content };
+    const params: ScpArticleRouteParams = { content, seriesId, offlineCopy };
     AppNavigationCoordinator.openFromMaster(
       this.pageStack,
       AppRoutes.ARTICLE,
@@ -684,6 +682,7 @@ export struct MainTabIndex {
                   settings: this.settings,
                   active: this.tabsViewModel.currentIndex === HomeTabId.TERMINAL,
                   onOpenContent: (content: LibraryContentRef) => this.openContent(content),
+                  onOpenOfflineCopy: (content: LibraryContentRef) => this.openContent(content, '', true),
                   onResumeSeries: (seriesId: string, content: LibraryContentRef) =>
                     this.openContent(content, seriesId),
                   onOpenSeriesHub: (hubId: string, title: string) => this.openContent(

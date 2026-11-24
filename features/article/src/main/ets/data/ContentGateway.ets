@@ -15,6 +15,11 @@ import { ScpArticleDocument } from '../domain/ScpDocument';
 
 const WIKI_BASE_URL: string = 'https://scp-wiki-cn.wikidot.com';
 
+interface FrameExpansionState {
+  readonly forceNetwork: boolean;
+  stale: boolean;
+}
+
 /**
  * data adapter for the existing cache/HTML pipeline.  The
  * application layer only sees ArticleContentGateway; RDB and parser details
@@ -72,15 +77,7 @@ export class ContentGateway implements ArticleContentGateway {
         try {
           const offline = await this.offlineStore.loadDocument(content);
           if (offline !== undefined) {
-            return new ArticleLoadResult(
-              offline.document,
-              undefined,
-              ArticleContentSource.OFFLINE_ARCHIVE,
-              offline.savedAt,
-              false,
-              '',
-              offline.rawPayloadJson
-            );
+            return ArticleLoadResult.fromArchive(offline);
           }
         } catch (_offlineError) {
           // Fall through to HTML pipeline if permanent offline lookup fails.
@@ -96,15 +93,11 @@ export class ContentGateway implements ArticleContentGateway {
       // URL. Resolve that small, same-site indirection before native parsing
       // so the reader receives normal paragraphs/tables instead of a dead
       // "在浏览器中打开" placeholder.
-      const expandedHtml = await this.expandHtmlBlockFrames(
-        html.html,
-        sourceUrl,
-        forceNetwork
-      );
-      // The native parser owns document-shell filtering after it builds the
-      // HTML tree. Keep the source intact here so quoted/unquoted attributes
-      // and nested wrappers are handled uniformly by one semantic pass.
-      const articleHtml = expandedHtml;
+      const expansion: FrameExpansionState = {
+        forceNetwork,
+        stale: html.source === ArticleHtmlSource.STALE_CACHE
+      };
+      const articleHtml = await this.expandHtmlBlockFrames(html.html, sourceUrl, expansion);
       const source = this.toSource(html.source);
       // Native-first: normal SCP pages are parsed in ArkTS and do not create
       // an off-screen ArkWeb instance. Keep the old handshake as a compatibility
@@ -113,21 +106,15 @@ export class ContentGateway implements ArticleContentGateway {
         try {
           const payload = await this.parser.parseHtmlPayload(articleHtml);
           const document = this.parser.parse(payload, sourceUrl, html.fetchedAt);
-          const record: ArticleDocumentCacheRecord = {
-            itemId: content.id,
-            json: payload,
-            schemaVersion: this.parser.currentSchemaVersion(),
-            parsedAt: html.fetchedAt
-          };
-          this.documentCache.put(record).catch((): void => {
-            // Cache persistence is best effort after a valid document is published.
-          });
+          if (!expansion.stale) {
+            this.cacheDocument(content.id, payload, html.fetchedAt);
+          }
           return new ArticleLoadResult(
             document,
             undefined,
             source,
             html.fetchedAt,
-            html.source === ArticleHtmlSource.STALE_CACHE,
+            expansion.stale,
             '',
             payload
           );
@@ -144,26 +131,18 @@ export class ContentGateway implements ArticleContentGateway {
           sourceUrl,
           articleHtml,
           html.fetchedAt,
-          html.source === ArticleHtmlSource.STALE_CACHE
+          expansion.stale
         ),
         source,
         html.fetchedAt,
-        html.source === ArticleHtmlSource.STALE_CACHE
+        expansion.stale
       );
     } catch (error) {
       if (this.offlineStore !== undefined) {
         try {
           const offline = await this.offlineStore.loadDocument(content);
           if (offline !== undefined) {
-            return new ArticleLoadResult(
-              offline.document,
-              undefined,
-              ArticleContentSource.OFFLINE_ARCHIVE,
-              offline.savedAt,
-              false,
-              '',
-              offline.rawPayloadJson
-            );
+            return ArticleLoadResult.fromArchive(offline);
           }
         } catch (_offlineFallbackError) {
         }
@@ -188,16 +167,22 @@ export class ContentGateway implements ArticleContentGateway {
       throw new Error('正文提取请求与当前内容不匹配');
     }
     const document = this.parser.parse(payloadText, pending.sourceUrl, pending.fetchedAt);
+    if (!pending.stale) {
+      this.cacheDocument(content.id, payloadText, pending.fetchedAt);
+    }
+    return document;
+  }
+
+  private cacheDocument(itemId: string, payload: string, fetchedAt: number): void {
     const record: ArticleDocumentCacheRecord = {
-      itemId: content.id,
-      json: payloadText,
+      itemId,
+      json: payload,
       schemaVersion: this.parser.currentSchemaVersion(),
-      parsedAt: pending.fetchedAt
+      parsedAt: fetchedAt
     };
     this.documentCache.put(record).catch((): void => {
       // Cache persistence is best effort after a valid document is published.
     });
-    return document;
   }
 
   private documentFromStored(
@@ -236,7 +221,7 @@ export class ContentGateway implements ArticleContentGateway {
   private async expandHtmlBlockFrames(
     html: string,
     sourceUrl: string,
-    forceNetwork: boolean,
+    state: FrameExpansionState,
     depth: number = 0
   ): Promise<string> {
     if (depth >= 2 || html.length === 0 || html.toLowerCase().indexOf('html-block-iframe') < 0) {
@@ -280,14 +265,18 @@ export class ContentGateway implements ArticleContentGateway {
         continue;
       }
       try {
-        const nested = await this.htmlPort.load(frameUrl, forceNetwork);
-        const replacement = await this.buildFrameReplacement(nested.html, frameUrl, forceNetwork, depth);
+        const nested = await this.htmlPort.load(frameUrl, state.forceNetwork);
+        if (nested.source === ArticleHtmlSource.STALE_CACHE) {
+          state.stale = true;
+        }
+        const replacement = await this.buildFrameReplacement(nested.html, frameUrl, state, depth);
         output = output.substring(0, frame.index) +
           replacement +
           output.substring(frame.index + markup.length);
       } catch (error) {
-        // Keep the original iframe when the generated endpoint is unavailable;
-        // the native renderer can still offer its browser fallback.
+        // Readers can open the original frame. Its body has not been confirmed
+        // for publication as part of a new offline edition.
+        state.stale = true;
         console.warn(`Expand embedded article frame failed (${frameUrl}): ${error instanceof Error ? error.message : 'unknown error'}`);
       }
     }
@@ -297,20 +286,20 @@ export class ContentGateway implements ArticleContentGateway {
   private async buildFrameReplacement(
     rawHtml: string,
     frameUrl: string,
-    forceNetwork: boolean,
+    state: FrameExpansionState,
     depth: number
   ): Promise<string> {
     const realContent = this.elementInnerById(rawHtml, 'realcontent');
     if (realContent.length > 0) {
       const cleaned = this.cleanEmbeddedFragment(realContent);
-      const expanded = await this.expandHtmlBlockFrames(cleaned, frameUrl, forceNetwork, depth + 1);
+      const expanded = await this.expandHtmlBlockFrames(cleaned, frameUrl, state, depth + 1);
       return `<div class="anomicon-embedded-html" data-interactive="true">${expanded}</div>`;
     }
     if (this.isInteractiveWidgetFrame(rawHtml)) {
       return `<iframe class="html-block-iframe anomicon-interactive-frame" data-interactive="true" src="${frameUrl}"></iframe>`;
     }
     const cleaned = this.cleanEmbeddedFragment(rawHtml);
-    const expanded = await this.expandHtmlBlockFrames(cleaned, frameUrl, forceNetwork, depth + 1);
+    const expanded = await this.expandHtmlBlockFrames(cleaned, frameUrl, state, depth + 1);
     return `<div class="anomicon-embedded-html">${expanded}</div>`;
   }
 

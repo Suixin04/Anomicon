@@ -18,6 +18,7 @@ export {
   ArticleRelatedTale,
   ArticleRelatedTaleSource,
   ArticleOfflineStatus,
+  ArticleOfflineSaveAction,
   ArticleOfflineImageEntry,
   ArticleOfflineReadiness,
   ArticleOfflineSnapshot,

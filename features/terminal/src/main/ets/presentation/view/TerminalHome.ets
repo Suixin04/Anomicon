@@ -45,6 +45,7 @@ export struct TerminalHome {
   @Require @Param scroller: Scroller;
   @Require @Param active: boolean;
   @Require @Param onOpenContent: (content: LibraryContentRef) => void;
+  @Require @Param onOpenOfflineCopy: (content: LibraryContentRef) => void;
   @Require @Param onOpenCollection: (mode: LibraryCollectionMode) => void;
   @Event onResumeSeries: (seriesId: string, content: LibraryContentRef) => void =
     (_seriesId: string, _content: LibraryContentRef): void => {};
@@ -358,7 +359,7 @@ export struct TerminalHome {
         TerminalOfflineArticleList({
           entries: this.offlineEntries,
           materialEnabled: this.isImmersiveMaterialEnabled(),
-          onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content)
+          onOpenContent: (content: LibraryContentRef) => this.onOpenOfflineCopy(content)
         })
       }
       .width('100%')

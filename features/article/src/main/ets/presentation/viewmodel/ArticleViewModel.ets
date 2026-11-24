@@ -23,6 +23,7 @@ import {
   ArticleExtractionRequest
 } from '../../domain/ArticleContracts';
 import {
+  ArticleOfflineSaveAction,
   ArticleOfflineSaveProgress,
   ArticleOfflineSnapshot,
   normalizeOfflineImageUrl
@@ -31,6 +32,12 @@ import {
 /** View subscription used by the staged page.  The callback
  * carries no platform object and is safe to invoke after an async boundary. */
 export type ArticleViewModelListener = () => void;
+
+interface OfflineUpdateExtraction {
+  readonly requestId: number;
+  readonly resolve: (payload: string) => void;
+  readonly reject: (reason: Error) => void;
+}
 
 /** Complete article screen state and commands. */
 @ObservedV2
@@ -115,6 +122,8 @@ export class ArticleViewModel implements ViewModelLifecycle {
   private historyRestoreIdentity: string = '';
   private historyRestoreTask: Promise<number> | undefined = undefined;
   private historyOperationTail: Promise<void> = Promise.resolve();
+  private readSavedCopy: boolean = false;
+  private updateExtraction: OfflineUpdateExtraction | undefined = undefined;
   private documentPayloadJson: string = '';
   private offlineEpoch: number = 0;
   private readonly listeners: ArticleViewModelListener[] = [];
@@ -159,7 +168,9 @@ export class ArticleViewModel implements ViewModelLifecycle {
     if (this.content !== undefined) {
       this.recordOpened(this.content).catch((): void => {
       });
-      this.refreshOfflineSnapshot(this.content);
+      if (!this.readSavedCopy) {
+        this.refreshOfflineSnapshot(this.content);
+      }
       if (this.document !== undefined) {
         // A restore interrupted by deactivate() is retried when the screen
         // becomes visible again; the epoch guard rejects the old callback.
@@ -176,7 +187,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
         (this.state === ViewModelLoadState.LOADING && !this.loadInFlight))) {
       this.load(false);
     } else if (this.content !== undefined && this.document !== undefined &&
-      this.refreshOnActivate) {
+      (this.readSavedCopy || this.refreshOnActivate)) {
       this.refreshOnActivate = false;
       this.load(true);
     }
@@ -187,6 +198,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
       return;
     }
     this.active = false;
+    this.cancelUpdateExtraction();
     // Invalidate history callbacks as soon as the route leaves the active
     // lifecycle.  The persistence operation may still finish, but it must not
     // publish a restore/error snapshot into a hidden screen.
@@ -232,6 +244,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
     }
     this.disposed = true;
     this.active = false;
+    this.cancelUpdateExtraction();
     this.expandedStateEpoch += 1;
     this.historyEpoch += 1;
     this.historyRestoreIdentity = '';
@@ -257,7 +270,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
     this.notifyListeners();
   }
 
-  setRouteContent(content: LibraryContentRef): void {
+  setRouteContent(content: LibraryContentRef, readSavedCopy: boolean = false): void {
     if (this.disposed) {
       return;
     }
@@ -267,7 +280,8 @@ export class ArticleViewModel implements ViewModelLifecycle {
     // SCP to a same-slug Tale can reuse the old document and accept callbacks
     // from the wrong article.  A title-only update does not require a reload.
     const current = this.content;
-    if (current !== undefined && current.kind === content.kind && current.id === content.id) {
+    if (current !== undefined && current.kind === content.kind && current.id === content.id &&
+      this.readSavedCopy === readSavedCopy) {
       if (current.title !== content.title) {
         this.content = content;
         if (this.readingSessionContent !== undefined) {
@@ -280,6 +294,8 @@ export class ArticleViewModel implements ViewModelLifecycle {
       });
       return;
     }
+    this.cancelUpdateExtraction();
+    this.readSavedCopy = readSavedCopy;
     this.generation += 1;
     this.expandedStateEpoch += 1;
     this.expandedStateMutation += 1;
@@ -543,7 +559,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
     if (content === undefined || this.disposed || !this.active) {
       return;
     }
-    if (this.loadInFlight) {
+    if (this.loadInFlight || this.offlineSaving) {
       return;
     }
     this.loadInFlight = true;
@@ -559,7 +575,8 @@ export class ArticleViewModel implements ViewModelLifecycle {
     // Ports are Promise-typed, but a product adapter can still throw before
     // returning one.  Enter through a microtask so the catch path always
     // clears loadInFlight and exposes a recoverable error state.
-    Promise.resolve().then(() => this.useCase.load(content, requestId, forceNetwork))
+    Promise.resolve().then(() => this.readSavedCopy ? this.useCase.loadSavedCopy(content) :
+      this.useCase.load(content, requestId, forceNetwork))
       .then((result): void => {
         if (this.activeLoadRequestId === requestId) {
           this.loadInFlight = false;
@@ -570,7 +587,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
         this.stale = result.stale;
         if (result.document !== undefined) {
           this.documentPayloadJson = result.rawPayloadJson;
-          this.publishDocument(result.document, result.stale);
+          this.publishDocument(result.document, result.stale, result.offlineSnapshot);
           this.state = result.stale ? ViewModelLoadState.PARTIAL : ViewModelLoadState.READY;
           this.notifyListeners();
           if (result.stale && !forceNetwork) {
@@ -582,12 +599,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
         }
         if (result.pendingExtraction !== undefined) {
           this.pending = result.pendingExtraction;
-          this.pendingExtraction = {
-            requestId: result.pendingExtraction.requestId,
-            html: result.pendingExtraction.html,
-            sourceUrl: result.pendingExtraction.sourceUrl,
-            stale: result.pendingExtraction.stale
-          };
+          this.pendingExtraction = result.pendingExtraction;
           this.parsing = true;
           this.state = ViewModelLoadState.LOADING;
           this.notifyListeners();
@@ -635,6 +647,11 @@ export class ArticleViewModel implements ViewModelLifecycle {
 
   /** Called by the View after ScpHtmlExtractor completes. */
   onExtractionResult(requestId: number, payload: string): void {
+    if (this.updateExtraction?.requestId === requestId) {
+      this.updateExtraction.resolve(payload);
+      this.clearUpdateExtraction();
+      return;
+    }
     const content = this.content;
     const pending = this.pending;
     if (content === undefined || pending === undefined || pending.requestId !== requestId || this.disposed) {
@@ -680,6 +697,11 @@ export class ArticleViewModel implements ViewModelLifecycle {
   }
 
   onExtractionFailed(requestId: number, message: string): void {
+    if (this.updateExtraction?.requestId === requestId) {
+      this.updateExtraction.reject(new Error(message || '正文提取失败，已保留原离线副本'));
+      this.clearUpdateExtraction();
+      return;
+    }
     if (this.pending?.requestId !== requestId || this.disposed) {
       return;
     }
@@ -938,23 +960,71 @@ export class ArticleViewModel implements ViewModelLifecycle {
     }
   }
 
-  async saveForOffline(): Promise<ArticleOfflineSnapshot | undefined> {
+  private extractOfflineUpdate(pending: PendingExtraction): Promise<string> {
+    return new Promise<string>((resolve, reject): void => {
+      this.updateExtraction = { requestId: pending.requestId, resolve, reject };
+      this.pendingExtraction = pending;
+      this.parsing = true;
+      this.notifyListeners();
+    });
+  }
+
+  private clearUpdateExtraction(): void {
+    this.updateExtraction = undefined;
+    this.pendingExtraction = undefined;
+    this.parsing = false;
+    this.notifyListeners();
+  }
+
+  private cancelUpdateExtraction(): void {
+    if (this.updateExtraction !== undefined) {
+      this.updateExtraction.reject(new Error('已离开阅读页，更新已取消'));
+      this.clearUpdateExtraction();
+    }
+  }
+
+  async saveForOffline(
+    action: ArticleOfflineSaveAction = ArticleOfflineSaveAction.SAVE
+  ): Promise<ArticleOfflineSnapshot | undefined> {
     const content = this.content;
-    const document = this.document;
+    let document = this.document;
+    let payload = this.documentPayloadJson;
     if (content === undefined || document === undefined || this.disposed || this.offlineSaving) {
       return undefined;
     }
-    const epoch = this.offlineEpoch;
+    if (action === ArticleOfflineSaveAction.UPDATE && (this.loadInFlight || this.pending !== undefined)) {
+      throw new Error('正文正在加载，请稍后再更新副本');
+    }
+    const epoch = ++this.offlineEpoch;
     this.offlineSaving = true;
     this.offlineProgressCompleted = 0;
     this.offlineProgressTotal = 0;
     this.offlineError = '';
     this.notifyListeners();
     try {
+      if (action !== ArticleOfflineSaveAction.SAVE) {
+        const result = action === ArticleOfflineSaveAction.REPAIR_IMAGES ?
+          await this.useCase.loadSavedCopy(content) : await this.useCase.checkOfflineUpdate(content, ++this.requestSequence);
+        if (!this.isOfflineCurrent(epoch, content) || !this.active) {
+          return undefined;
+        }
+        document = result.document;
+        payload = result.rawPayloadJson;
+        if (result.pendingExtraction !== undefined) {
+          payload = await this.extractOfflineUpdate(result.pendingExtraction);
+          document = await this.useCase.completeExtraction(content, result.pendingExtraction, payload);
+        }
+        if (document === undefined) {
+          throw new Error('未能读取正文，已保留原离线副本');
+        }
+      }
+      if (!this.isOfflineCurrent(epoch, content)) {
+        return undefined;
+      }
       const snapshot = await this.useCase.saveOffline(
         content,
         document,
-        this.documentPayloadJson,
+        payload,
         (progress: ArticleOfflineSaveProgress): void => {
           if (!this.isOfflineCurrent(epoch, content)) {
             return;
@@ -962,21 +1032,30 @@ export class ArticleViewModel implements ViewModelLifecycle {
           this.offlineProgressCompleted = progress.completedImages;
           this.offlineProgressTotal = progress.totalImages;
           this.notifyListeners();
-        }
+        },
+        action === ArticleOfflineSaveAction.UPDATE
       );
       if (!this.isOfflineCurrent(epoch, content)) {
         return undefined;
       }
       if (snapshot !== undefined) {
-        this.offlineSnapshot = snapshot;
-        this.offlineRevision += 1;
+        if (action === ArticleOfflineSaveAction.UPDATE || this.readSavedCopy) {
+          this.documentPayloadJson = payload;
+          this.publishDocument(document, false, snapshot);
+          this.state = ViewModelLoadState.READY;
+          this.error = undefined;
+        } else {
+          this.offlineSnapshot = snapshot;
+          this.offlineRevision += 1;
+        }
       }
       return snapshot;
     } catch (error) {
-      if (this.isOfflineCurrent(epoch, content)) {
-        this.offlineError = error instanceof Error ? error.message : '离线保存失败';
+      if (!this.isOfflineCurrent(epoch, content) || !this.active) {
+        return undefined;
       }
-      throw new Error(error instanceof Error ? error.message : '离线保存失败');
+      this.offlineError = error instanceof Error ? error.message : '离线保存失败';
+      throw new Error(this.offlineError);
     } finally {
       if (this.isOfflineCurrent(epoch, content)) {
         this.offlineSaving = false;
@@ -990,7 +1069,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
     if (content === undefined || this.disposed || this.offlineSaving) {
       return;
     }
-    const epoch = this.offlineEpoch;
+    const epoch = ++this.offlineEpoch;
     await this.useCase.removeOffline(content.key);
     if (this.isOfflineCurrent(epoch, content)) {
       this.offlineSnapshot = undefined;
@@ -1033,7 +1112,11 @@ export class ArticleViewModel implements ViewModelLifecycle {
     return !this.disposed && epoch === this.offlineEpoch && this.isContentCurrent(content);
   }
 
-  private publishDocument(document: ScpArticleDocument, stale: boolean): void {
+  private publishDocument(
+    document: ScpArticleDocument,
+    stale: boolean,
+    snapshot?: ArticleOfflineSnapshot
+  ): void {
     this.document = document;
     this.stale = stale;
     // The mapper keeps the display id in the site's customary uppercase form,
@@ -1041,7 +1124,10 @@ export class ArticleViewModel implements ViewModelLifecycle {
     // Always load fold state through the route identity so a freshly parsed
     // document cannot miss the row just written by toggleExpanded().
     this.loadExpanded(this.content?.id ?? document.itemId.toLowerCase());
-    if (this.content !== undefined) {
+    if (snapshot !== undefined) {
+      this.offlineSnapshot = snapshot;
+      this.offlineRevision += 1;
+    } else if (this.content !== undefined) {
       this.refreshOfflineSnapshot(this.content);
     }
     this.restoreReadingState().catch((): void => {

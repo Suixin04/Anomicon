@@ -69,6 +69,10 @@ export function parseArticleRouteContent(
   }
 }
 
+export function parseArticleRouteOfflineCopy(param: Object | null | undefined): boolean {
+  return param !== null && typeof param === 'object' && (param as ScpArticleRouteParams).offlineCopy === true;
+}
+
 export function parseArticleRouteAnchor(
   param: Object | null | undefined
 ): string {

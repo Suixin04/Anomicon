@@ -16,6 +16,13 @@ export enum ArticleOfflineStatus {
   MISSING_IMAGES_AND_INTERACTIVE = 'missing_images_and_interactive'
 }
 
+/** Which version the reader asked to put in the offline vault. */
+export enum ArticleOfflineSaveAction {
+  SAVE = 'save',
+  UPDATE = 'update',
+  REPAIR_IMAGES = 'repair_images'
+}
+
 /** One persisted image entry stored in the article's offline manifest. */
 export interface ArticleOfflineImageEntry {
   readonly url: string;
@@ -149,7 +156,7 @@ export interface ArticleOfflineDocumentRecord {
 
 /** Narrow port for downloading one validated image into cache before copying to offline vault. */
 export interface ArticleOfflineImageFetcher {
-  fetchToLocalFile(url: string): Promise<string>;
+  fetchToLocalFile(url: string, forceNetwork: boolean): Promise<string>;
 }
 
 export type ArticleOfflineStoreListener = () => void;
@@ -159,11 +166,13 @@ export interface ArticleOfflineStoragePort {
   initialize(): Promise<void>;
   inspect(content: LibraryContentRef): Promise<ArticleOfflineSnapshot | undefined>;
   loadDocument(content: LibraryContentRef): Promise<ArticleOfflineDocumentRecord | undefined>;
+  /** An explicit refresh fetches every image and only publishes the complete set. */
   save(
     content: LibraryContentRef,
     document: ScpArticleDocument,
     rawPayloadJson: string,
-    onProgress?: (progress: ArticleOfflineSaveProgress) => void
+    onProgress?: (progress: ArticleOfflineSaveProgress) => void,
+    refreshAllImages?: boolean
   ): Promise<ArticleOfflineSnapshot>;
   remove(contentKey: string): Promise<void>;
   listSummaries(): Promise<ArticleOfflineSummary[]>;

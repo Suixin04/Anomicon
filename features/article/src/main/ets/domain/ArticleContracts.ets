@@ -1,5 +1,6 @@
 import { LibraryContentRef } from 'library';
 import { ScpArticleDocument } from './ScpDocument';
+import { ArticleOfflineDocumentRecord, ArticleOfflineSnapshot } from './ArticleOfflineContracts';
 
 /** Source semantics of the raw HTML supplied by a product adapter. */
 export enum ArticleHtmlSource {
@@ -39,7 +40,7 @@ export enum ArticleContentSource {
 }
 
 /** HTML handed to the compatibility extractor only when native parsing declines it. */
-export class PendingExtraction {
+export class PendingExtraction implements ArticleExtractionRequest {
   readonly requestId: number;
   readonly contentKey: string;
   readonly itemId: string;
@@ -83,6 +84,7 @@ export class ArticleLoadResult {
   readonly stale: boolean;
   readonly error: string;
   readonly rawPayloadJson: string;
+  readonly offlineSnapshot?: ArticleOfflineSnapshot;
 
   constructor(
     document: ScpArticleDocument | undefined = undefined,
@@ -91,7 +93,8 @@ export class ArticleLoadResult {
     fetchedAt: number = 0,
     stale: boolean = false,
     error: string = '',
-    rawPayloadJson: string = ''
+    rawPayloadJson: string = '',
+    offlineSnapshot?: ArticleOfflineSnapshot
   ) {
     this.document = document;
     this.pendingExtraction = pendingExtraction;
@@ -100,6 +103,12 @@ export class ArticleLoadResult {
     this.stale = stale;
     this.error = error;
     this.rawPayloadJson = rawPayloadJson;
+    this.offlineSnapshot = offlineSnapshot;
+  }
+
+  static fromArchive(record: ArticleOfflineDocumentRecord): ArticleLoadResult {
+    return new ArticleLoadResult(record.document, undefined, ArticleContentSource.OFFLINE_ARCHIVE,
+      record.savedAt, false, '', record.rawPayloadJson, record.snapshot);
   }
 }
 

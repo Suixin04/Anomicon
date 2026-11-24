@@ -21,6 +21,7 @@ import {
   ArticleRenderer,
   ArticleScrollRestore,
   ArticleRelatedTale,
+  ArticleOfflineSaveAction,
   ArticleOfflineSnapshot,
   ArticleViewModel,
   ScpArticleDocument,
@@ -36,6 +37,7 @@ import {
 import {
   parseArticleRouteAnchor,
   parseArticleRouteContent,
+  parseArticleRouteOfflineCopy,
   parseArticleRouteSeriesId
 } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
@@ -317,7 +319,7 @@ struct ScpArticlePage {
       this.webModeHint = this.resolveWebModeHint(decision);
       if (this.autoWebEvaluatedItemId !== vm.document.itemId) {
         this.autoWebEvaluatedItemId = vm.document.itemId;
-        if (this.settings.complexPageMode === ComplexPageMode.SMART &&
+        if (!parseArticleRouteOfflineCopy(this.routeParam) && this.settings.complexPageMode === ComplexPageMode.SMART &&
           decision.level === ArticleWebModeRecommendation.AUTO_DIRECT &&
           this.sourceUrl.length > 0) {
           this.enterWebMode(this.sourceUrl, '检测到交互组件，已切换至原版网页模式');
@@ -565,7 +567,7 @@ struct ScpArticlePage {
     this.acceptsProgressEvents = true;
     // Route parsing stays at the product boundary. The VM owns content
     // loading, metadata, extraction tokens, history and reading effects.
-    this.viewModel.setRouteContent(content);
+    this.viewModel.setRouteContent(content, parseArticleRouteOfflineCopy(param));
     this.viewModel.attachReadingSession(content, this.currentReadingOffset());
     this.viewModel.activate();
     this.syncViewModelState();
@@ -967,7 +969,12 @@ struct ScpArticlePage {
     }
     this.hapticService.playSelection(this.settings.hapticEnabled);
     try {
-      const snapshot = await this.viewModel.saveForOffline();
+      let action = ArticleOfflineSaveAction.SAVE;
+      if (this.offlineSnapshot !== undefined) {
+        action = this.offlineSnapshot.missingImages > 0 ?
+          ArticleOfflineSaveAction.REPAIR_IMAGES : ArticleOfflineSaveAction.UPDATE;
+      }
+      const snapshot = await this.viewModel.saveForOffline(action);
       if (snapshot !== undefined) {
         this.showToast(`离线保存完成：${snapshot.badgeText}`);
       }

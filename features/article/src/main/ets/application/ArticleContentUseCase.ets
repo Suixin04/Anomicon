@@ -1,6 +1,7 @@
 import { LibraryContentRef } from 'library';
 import {
   ArticleContentGateway,
+  ArticleContentSource,
   ArticleLoadResult,
   PendingExtraction,
   ArticleMetadataPort,
@@ -37,6 +38,25 @@ export class ArticleContentUseCase {
     return Promise.resolve().then(() => this.gateway.load(content, requestId, forceNetwork));
   }
 
+  /** A shelf item names the published package, including its own verified image map. */
+  async loadSavedCopy(content: LibraryContentRef): Promise<ArticleLoadResult> {
+    const record = await this.offlineStore?.loadDocument(content);
+    if (record === undefined) {
+      throw new Error('该离线副本已移除或无法读取');
+    }
+    return ArticleLoadResult.fromArchive(record);
+  }
+
+  /** A forced 304 is a confirmed revision. An offline fallback is only suitable for reading. */
+  async checkOfflineUpdate(content: LibraryContentRef, requestId: number): Promise<ArticleLoadResult> {
+    const result = await this.load(content, requestId, true);
+    if (result.error.length > 0 || result.stale || (result.source !== ArticleContentSource.NETWORK &&
+      result.source !== ArticleContentSource.FRESH_HTML_CACHE)) {
+      throw new Error('未能联网检查更新，已保留原离线副本');
+    }
+    return result;
+  }
+
   completeExtraction(
     content: LibraryContentRef,
     pending: PendingExtraction,
@@ -68,13 +88,14 @@ export class ArticleContentUseCase {
     content: LibraryContentRef,
     document: ScpArticleDocument,
     rawPayloadJson: string,
-    onProgress?: (progress: ArticleOfflineSaveProgress) => void
+    onProgress?: (progress: ArticleOfflineSaveProgress) => void,
+    refreshAllImages: boolean = false
   ): Promise<ArticleOfflineSnapshot | undefined> {
     if (this.offlineStore === undefined) {
       return Promise.resolve(undefined);
     }
     return Promise.resolve().then(() =>
-      this.offlineStore!.save(content, document, rawPayloadJson, onProgress));
+      this.offlineStore!.save(content, document, rawPayloadJson, onProgress, refreshAllImages));
   }
 
   /** Remove one article's permanent offline files and metadata. */

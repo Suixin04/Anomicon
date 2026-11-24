@@ -51,6 +51,7 @@ export interface ScpArticleRouteParams {
   readonly content: LibraryContentRef;
   readonly anchor?: string;
   readonly seriesId?: string;
+  readonly offlineCopy?: boolean;
 }
 
 interface SerializedArticleRouteContent {
