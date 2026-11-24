@@ -31,6 +31,7 @@ import {
 } from 'article';
 import {
   AppRoutes,
+  RaisaFeedbackRouteParams,
   ScpArticleRouteParams,
   Scp3DArchiveRouteParams
 } from '../navigation/AppRoutes';
@@ -70,6 +71,7 @@ import { ExternalUrlPolicy } from 'anomiconbasic';
 import {
   LibraryContentKind,
   LibraryContentRef,
+  RaisaFeedbackCategory,
   StorySeriesArticleContext,
   StorySeriesEntry,
   StorySeriesViewModel,
@@ -1068,6 +1070,27 @@ struct ScpArticlePage {
     AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARCHIVE_3D, params);
   }
 
+  private openArticleFeedback(): void {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    const title = this.document?.title !== undefined && this.document.title.trim().length > 0 ?
+      this.document.title : this.itemName;
+    const renderMode = this.webModeActive ? 'web' :
+      (parseArticleRouteOfflineCopy(this.routeParam) ? 'offline' : 'native');
+    const articleUrl = this.webModeActive && this.currentWebUrl.length > 0 ?
+      this.currentWebUrl : this.sourceUrl;
+    const params: RaisaFeedbackRouteParams = {
+      entrySource: 'article',
+      initialCategory: RaisaFeedbackCategory.ARCHIVE_RENDER,
+      articleId: this.itemId,
+      articleTitle: title,
+      articleKind: this.contentKind,
+      articleUrl: articleUrl,
+      renderMode: renderMode,
+      revealHiddenText: this.revealHiddenText
+    };
+    AppNavigationCoordinator.push(this.pageStack, AppRoutes.FEEDBACK, params);
+  }
+
   /**
    * HDS `maxCount` is the total title-bar menu slot count, including the
    * generated More affordance when source items overflow.  Reserve one slot
@@ -1245,6 +1268,15 @@ struct ScpArticlePage {
         }
       });
     }
+    items.push({
+      content: {
+        icon: $r('sys.symbol.exclamationmark_shield_fill'),
+        label: '上报档案异常',
+        action: () => {
+          this.openArticleFeedback();
+        }
+      }
+    });
     return items;
   }
 

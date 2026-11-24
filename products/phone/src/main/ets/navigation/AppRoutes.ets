@@ -22,10 +22,22 @@ export class AppRoutes {
   /** Manifest-only index for browsing available three-dimensional archives. */
   static readonly ARCHIVE_3D_GALLERY: string = 'archive3dGallery';
   static readonly ASSESSMENT: string = 'assessment';
+  static readonly FEEDBACK: string = 'feedback';
 }
 
 export interface FoundationAssessmentRouteParams {
   readonly examId: string;
+}
+
+export interface RaisaFeedbackRouteParams {
+  readonly entrySource?: string;
+  readonly initialCategory?: string;
+  readonly articleId?: string;
+  readonly articleTitle?: string;
+  readonly articleKind?: string;
+  readonly articleUrl?: string;
+  readonly renderMode?: string;
+  readonly revealHiddenText?: boolean;
 }
 
 export interface ExploreCollectionRouteParams {

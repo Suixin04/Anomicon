@@ -1,5 +1,6 @@
 export {
   AppInfoPort,
+  ClipboardPort,
   HapticFeedbackPort,
   RuntimeClockPort,
   IdGeneratorPort
@@ -23,6 +24,7 @@ export {
   NetworkBoostPort
 } from './NetworkBoostContracts';
 export { AppInfoAdapter } from './AppInfoAdapter';
+export { ClipboardAdapter } from './ClipboardAdapter';
 export { HapticFeedbackAdapter } from './HapticFeedbackAdapter';
 export { NetworkBoostAdapter } from './NetworkBoostAdapter';
 export { RuntimeClockAdapter } from './RuntimeClockAdapter';

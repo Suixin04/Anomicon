@@ -302,6 +302,7 @@ export struct FoundationHome {
   @Param active: boolean = true;
   @Event onOpenContent: (content: LibraryContentRef) => void = (_content: LibraryContentRef): void => {};
   @Event onStartAssessment: (examId: string) => void = (_examId: string): void => {};
+  @Event onOpenFeedback: () => void = (): void => {};
 
   @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
   @Local private sideBySide: boolean = false;
@@ -556,6 +557,73 @@ export struct FoundationHome {
     .alignItems(HorizontalAlign.Start)
   }
 
+  @Builder
+  private raisaMaintenanceBanner() {
+    Column({ space: 10 }) {
+      this.sectionHeader('终端运维通道', '发现排版错位、功能缺口或终端异常？向站务签发一份工单')
+
+      Row({ space: 12 }) {
+        Column() {
+          SymbolGlyph($r('sys.symbol.wrench_and_screwdriver_fill'))
+            .fontSize(20)
+            .fontColor([$r('sys.color.icon_emphasize')])
+        }
+        .width(42)
+        .height(42)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(12)
+
+        Column({ space: 3 }) {
+          Text('RAISA // 档案系统维护工单')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_emphasize'))
+          Text('异常上报、功能提案与本地工单回执追踪')
+            .fontSize(AppTypography.BODY_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text('支持附带脱敏终端快照，无需登录 GitHub 即可提交')
+            .fontSize(AppTypography.CAPTION_L)
+            .fontColor($r('sys.color.font_secondary'))
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Column() {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(13)
+            .fontColor([$r('sys.color.icon_emphasize')])
+        }
+        .width(30)
+        .height(30)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(15)
+      }
+      .id('foundationRaisaFeedbackBanner')
+      .attributeModifier(CARD_PRESS_MODIFIER)
+      .animation(pressAnimation())
+      .width('100%')
+      .padding(14)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(materialCardSurfaceColor(this.isImmersiveMaterialEnabled()))
+      .border(this.isImmersiveMaterialEnabled() ?
+        { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+      .borderRadius(18)
+      .backgroundBlurStyle(this.isImmersiveMaterialEnabled() ? BlurStyle.COMPONENT_REGULAR : undefined)
+      .onClick(() => this.onOpenFeedback())
+      .accessibilityText('打开 RAISA 档案系统维护工单页')
+    }
+    .width('100%')
+    .padding({ left: this.horizontalMargin, right: this.horizontalMargin })
+    .alignItems(HorizontalAlign.Start)
+  }
+
   build() {
     Scroll(this.scroller) {
       Column({ space: SECTION_SPACE }) {
@@ -575,6 +643,8 @@ export struct FoundationHome {
           .width(this.sideBySide ? (this.wideTwoColumn ? '52%' : '50%') : '100%')
         }
         .width('100%')
+
+        this.raisaMaintenanceBanner()
 
         Blank()
           .width('100%')

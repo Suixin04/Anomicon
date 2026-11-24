@@ -1,0 +1,13 @@
+# 将 raisa.example.com 替换为你的 Cloudflare 子域名
+raisa.example.com {
+    encode zstd gzip
+
+    # 限制单次请求大小并反向代理到本机 8787 端口的 RAISA 中转服务
+    request_body {
+        max_size 64KB
+    }
+
+    reverse_proxy 127.0.0.1:8787 {
+        header_up X-Real-IP {remote_host}
+    }
+}

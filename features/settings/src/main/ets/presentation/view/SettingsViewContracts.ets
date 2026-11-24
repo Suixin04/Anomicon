@@ -58,7 +58,8 @@ export class ContentLicenseContent {
 export enum SettingsNavigationTarget {
   ABOUT = 'about',
   CONTENT_LICENSE = 'content_license',
-  ARCHIVE_3D_GALLERY = 'archive_3d_gallery'
+  ARCHIVE_3D_GALLERY = 'archive_3d_gallery',
+  RAISA_FEEDBACK = 'raisa_feedback'
 }
 
 /** Snapshot of disposable local caches and managed offline assets shown on Settings. */

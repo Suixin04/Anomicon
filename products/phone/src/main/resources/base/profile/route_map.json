@@ -49,6 +49,11 @@
       "name": "assessment",
       "pageSourceFile": "src/main/ets/pages/routes/RouteAdapters.ets",
       "buildFunction": "FoundationAssessmentRouteAdapter"
+    },
+    {
+      "name": "feedback",
+      "pageSourceFile": "src/main/ets/pages/routes/RouteAdapters.ets",
+      "buildFunction": "RaisaFeedbackRouteAdapter"
     }
   ]
 }

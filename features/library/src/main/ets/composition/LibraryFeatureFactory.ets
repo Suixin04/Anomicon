@@ -1,15 +1,21 @@
 import { common } from '@kit.AbilityKit';
 import { LibraryFeatureGraph } from '../domain/LibraryFeaturePorts';
-import { FavoriteRepository } from '../domain/LibraryRepositories';
-import { ReadingHistoryRepository } from '../domain/LibraryRepositories';
+import { FavoriteRepository, ReadingHistoryRepository } from '../domain/LibraryRepositories';
 import { ResearchActivityRepo as ResearchActivityRepoPort } from '../domain/ResearchActivityRepo';
 import { StorySeriesRepository } from '../domain/StorySeriesContracts';
 import { FoundationAssessmentRepository } from '../domain/FoundationAssessmentContracts';
+import {
+  RAISA_RELAY_BASE_URL,
+  RaisaFeedbackRelayGateway,
+  RaisaFeedbackRepository
+} from '../domain/RaisaFeedbackContracts';
 import { RdbFavoriteRepository } from '../data/RdbFavoriteRepository';
 import { ReadingHistoryRepo } from '../data/ReadingHistoryRepo';
 import { ResearchActivityRepo } from '../data/ResearchActivityRepo';
 import { StorySeriesRepo } from '../data/StorySeriesRepo';
 import { FoundationAssessmentRepo } from '../data/FoundationAssessmentRepo';
+import { RaisaFeedbackRepo } from '../data/RaisaFeedbackRepo';
+import { RaisaFeedbackRelayClient } from '../data/RaisaFeedbackRelayClient';
 
 class LibraryFeatureGraphImpl implements LibraryFeatureGraph {
   readonly favoriteRepository: FavoriteRepository;
@@ -17,6 +23,8 @@ class LibraryFeatureGraphImpl implements LibraryFeatureGraph {
   readonly researchActivityRepository: ResearchActivityRepoPort;
   readonly storySeriesRepository: StorySeriesRepository;
   readonly foundationAssessmentRepository: FoundationAssessmentRepository;
+  readonly raisaFeedbackRepository: RaisaFeedbackRepository;
+  readonly raisaFeedbackRelay: RaisaFeedbackRelayGateway;
   private readonly initializer: () => Promise<void>;
 
   constructor(
@@ -25,6 +33,8 @@ class LibraryFeatureGraphImpl implements LibraryFeatureGraph {
     researchActivityRepository: ResearchActivityRepoPort,
     storySeriesRepository: StorySeriesRepository,
     foundationAssessmentRepository: FoundationAssessmentRepository,
+    raisaFeedbackRepository: RaisaFeedbackRepository,
+    raisaFeedbackRelay: RaisaFeedbackRelayGateway,
     initializer: () => Promise<void>
   ) {
     this.favoriteRepository = favoriteRepository;
@@ -32,6 +42,8 @@ class LibraryFeatureGraphImpl implements LibraryFeatureGraph {
     this.researchActivityRepository = researchActivityRepository;
     this.storySeriesRepository = storySeriesRepository;
     this.foundationAssessmentRepository = foundationAssessmentRepository;
+    this.raisaFeedbackRepository = raisaFeedbackRepository;
+    this.raisaFeedbackRelay = raisaFeedbackRelay;
     this.initializer = initializer;
   }
 
@@ -48,6 +60,8 @@ export function createLibraryFeatureGraph(context: common.UIAbilityContext): Lib
   const favorites = new RdbFavoriteRepository(context);
   const history = new ReadingHistoryRepo(context);
   const assessments = new FoundationAssessmentRepo(context);
+  const feedbackRepo = new RaisaFeedbackRepo(context);
+  const feedbackRelay = new RaisaFeedbackRelayClient(RAISA_RELAY_BASE_URL);
   const research = new ResearchActivityRepo(
     context,
     (): Promise<number> => assessments.totalAwardedXp()
@@ -63,6 +77,7 @@ export function createLibraryFeatureGraph(context: common.UIAbilityContext): Lib
         favorites.initialize(),
         history.initialize(),
         assessments.initialize(),
+        feedbackRepo.initialize(),
         research.initialize(),
         storySeries.initialize()
       ]);
@@ -82,6 +97,8 @@ export function createLibraryFeatureGraph(context: common.UIAbilityContext): Lib
     research,
     storySeries,
     assessments,
+    feedbackRepo,
+    feedbackRelay,
     initialize
   );
 }

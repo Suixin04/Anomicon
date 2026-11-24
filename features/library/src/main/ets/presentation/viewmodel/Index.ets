@@ -12,3 +12,8 @@ export {
   FoundationAssessmentViewModel,
   FoundationAssessmentViewModelListener
 } from './FoundationAssessmentViewModel';
+export {
+  RaisaFeedbackNowProvider,
+  RaisaFeedbackViewModel,
+  RaisaFeedbackViewModelListener
+} from './RaisaFeedbackViewModel';

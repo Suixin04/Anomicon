@@ -41,8 +41,39 @@ export {
   AssessmentBonusXpCallback,
   AssessmentNowProvider,
   FoundationAssessmentViewModel,
-  FoundationAssessmentViewModelListener
+  FoundationAssessmentViewModelListener,
+  RaisaFeedbackNowProvider,
+  RaisaFeedbackViewModel,
+  RaisaFeedbackViewModelListener
 } from './presentation/viewmodel/Index';
+export {
+  RAISA_CONTACT_MAX_LENGTH,
+  RAISA_DETAILS_MAX_LENGTH,
+  RAISA_DETAILS_MIN_LENGTH,
+  RAISA_FEEDBACK_CATEGORIES,
+  RAISA_GITHUB_ISSUES_URL,
+  RAISA_RELAY_BASE_URL,
+  RAISA_SUMMARY_MAX_LENGTH,
+  RAISA_SUMMARY_MIN_LENGTH,
+  RaisaDiagnosticSnapshot,
+  RaisaFeedbackCategory,
+  RaisaFeedbackCategoryDescriptor,
+  RaisaFeedbackContext,
+  RaisaFeedbackRelayGateway,
+  RaisaFeedbackRepository,
+  RaisaFeedbackSubmission,
+  RaisaFeedbackSubmitResult,
+  RaisaFeedbackTicket,
+  emptyRaisaFeedbackContext,
+  findRaisaFeedbackCategoryDescriptor,
+  formatRaisaDiagnosticLines,
+  formatRaisaTicketPlainReport,
+  formatRaisaTicketTimestamp,
+  parseRaisaFeedbackCategory,
+  sanitizeFeedbackMultiline,
+  sanitizeFeedbackSingleLine,
+  validateRaisaFeedbackInput
+} from './domain/RaisaFeedbackContracts';
 export {
   FoundationAssessmentExam,
   FoundationAssessmentIcon,

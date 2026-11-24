@@ -61,6 +61,7 @@ import {
   FoundationAssessmentRouteParams,
   LibraryCollectionMode,
   LibraryCollectionRouteParams,
+  RaisaFeedbackRouteParams,
   ScpArticleRouteParams
 } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
@@ -533,6 +534,17 @@ export struct MainTabIndex {
     );
   }
 
+  private openFeedback(): void {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    const params: RaisaFeedbackRouteParams = { entrySource: 'foundation' };
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.FEEDBACK,
+      params,
+      this.shouldUseSplitMode()
+    );
+  }
+
   private createTabBarStyle(item: TabItem): BottomTabBarStyle {
     const icon: TabBarSymbol = {
       normal: new SymbolGlyphModifier(item.iconNormal),
@@ -652,7 +664,8 @@ export struct MainTabIndex {
                   settings: this.settings,
                   active: this.tabsViewModel.currentIndex === HomeTabId.FOUNDATION,
                   onOpenContent: (content: LibraryContentRef) => this.openContent(content),
-                  onStartAssessment: (examId: string) => this.openAssessment(examId)
+                  onStartAssessment: (examId: string) => this.openAssessment(examId),
+                  onOpenFeedback: () => this.openFeedback()
                 })
               } else if (item.id === HomeTabId.STORY) {
                 TaleList({

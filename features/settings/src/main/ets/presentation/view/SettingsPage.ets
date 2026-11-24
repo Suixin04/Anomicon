@@ -1001,6 +1001,17 @@ export struct SettingsPage {
         componentId: 'contentLicenseSettingsRow',
         onAction: (): void => this.openPage(SettingsNavigationTarget.CONTENT_LICENSE)
       })
+      this.cardDivider(56)
+      SettingsActionRow({
+        icon: $r('sys.symbol.wrench_and_screwdriver_fill'),
+        title: 'RAISA 终端运维工单',
+        subtitle: '提交档案解析异常、终端故障或功能提案',
+        trailingBadge: '',
+        showChevron: true,
+        rowEnabled: true,
+        componentId: 'raisaFeedbackSettingsRow',
+        onAction: (): void => this.openPage(SettingsNavigationTarget.RAISA_FEEDBACK)
+      })
     }
     .width('100%')
     .backgroundColor($r('sys.color.comp_background_primary'))

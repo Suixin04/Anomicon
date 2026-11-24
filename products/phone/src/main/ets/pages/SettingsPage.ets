@@ -6,7 +6,7 @@ import {
   SettingsStorageActions,
   SettingsViewModel
 } from 'settings';
-import { AppRoutes } from '../navigation/AppRoutes';
+import { AppRoutes, RaisaFeedbackRouteParams } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 
 /** Phone-only route mapping for Settings navigation events. */
@@ -18,9 +18,18 @@ function routeFor(target: SettingsNavigationTarget): string {
       return AppRoutes.CONTENT_LICENSE;
     case SettingsNavigationTarget.ARCHIVE_3D_GALLERY:
       return AppRoutes.ARCHIVE_3D_GALLERY;
+    case SettingsNavigationTarget.RAISA_FEEDBACK:
+      return AppRoutes.FEEDBACK;
     default:
       throw new Error(`未知设置导航目标：${target}`);
   }
+}
+
+function routeParamFor(target: SettingsNavigationTarget): RaisaFeedbackRouteParams | undefined {
+  if (target === SettingsNavigationTarget.RAISA_FEEDBACK) {
+    return { entrySource: 'settings' };
+  }
+  return undefined;
 }
 
 /**
@@ -55,7 +64,7 @@ export function SettingsPageBuilder(
       pageStack: NavPathStack | undefined,
       target: SettingsNavigationTarget
     ): void => {
-      AppNavigationCoordinator.push(pageStack, routeFor(target));
+      AppNavigationCoordinator.push(pageStack, routeFor(target), routeParamFor(target));
     }
   });
 }

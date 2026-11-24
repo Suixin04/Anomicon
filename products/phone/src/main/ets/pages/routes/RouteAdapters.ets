@@ -15,6 +15,7 @@ import {
   Scp3DArchiveInstallState
 } from '../Scp3DArchiveGalleryPage';
 import { FoundationAssessmentPageBuilder } from '../FoundationAssessmentPage';
+import { RaisaFeedbackPageBuilder } from '../RaisaFeedbackPage';
 import { AppContainer } from '../../composition/AppContainer';
 import {
   ArchiveModelInstallSnapshot,
@@ -195,5 +196,16 @@ export function FoundationAssessmentRouteAdapter() {
     AppContainer.getInstance().foundationAssessments(),
     AppContainer.getInstance().settings(),
     AppContainer.getInstance().createHapticFeedback()
+  );
+}
+
+@Builder
+export function RaisaFeedbackRouteAdapter() {
+  RaisaFeedbackPageBuilder(
+    AppContainer.getInstance().raisaFeedback(),
+    AppContainer.getInstance().settings(),
+    AppContainer.getInstance().appInfo(),
+    AppContainer.getInstance().createHapticFeedback(),
+    AppContainer.getInstance().clipboard()
   );
 }

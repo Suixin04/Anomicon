@@ -2,6 +2,7 @@
 export { TerminalHome } from './presentation/view/TerminalHome';
 export { FoundationHome } from './presentation/view/FoundationHome';
 export { FoundationAssessmentView } from './presentation/view/FoundationAssessmentView';
+export { RaisaFeedbackView } from './presentation/view/RaisaFeedbackView';
 export {
   TerminalViewModel,
   TerminalTitleResolver,

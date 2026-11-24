@@ -3,6 +3,7 @@ export {
   TerminalHome,
   FoundationHome,
   FoundationAssessmentView,
+  RaisaFeedbackView,
   TerminalViewModel,
   TerminalTitleResolver,
   TerminalViewModelListener,

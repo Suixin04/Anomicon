@@ -7,6 +7,8 @@ import {
   RequestAgentBackgroundDownloadAdapter,
   AppInfoAdapter,
   AppInfoPort,
+  ClipboardAdapter,
+  ClipboardPort,
   HapticFeedbackPort,
   HapticFeedbackAdapter,
   IdGeneratorAdapter,
@@ -28,6 +30,7 @@ import {
 import { LibraryCollectionVM } from 'library';
 import {
   FoundationAssessmentViewModel,
+  RaisaFeedbackViewModel,
   ResearchProfileViewModel,
   StorySeriesViewModel
 } from 'library';
@@ -117,6 +120,7 @@ const READING_HISTORY_STORAGE_KEY: string = 'anomicon.library.readingHistory';
 const RESEARCH_PROFILE_STORAGE_KEY: string = 'anomicon.research.profile';
 const STORY_SERIES_STORAGE_KEY: string = 'anomicon.library.storySeries';
 const FOUNDATION_ASSESSMENT_STORAGE_KEY: string = 'anomicon.library.foundationAssessments';
+const RAISA_FEEDBACK_STORAGE_KEY: string = 'anomicon.library.raisaFeedback';
 
 /**
  * 应用级组合根。具体 Harmony 实现只在这里被组装，页面只取得已装配的展示状态。
@@ -132,6 +136,7 @@ export class AppContainer {
   private researchState: ResearchProfileViewModel | undefined = undefined;
   private storySeriesState: StorySeriesViewModel | undefined = undefined;
   private foundationAssessmentsState: FoundationAssessmentViewModel | undefined = undefined;
+  private raisaFeedbackState: RaisaFeedbackViewModel | undefined = undefined;
   private readingActivityState: ReadingActivityCoord | undefined = undefined;
   private articleGraph: ArticleFeatureGraph | undefined = undefined;
   /** Feature graphs are shared at the adapter/use-case level; screen VMs are factory-owned. */
@@ -152,6 +157,7 @@ export class AppContainer {
   private appFilesDir: string = '';
   private readonly abilityScopeOwner: AbilityScopeOwner = new AbilityScopeOwner();
   private readonly appInfoCapability: AppInfoPort = new AppInfoAdapter();
+  private readonly clipboardCapability: ClipboardPort = new ClipboardAdapter();
   private readonly hapticFeedbackCapability: HapticFeedbackPort = new HapticFeedbackAdapter();
   private readonly runtimeClockCapability: RuntimeClockPort = new RuntimeClockAdapter();
   private readonly idGeneratorCapability: IdGeneratorPort = new IdGeneratorAdapter();
@@ -295,6 +301,21 @@ export class AppContainer {
         )
       )!;
     }
+
+    if (this.raisaFeedbackState === undefined) {
+      if (this.libraryGraph === undefined) {
+        throw new Error('Library feature graph is not initialized');
+      }
+      this.raisaFeedbackState = AppStorageV2.connect(
+        RaisaFeedbackViewModel,
+        RAISA_FEEDBACK_STORAGE_KEY,
+        () => new RaisaFeedbackViewModel(
+          this.libraryGraph!.raisaFeedbackRepository,
+          this.libraryGraph!.raisaFeedbackRelay,
+          this.idGeneratorCapability
+        )
+      )!;
+    }
     // AppStorageV2 may return an existing shared profile when an ability is
     // recreated in the same process.  The activity coordinator is a separate
     // application service, so ensure it is rebuilt whenever its VM exists but
@@ -407,6 +428,13 @@ export class AppContainer {
     return this.foundationAssessmentsState;
   }
 
+  raisaFeedback(): RaisaFeedbackViewModel {
+    if (this.raisaFeedbackState === undefined) {
+      throw new Error('AppContainer must be initialized before opening RAISA feedback');
+    }
+    return this.raisaFeedbackState;
+  }
+
   readingActivity(): ReadingActivityCoord {
     if (this.readingActivityState === undefined) {
       throw new Error('AppContainer must be initialized before tracking reading activity');
@@ -514,6 +542,11 @@ export class AppContainer {
     return this.appInfoCapability;
   }
 
+  /** Shared system pasteboard port exposed only through product composition. */
+  clipboard(): ClipboardPort {
+    return this.clipboardCapability;
+  }
+
   /** Shared platform haptics are exposed as a capability, never as a page singleton. */
   createHapticFeedback(): HapticFeedbackPort {
     return this.hapticFeedbackCapability;
@@ -582,6 +615,10 @@ export class AppContainer {
     return this.foundationAssessments().initialize();
   }
 
+  whenRaisaFeedbackReady(): Promise<void> {
+    return this.raisaFeedback().initialize();
+  }
+
   /**
    * Start non-first-screen persistence after the launch transition has drawn.
    * Catalog and Explore remain initialized in initialize() because Explore is
@@ -600,6 +637,7 @@ export class AppContainer {
     tasks.push(this.whenResearchProfileReady());
     tasks.push(this.whenStorySeriesReady());
     tasks.push(this.whenFoundationAssessmentsReady());
+    tasks.push(this.whenRaisaFeedbackReady());
     await Promise.all(tasks);
   }
 
@@ -689,6 +727,7 @@ export class AppContainer {
     this.settingsState?.dispose();
     this.storySeriesState?.dispose();
     this.foundationAssessmentsState?.dispose();
+    this.raisaFeedbackState?.dispose();
     this.catalogGraph?.dispose();
     this.networkBoostCapability.stop();
 
@@ -700,6 +739,7 @@ export class AppContainer {
     this.researchState = undefined;
     this.storySeriesState = undefined;
     this.foundationAssessmentsState = undefined;
+    this.raisaFeedbackState = undefined;
     this.readingActivityState = undefined;
     this.articleGraph = undefined;
     this.exploreGraph = undefined;
@@ -727,6 +767,7 @@ export class AppContainer {
     this.removeSharedStateIfPresent(sharedKeys, RESEARCH_PROFILE_STORAGE_KEY);
     this.removeSharedStateIfPresent(sharedKeys, STORY_SERIES_STORAGE_KEY);
     this.removeSharedStateIfPresent(sharedKeys, FOUNDATION_ASSESSMENT_STORAGE_KEY);
+    this.removeSharedStateIfPresent(sharedKeys, RAISA_FEEDBACK_STORAGE_KEY);
   }
 
   private removeSharedStateIfPresent(keys: string[], key: string): void {

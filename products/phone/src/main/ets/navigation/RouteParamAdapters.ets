@@ -4,14 +4,18 @@ import {
 import {
   LibraryCollectionMode,
   LibraryContentRef,
+  RaisaFeedbackContext,
+  emptyRaisaFeedbackContext,
   normalizeAssessmentExamId,
-  normalizeSeriesPageId
+  normalizeSeriesPageId,
+  parseRaisaFeedbackCategory
 } from 'library';
 import { normalizeArticleAnchor } from 'article';
 import {
   ExploreCollectionRouteParams,
   FoundationAssessmentRouteParams,
   LibraryCollectionRouteParams,
+  RaisaFeedbackRouteParams,
   ScpArticleRouteParams,
   Scp3DArchiveRouteParams,
   resolveArticleRouteContent
@@ -127,4 +131,34 @@ export function parseAssessmentRouteExamId(
     return '';
   }
   return normalizeAssessmentExamId(candidate.examId);
+}
+
+export function parseFeedbackRouteContext(
+  param: Object | null | undefined
+): RaisaFeedbackContext {
+  if (param === undefined || param === null || typeof param !== 'object') {
+    return emptyRaisaFeedbackContext('settings');
+  }
+  const candidate = param as RaisaFeedbackRouteParams;
+  const entrySource = typeof candidate.entrySource === 'string' && candidate.entrySource.trim().length > 0 ?
+    candidate.entrySource.trim() : 'settings';
+  const initialCategory = typeof candidate.initialCategory === 'string' ?
+    parseRaisaFeedbackCategory(candidate.initialCategory) :
+    emptyRaisaFeedbackContext(entrySource).initialCategory;
+  const articleId = typeof candidate.articleId === 'string' ? candidate.articleId.trim() : '';
+  const articleTitle = typeof candidate.articleTitle === 'string' ? candidate.articleTitle.trim() : '';
+  const articleKind = typeof candidate.articleKind === 'string' ? candidate.articleKind.trim() : '';
+  const articleUrl = typeof candidate.articleUrl === 'string' ? candidate.articleUrl.trim() : '';
+  const renderMode = typeof candidate.renderMode === 'string' ? candidate.renderMode.trim() : '';
+  const revealHiddenText = candidate.revealHiddenText === true;
+  return new RaisaFeedbackContext(
+    entrySource,
+    initialCategory,
+    articleId,
+    articleTitle,
+    articleKind,
+    articleUrl,
+    renderMode,
+    revealHiddenText
+  );
 }

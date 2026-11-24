@@ -1,6 +1,14 @@
 /** Platform capabilities consumed by application and presentation code. */
 export interface AppInfoPort {
   versionName(): string;
+  versionCode(): number;
+  versionLabel(): string;
+  deviceType(): string;
+  osLabel(): string;
+}
+
+export interface ClipboardPort {
+  copyText(text: string): Promise<void>;
 }
 
 export interface HapticFeedbackPort {

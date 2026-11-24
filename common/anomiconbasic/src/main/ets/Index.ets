@@ -11,10 +11,12 @@ export {
 } from './foundation/Index';
 export {
   AppInfoPort,
+  ClipboardPort,
   HapticFeedbackPort,
   RuntimeClockPort,
   IdGeneratorPort,
   AppInfoAdapter,
+  ClipboardAdapter,
   HapticFeedbackAdapter,
   RuntimeClockAdapter,
   IdGeneratorAdapter,

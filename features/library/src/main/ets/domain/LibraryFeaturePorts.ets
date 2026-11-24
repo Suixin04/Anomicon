@@ -2,6 +2,7 @@ import { FavoriteRepository, ReadingHistoryRepository } from './LibraryRepositor
 import { ResearchActivityRepo } from './ResearchActivityRepo';
 import { StorySeriesRepository } from './StorySeriesContracts';
 import { FoundationAssessmentRepository } from './FoundationAssessmentContracts';
+import { RaisaFeedbackRelayGateway, RaisaFeedbackRepository } from './RaisaFeedbackContracts';
 
 /**
  * Product-facing library dependency graph.
@@ -15,6 +16,8 @@ export interface LibraryFeatureGraph {
   readonly researchActivityRepository: ResearchActivityRepo;
   readonly storySeriesRepository: StorySeriesRepository;
   readonly foundationAssessmentRepository: FoundationAssessmentRepository;
+  readonly raisaFeedbackRepository: RaisaFeedbackRepository;
+  readonly raisaFeedbackRelay: RaisaFeedbackRelayGateway;
   /** Opens/migrates library persistence once. Safe to call repeatedly. */
   initialize(): Promise<void>;
 }
