@@ -164,6 +164,24 @@ export class RdbArticleDocumentCache implements ArticleDocumentCachePort {
     });
   }
 
+  /** 清空全部解析文档缓存及 sidecar 文本文件，保留阅读进度表。 */
+  async clearAll(): Promise<void> {
+    await this.initialize();
+    await this.enqueueOperation(async (): Promise<void> => {
+      const store = await this.requireStore();
+      const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+      try {
+        const deleted = await store.delete(predicates);
+        if (deleted < 0) {
+          throw new Error('清空文档缓存元数据失败');
+        }
+      } catch (error) {
+        throw this.documentError('清空', error);
+      }
+      await this.requireTextFiles().clearAll();
+    });
+  }
+
   private async open(): Promise<void> {
     try {
       const textFiles = new AtomicTextCacheFileStore(

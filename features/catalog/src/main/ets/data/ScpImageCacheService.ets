@@ -252,6 +252,29 @@ export class ScpImageCacheService {
     }
   }
 
+  /** 清空已落盘的图片缓存及残留临时文件。 */
+  async clearAll(): Promise<void> {
+    this.validatedPaths.clear();
+    if (this.imageDir.length === 0 && this.context !== undefined) {
+      this.initialize(this.context);
+    }
+    if (this.imageDir.length === 0 || !(await this.existsAsync(this.imageDir))) {
+      return;
+    }
+    try {
+      const names = await fs.listFile(this.imageDir);
+      for (let index: number = 0; index < names.length; index++) {
+        const name = names[index];
+        const fullPath = `${this.imageDir}/${name}`;
+        if (this.isManagedCachePath(fullPath) || name.indexOf('.tmp_') >= 0) {
+          await this.removeFileIfExists(fullPath);
+        }
+      }
+    } catch (_error) {
+      // 单次目录清理失败不影响上层操作完成。
+    }
+  }
+
   private async loadNormalized(normalizedUrl: string): Promise<string> {
     const stem = `img_${this.sha256Hex(normalizedUrl)}`;
     const cachedPath = await this.findReusablePath(stem);

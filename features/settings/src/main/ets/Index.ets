@@ -1,10 +1,17 @@
 /** Narrow settings feature出口. */
 export {
   AppSettings,
+  ComplexPageMode,
   ThemeMode,
   ReadingSettingsRange,
+  ReadingTextAlign,
+  formatFontSizeLabel,
+  formatLineHeightLabel,
+  formatStorageBytes,
   normalizeReadingFontSize,
-  normalizeReadingLineHeight
+  normalizeReadingLineHeight,
+  parseComplexPageMode,
+  parseReadingTextAlign
 } from './domain/SettingsModels';
 export { SettingsRepository, ThemeModeApplier } from './domain/SettingsRepository';
 export { SettingsFeatureGraph } from './domain/SettingsFeaturePorts';
@@ -22,5 +29,7 @@ export {
   SettingsNavigationTarget,
   SettingsPage,
   SettingsPageBuilder,
+  SettingsStorageActions,
+  SettingsStorageUsage,
   SettingsViewContract
 } from './presentation/view/Index';

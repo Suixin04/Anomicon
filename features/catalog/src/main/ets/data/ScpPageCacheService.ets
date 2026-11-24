@@ -255,6 +255,34 @@ export class ScpPageCacheService {
     });
   }
 
+  /** 清空全部原始网页快照及 sidecar 文本缓存，同时推进所有已知 URL 代次。 */
+  async clearAll(): Promise<void> {
+    await this.enqueueOperation(async (): Promise<void> => {
+      const generationKeys = Array.from(this.latestGenerations.keys());
+      for (let index = 0; index < generationKeys.length; index++) {
+        this.advanceGeneration(generationKeys[index]);
+      }
+      const fetchedKeys = Array.from(this.latestFetchedAts.keys());
+      for (let index = 0; index < fetchedKeys.length; index++) {
+        if (!this.latestGenerations.has(fetchedKeys[index])) {
+          this.advanceGeneration(fetchedKeys[index]);
+        }
+      }
+      this.latestFetchedAts.clear();
+      const store = await this.requireStore();
+      const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+      try {
+        const deleted = await store.delete(predicates);
+        if (deleted < 0) {
+          throw new Error('清空网页缓存元数据失败');
+        }
+      } catch (error) {
+        throw this.cacheError('清空', error);
+      }
+      await this.requireTextFiles().clearAll();
+    });
+  }
+
   private async open(context: common.UIAbilityContext): Promise<void> {
     try {
       const textFiles = new AtomicTextCacheFileStore(context.cacheDir, PAGE_TEXT_CACHE_DIRECTORY);

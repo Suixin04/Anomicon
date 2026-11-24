@@ -39,7 +39,8 @@ export function SettingsRouteAdapter() {
   SettingsPageBuilder(
     AppContainer.getInstance().settings(),
     AppContainer.getInstance().appInfo(),
-    AppContainer.getInstance().createHapticFeedback()
+    AppContainer.getInstance().createHapticFeedback(),
+    AppContainer.getInstance().createSettingsStorageActions()
   );
 }
 @Builder

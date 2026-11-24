@@ -24,6 +24,8 @@ export interface CatalogFeatureGraph {
   readonly imagePreviewActions: ImagePreviewActions;
   /** Initializes all catalog-owned persistence adapters idempotently. */
   initialize(): Promise<void>;
+  /** Clears disposable page, image and preview caches while keeping catalog series index intact. */
+  clearTemporaryCaches(): Promise<void>;
   /** Releases graph-owned native resources. Safe to call repeatedly. */
   dispose(): void;
 }

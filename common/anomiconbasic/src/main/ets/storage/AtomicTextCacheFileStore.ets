@@ -148,6 +148,25 @@ export class AtomicTextCacheFileStore {
     }
   }
 
+  /** 清空本实例目录中已提交的正式文本缓存及残留临时文件。 */
+  async clearAll(): Promise<void> {
+    try {
+      if (!(await fs.access(this.directory))) {
+        return;
+      }
+      const names = await fs.listFile(this.directory);
+      for (let index = 0; index < names.length; index++) {
+        const name = names[index];
+        const fullPath = `${this.directory}/${name}`;
+        if (this.expectedSize(fullPath) > 0 || name.endsWith('.tmp')) {
+          await this.removeIfExistsQuietly(fullPath);
+        }
+      }
+    } catch (_error) {
+      // 目录清理尽可能完成，单次列举异常不阻断上层重置。
+    }
+  }
+
   private async ensureDirectory(): Promise<void> {
     try {
       if (!(await fs.access(this.directory))) {

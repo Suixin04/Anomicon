@@ -31,9 +31,11 @@ import {
 } from 'library';
 import {
   SettingsFeatureGraph,
+  SettingsStorageActions,
   createSettingsFeatureGraph
 } from 'settings';
 import { SettingsViewModel, ThemeMode } from 'settings';
+import { SettingsStorageAdapter } from './SettingsStorageAdapter';
 import {
   ExploreContentUseCase,
   ExploreCollectionVM,
@@ -123,6 +125,8 @@ export class AppContainer {
   /** Application-scoped 3D package graph; request.agent survives page changes. */
   private archive3DGraph: Archive3DFeatureGraph | undefined = undefined;
   private archive3DUseCaseState: ArchiveModelUseCase | undefined = undefined;
+  private appCacheDir: string = '';
+  private appFilesDir: string = '';
   private readonly abilityScopeOwner: AbilityScopeOwner = new AbilityScopeOwner();
   private readonly appInfoCapability: AppInfoPort = new AppInfoAdapter();
   private readonly hapticFeedbackCapability: HapticFeedbackPort = new HapticFeedbackAdapter();
@@ -149,6 +153,9 @@ export class AppContainer {
       this.abilityScopeOwner.attach(context);
     }
     this.networkBoostCapability.start();
+    const appContext = context.getApplicationContext();
+    this.appCacheDir = context.cacheDir;
+    this.appFilesDir = appContext.filesDir;
     if (this.archive3DGraph === undefined) {
       const applicationContext = context.getApplicationContext();
       const downloads = new RequestAgentBackgroundDownloadAdapter(
@@ -436,6 +443,21 @@ export class AppContainer {
     return this.hapticFeedbackCapability;
   }
 
+  /** Storage maintenance seam exposed only to Settings. */
+  createSettingsStorageActions(): SettingsStorageActions {
+    if (this.articleGraph === undefined || this.catalogGraph === undefined ||
+      this.searchHistoryRepository === undefined) {
+      throw new Error('AppContainer must be initialized before managing storage');
+    }
+    return new SettingsStorageAdapter(
+      this.appCacheDir,
+      this.appFilesDir,
+      this.articleGraph,
+      this.catalogGraph,
+      this.searchHistoryRepository
+    );
+  }
+
   /** Shared capability-gated NetworkBoost port for page/download scene hints. */
   networkBoost(): NetworkBoostPort {
     return this.networkBoostCapability;
@@ -593,6 +615,8 @@ export class AppContainer {
     this.previewRepository = undefined;
     this.searchHistoryRepository = undefined;
     this.imagePreviewActionsState = undefined;
+    this.appCacheDir = '';
+    this.appFilesDir = '';
     // Archive 3D retains only ApplicationContext/request.agent capabilities,
     // never the UIAbilityContext. Keep it process-scoped so an Ability
     // recreation can continue observing durable downloads without creating a

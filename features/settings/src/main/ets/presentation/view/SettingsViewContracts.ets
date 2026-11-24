@@ -57,7 +57,22 @@ export class ContentLicenseContent {
 /** Product-owned destinations emitted by the device-independent Settings View. */
 export enum SettingsNavigationTarget {
   ABOUT = 'about',
-  CONTENT_LICENSE = 'content_license'
+  CONTENT_LICENSE = 'content_license',
+  ARCHIVE_3D_GALLERY = 'archive_3d_gallery'
+}
+
+/** Snapshot of disposable local caches and managed offline assets shown on Settings. */
+export interface SettingsStorageUsage {
+  readonly tempCacheBytes: number;
+  readonly archive3DBytes: number;
+  readonly searchHistoryCount: number;
+}
+
+/** Narrow storage maintenance port supplied by the product composition layer. */
+export interface SettingsStorageActions {
+  inspect(): Promise<SettingsStorageUsage>;
+  clearTempCaches(): Promise<SettingsStorageUsage>;
+  clearSearchHistory(): Promise<SettingsStorageUsage>;
 }
 
 /** Branding resources remain product-customizable and are injected into the Settings HAR. */
@@ -98,6 +113,7 @@ export class SettingsBranding {
 export interface SettingsViewContract {
   readonly viewModel: SettingsViewModel;
   readonly branding: SettingsBranding;
+  readonly storageActions?: SettingsStorageActions;
   readonly onHaptic: (enabled: boolean) => void;
   readonly onNavigate: (
     pageStack: NavPathStack | undefined,

@@ -1,4 +1,4 @@
-import { AppSettings, ThemeMode } from './SettingsModels';
+import { AppSettings, ComplexPageMode, ReadingTextAlign, ThemeMode } from './SettingsModels';
 
 /** 设置数据端口。领域与展示层不感知 Preferences。 */
 export interface SettingsRepository {
@@ -11,6 +11,10 @@ export interface SettingsRepository {
   saveImmersiveMaterialEnabled(value: boolean): boolean;
   saveFontSize(value: number): boolean;
   saveLineHeightMultiple(value: number): boolean;
+  saveComplexPageMode(value: ComplexPageMode): boolean;
+  saveDefaultRevealHiddenText(value: boolean): boolean;
+  saveReadingTextAlign(value: ReadingTextAlign): boolean;
+  saveKeepScreenOnReading(value: boolean): boolean;
   flush(): Promise<void>;
 }
 

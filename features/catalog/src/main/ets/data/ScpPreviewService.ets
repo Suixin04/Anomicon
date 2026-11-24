@@ -854,6 +854,22 @@ export class ScpPreviewService {
     }
   }
 
+  /** 清空全部派生预览缓存行，保留系列目录等独立表。 */
+  async clearAll(): Promise<void> {
+    await this.enqueuePreviewWrite(async (): Promise<void> => {
+      const activeKeys = Array.from(this.previewWriteGenerations.keys());
+      for (let index = 0; index < activeKeys.length; index++) {
+        this.beginPreviewWrite(activeKeys[index]);
+      }
+      const store = await this.requireStore();
+      const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+      const deleted = await store.delete(predicates);
+      if (deleted < 0) {
+        throw new Error('清空预览缓存失败');
+      }
+    });
+  }
+
   private enqueuePreviewWrite(operation: () => Promise<void>): Promise<void> {
     try {
       return this.previewWriteLock.lockAsync<void>(

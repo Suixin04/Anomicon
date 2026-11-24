@@ -35,6 +35,7 @@ export interface ArticleFeatureDependencies {
  */
 export interface ArticleFeatureGraph {
   initialize(): Promise<void>;
+  clearDocumentCache(): Promise<void>;
   createViewModel(
     readingSession?: ReadingSessionPort,
     favoritePort?: ArticleFavoritePort
@@ -46,22 +47,29 @@ class ArticleFeatureGraphImpl implements ArticleFeatureGraph {
   private readonly viewState: ArticleViewStatePort;
   private readonly history: ArticleHistoryPort | undefined;
   private readonly initializer: () => Promise<void>;
+  private readonly cacheClearer: () => Promise<void>;
 
   constructor(
     contentGateway: ArticleContentGateway,
     viewState: ArticleViewStatePort,
     initializer: () => Promise<void>,
+    cacheClearer: () => Promise<void>,
     metadata?: ArticleMetadataPort,
     history?: ArticleHistoryPort
   ) {
     this.viewState = viewState;
     this.useCase = new ArticleContentUseCase(contentGateway, metadata);
     this.initializer = initializer;
+    this.cacheClearer = cacheClearer;
     this.history = history;
   }
 
   initialize(): Promise<void> {
     return this.initializer();
+  }
+
+  clearDocumentCache(): Promise<void> {
+    return this.cacheClearer();
   }
 
   createViewModel(
@@ -145,10 +153,16 @@ export function createArticleFeatureGraph(
     return initialization;
   };
 
+  const clearDocumentCache = async (): Promise<void> => {
+    await initialize();
+    await cache.clearAll();
+  };
+
   return new ArticleFeatureGraphImpl(
     gateway,
     viewState,
     initialize,
+    clearDocumentCache,
     dependencies.metadata,
     dependencies.history
   );

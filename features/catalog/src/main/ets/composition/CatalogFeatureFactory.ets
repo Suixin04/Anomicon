@@ -86,6 +86,7 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
   readonly titleResolver: CatalogTitleResolver;
   readonly imagePreviewActions: ImagePreviewActions;
   private readonly initializer: () => Promise<void>;
+  private readonly temporaryCacheClearer: () => Promise<void>;
   private readonly disposer: () => void;
 
   constructor(
@@ -97,6 +98,7 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
     titleResolver: CatalogTitleResolver,
     imagePreviewActions: ImagePreviewActions,
     initializer: () => Promise<void>,
+    temporaryCacheClearer: () => Promise<void>,
     disposer: () => void
   ) {
     this.catalogRepository = catalogRepository;
@@ -107,11 +109,16 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
     this.titleResolver = titleResolver;
     this.imagePreviewActions = imagePreviewActions;
     this.initializer = initializer;
+    this.temporaryCacheClearer = temporaryCacheClearer;
     this.disposer = disposer;
   }
 
   initialize(): Promise<void> {
     return this.initializer();
+  }
+
+  clearTemporaryCaches(): Promise<void> {
+    return this.temporaryCacheClearer();
   }
 
   dispose(): void {
@@ -263,6 +270,15 @@ export function createCatalogFeatureGraph(
     return initialization;
   };
 
+  const clearTemporaryCaches = async (): Promise<void> => {
+    await initialize();
+    await Promise.all([
+      pageCacheService.clearAll(),
+      imageCacheService.clearAll(),
+      previewService.clearAll()
+    ]);
+  };
+
   return new CatalogFeatureGraphImpl(
     catalogRepository,
     taleRepository,
@@ -272,6 +288,7 @@ export function createCatalogFeatureGraph(
     titleResolver,
     imagePreviewActions,
     initialize,
+    clearTemporaryCaches,
     (): void => {
       if (unsubscribeNetworkBoost !== undefined) {
         unsubscribeNetworkBoost();

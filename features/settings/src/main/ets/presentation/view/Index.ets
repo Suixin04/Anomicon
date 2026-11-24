@@ -4,6 +4,8 @@ export {
   ContentLicenseLink,
   SettingsBranding,
   SettingsNavigationTarget,
+  SettingsStorageActions,
+  SettingsStorageUsage,
   SettingsViewContract
 } from './SettingsViewContracts';
 export { AboutPage, AboutPageBuilder } from './AboutPage';

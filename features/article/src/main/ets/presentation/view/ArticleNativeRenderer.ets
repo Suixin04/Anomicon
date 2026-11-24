@@ -453,6 +453,7 @@ export struct ArticleNativeRenderer {
   @Param materialEnabled: boolean = true;
   @Param sidePanelOpen: boolean = false;
   @Param revealHiddenText: boolean = false;
+  @Param justifyBodyText: boolean = true;
   @Param webModeHint: string = '';
 
   @Event onRetryPartial: () => void = () => {};
@@ -1309,7 +1310,7 @@ export struct ArticleNativeRenderer {
       case ScpTextAlign.JUSTIFY:
         return TextAlign.JUSTIFY;
       default:
-        return fallbackStart ? TextAlign.Start : TextAlign.JUSTIFY;
+        return (fallbackStart || !this.justifyBodyText) ? TextAlign.Start : TextAlign.JUSTIFY;
     }
   }
 

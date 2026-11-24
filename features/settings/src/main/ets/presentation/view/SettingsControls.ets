@@ -1,6 +1,7 @@
 import {
   uiMaterial,
   CapsuleSegmentButtonV2,
+  SegmentButtonV2ItemOptions,
   SegmentButtonV2Items,
   ColorMetrics,
   LengthMetrics
@@ -8,53 +9,54 @@ import {
 import { AppTypography } from 'anomiconbasic';
 import { ThemeMode } from '../../domain/SettingsModels';
 
+/** Generic capsule segmented selector shared by theme, alignment and complex-page policy. */
 @ComponentV2
-export struct SettingsThemeSelector {
-  @Require @Param value: ThemeMode;
+export struct SettingsSegmentSelector {
+  @Require @Param labels: string[];
+  @Require @Param selectedIndex: number;
   @Require @Param hapticEnabled: boolean;
   /** Injected side effect; the control itself stays platform agnostic. */
   @Param onHaptic: ((enabled: boolean) => void) | undefined = undefined;
-  @Event onThemeChange: (value: ThemeMode) => void;
+  @Event onSelectIndex: (index: number) => void;
 
-  private readonly items: SegmentButtonV2Items = new SegmentButtonV2Items([
-    { text: '跟随系统' },
-    { text: '浅色' },
-    { text: '深色' }
-  ]);
+  @Local private items: SegmentButtonV2Items = new SegmentButtonV2Items([]);
 
-  private selectedIndex(): number {
-    if (this.value === ThemeMode.LIGHT) {
-      return 1;
-    }
-    if (this.value === ThemeMode.DARK) {
-      return 2;
-    }
-    return 0;
+  aboutToAppear(): void {
+    this.syncItems();
   }
 
-  private modeAt(index: number): ThemeMode {
-    if (index === 1) {
-      return ThemeMode.LIGHT;
+  @Monitor('labels')
+  private onLabelsChange(): void {
+    this.syncItems();
+  }
+
+  private syncItems(): void {
+    const options: SegmentButtonV2ItemOptions[] = [];
+    for (let index = 0; index < this.labels.length; index++) {
+      options.push({ text: this.labels[index] });
     }
-    if (index === 2) {
-      return ThemeMode.DARK;
+    this.items = new SegmentButtonV2Items(options);
+  }
+
+  private normalizedIndex(): number {
+    if (this.labels.length === 0) {
+      return 0;
     }
-    return ThemeMode.SYSTEM;
+    return Math.max(0, Math.min(this.labels.length - 1, this.selectedIndex));
   }
 
   private select(index: number): void {
-    const next = this.modeAt(index);
-    if (next === this.value) {
+    if (index === this.normalizedIndex()) {
       return;
     }
     this.onHaptic?.(this.hapticEnabled);
-    this.onThemeChange(next);
+    this.onSelectIndex(index);
   }
 
   private resourceColor(value: ResourceColor, fallback: number): ColorMetrics {
     try {
       return ColorMetrics.resourceColor(value);
-    } catch (error) {
+    } catch (_error) {
       // 系统颜色资源在定制设备上可能缺失，保留可读的数值颜色兜底。
       return ColorMetrics.numeric(fallback);
     }
@@ -63,7 +65,7 @@ export struct SettingsThemeSelector {
   build() {
     CapsuleSegmentButtonV2({
       items: this.items,
-      selectedIndex: this.selectedIndex(),
+      selectedIndex: this.normalizedIndex(),
       $selectedIndex: (index: number) => this.select(index),
       itemFontColor: this.resourceColor($r('sys.color.font_primary'), 0xff182431),
       itemSelectedFontColor: this.resourceColor($r('sys.color.font_on_primary'), 0xffffffff),
@@ -88,6 +90,47 @@ export struct SettingsThemeSelector {
       }
     })
       .width('100%')
+  }
+}
+
+@ComponentV2
+export struct SettingsThemeSelector {
+  @Require @Param value: ThemeMode;
+  @Require @Param hapticEnabled: boolean;
+  /** Injected side effect; the control itself stays platform agnostic. */
+  @Param onHaptic: ((enabled: boolean) => void) | undefined = undefined;
+  @Event onThemeChange: (value: ThemeMode) => void;
+
+  private readonly labels: string[] = ['跟随系统', '浅色', '深色'];
+
+  private selectedIndex(): number {
+    if (this.value === ThemeMode.LIGHT) {
+      return 1;
+    }
+    if (this.value === ThemeMode.DARK) {
+      return 2;
+    }
+    return 0;
+  }
+
+  private modeAt(index: number): ThemeMode {
+    if (index === 1) {
+      return ThemeMode.LIGHT;
+    }
+    if (index === 2) {
+      return ThemeMode.DARK;
+    }
+    return ThemeMode.SYSTEM;
+  }
+
+  build() {
+    SettingsSegmentSelector({
+      labels: this.labels,
+      selectedIndex: this.selectedIndex(),
+      hapticEnabled: this.hapticEnabled,
+      onHaptic: this.onHaptic,
+      onSelectIndex: (index: number): void => this.onThemeChange(this.modeAt(index))
+    })
   }
 }
 

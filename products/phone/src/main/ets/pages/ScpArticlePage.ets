@@ -5,7 +5,7 @@ import {
 } from '@kit.UIDesignKit';
 import { schedulingOptimization } from '@kit.FASTKit';
 import { common } from '@kit.AbilityKit';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, window } from '@kit.ArkUI';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 // Article visuals are exported by the article feature; the product page only
 // supplies serializable document data and interaction callbacks.
@@ -16,6 +16,7 @@ import {
   ArticleReadingStatusBar,
   ArticleNativeRenderer,
   ArticleWebRenderer,
+  ArticleWebModeDecision,
   ArticleWebModeRecommendation,
   ArticleRenderer,
   ArticleScrollRestore,
@@ -57,7 +58,7 @@ import { HapticFeedbackPort } from 'anomiconbasic';
 import {
   ResearchProfileViewModel
 } from 'library';
-import { ReadingSettingsRange, SettingsViewModel } from 'settings';
+import { ComplexPageMode, ReadingSettingsRange, ReadingTextAlign, SettingsViewModel } from 'settings';
 import { ViewModelLoadState } from 'anomiconbasic';
 import {
   ImagePreviewActions,
@@ -155,6 +156,7 @@ struct ScpArticlePage {
   @Local private sidePanelOpen: boolean = false;
   @Local private sidePanelLabel: string = '';
   @Local private revealHiddenText: boolean = false;
+  @Local private justifyBodyText: boolean = true;
   @Local private webModeActive: boolean = false;
   @Local private webModeUrl: string = '';
   @Local private webModeCanGoBack: boolean = false;
@@ -162,6 +164,8 @@ struct ScpArticlePage {
   @Local private webBackEpoch: number = 0;
   @Local private webModeHint: string = '';
   private autoWebEvaluatedItemId: string = '';
+  private revealHiddenOverridden: boolean = false;
+  private lastAppliedKeepScreenOn: boolean = false;
 
   aboutToAppear(): void {
     this.viewModelUnsubscribe?.();
@@ -175,6 +179,7 @@ struct ScpArticlePage {
     // A route can be retained while hidden, so only dispose on actual component
     // destruction. NavDestination callbacks below handle temporary inactivity.
     this.acceptsProgressEvents = false;
+    this.applyKeepScreenOn(false);
     this.syncLoadingBoost(false);
     this.viewModelUnsubscribe?.();
     this.viewModelUnsubscribe = undefined;
@@ -229,10 +234,12 @@ struct ScpArticlePage {
     this.document = vm.document;
     if (vm.document !== undefined) {
       const decision = ArticleRenderer.evaluateWebModeRecommendation(vm.document);
-      this.webModeHint = decision.level === ArticleWebModeRecommendation.NONE ? '' : decision.reason;
+      this.webModeHint = this.resolveWebModeHint(decision);
       if (this.autoWebEvaluatedItemId !== vm.document.itemId) {
         this.autoWebEvaluatedItemId = vm.document.itemId;
-        if (decision.level === ArticleWebModeRecommendation.AUTO_DIRECT && this.sourceUrl.length > 0) {
+        if (this.settings.complexPageMode === ComplexPageMode.SMART &&
+          decision.level === ArticleWebModeRecommendation.AUTO_DIRECT &&
+          this.sourceUrl.length > 0) {
           this.enterWebMode(this.sourceUrl, '检测到交互组件，已切换至原版网页模式');
         }
       }
@@ -289,6 +296,44 @@ struct ScpArticlePage {
   private syncReadingSettings(): void {
     this.fontSize = this.settings.fontSize;
     this.lineHeightMultiple = this.settings.lineHeightMultiple;
+    this.justifyBodyText = this.settings.readingTextAlign !== ReadingTextAlign.START;
+    if (!this.revealHiddenOverridden) {
+      this.revealHiddenText = this.settings.defaultRevealHiddenText;
+    }
+    if (this.document !== undefined) {
+      const decision = ArticleRenderer.evaluateWebModeRecommendation(this.document);
+      this.webModeHint = this.resolveWebModeHint(decision);
+    }
+  }
+
+  private resolveWebModeHint(decision: ArticleWebModeDecision): string {
+    if (this.settings.complexPageMode === ComplexPageMode.ALWAYS_NATIVE) {
+      return '';
+    }
+    if (this.settings.complexPageMode === ComplexPageMode.PROMPT_ONLY &&
+      decision.level === ArticleWebModeRecommendation.AUTO_DIRECT) {
+      return '正文为交互式网页组件，建议切换原版网页体验';
+    }
+    return decision.level === ArticleWebModeRecommendation.NONE ? '' : decision.reason;
+  }
+
+  private applyKeepScreenOn(keepOn: boolean): void {
+    if (this.lastAppliedKeepScreenOn === keepOn) {
+      return;
+    }
+    try {
+      const context = this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+      if (context === undefined) {
+        return;
+      }
+      this.lastAppliedKeepScreenOn = keepOn;
+      window.getLastWindow(context).then((mainWindow: window.Window): void => {
+        mainWindow.setWindowKeepScreenOn(keepOn).catch((): void => {
+        });
+      }).catch((): void => {
+      });
+    } catch (_error) {
+    }
   }
 
   /** Clear route-bound rendering state before applying a new payload. */
@@ -310,7 +355,8 @@ struct ScpArticlePage {
     this.readingPercent = 0;
     this.previewVisible = false;
     this.previewIndex = 0;
-    this.revealHiddenText = false;
+    this.revealHiddenOverridden = false;
+    this.revealHiddenText = this.settings.defaultRevealHiddenText;
     this.webModeActive = false;
     this.webModeUrl = '';
     this.webModeCanGoBack = false;
@@ -667,6 +713,7 @@ struct ScpArticlePage {
   private toggleRevealHiddenText(): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
     this.noteReadingInteraction();
+    this.revealHiddenOverridden = true;
     const next = !this.revealHiddenText;
     this.revealHiddenText = next;
     if (!next) {
@@ -937,6 +984,7 @@ struct ScpArticlePage {
             materialEnabled: this.settings.immersiveMaterialEnabled,
             sidePanelOpen: this.sidePanelOpen,
             revealHiddenText: this.revealHiddenText,
+            justifyBodyText: this.justifyBodyText,
             webModeHint: this.webModeHint,
             onSwitchToWebMode: (): void => {
               this.hapticService.playSelection(this.settings.hapticEnabled);
@@ -1096,6 +1144,8 @@ struct ScpArticlePage {
     })
     .onShown(() => {
       this.acceptsProgressEvents = true;
+      this.syncReadingSettings();
+      this.applyKeepScreenOn(this.settings.keepScreenOnReading);
       this.viewModel.activate();
       this.syncViewModelState();
       const content = this.currentLibraryContent();
@@ -1105,6 +1155,7 @@ struct ScpArticlePage {
     })
     .onHidden(() => {
       setPreviewFullscreen(false);
+      this.applyKeepScreenOn(false);
       this.syncLoadingBoost(false);
       if (this.acceptsProgressEvents) {
         this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {
@@ -1141,6 +1192,7 @@ struct ScpArticlePage {
     .onWillShow(() => {
       // 从设置页返回时强制重读阅读设置，避免覆盖页面的渲染快照过期。
       this.syncReadingSettings();
+      this.applyKeepScreenOn(this.settings.keepScreenOnReading);
       this.acceptsProgressEvents = true;
       this.viewModel.activate();
       this.syncViewModelState();
@@ -1152,6 +1204,7 @@ struct ScpArticlePage {
     })
     .onWillDisappear(() => {
       setPreviewFullscreen(false);
+      this.applyKeepScreenOn(false);
       this.syncLoadingBoost(false);
       this.acceptsProgressEvents = false;
       this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {

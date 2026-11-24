@@ -1,10 +1,17 @@
 // Explicit public entry point for the settings HAR.
 export {
   AppSettings,
+  ComplexPageMode,
   ThemeMode,
   ReadingSettingsRange,
+  ReadingTextAlign,
+  formatFontSizeLabel,
+  formatLineHeightLabel,
+  formatStorageBytes,
   normalizeReadingFontSize,
   normalizeReadingLineHeight,
+  parseComplexPageMode,
+  parseReadingTextAlign,
   SettingsRepository,
   ThemeModeApplier,
   SettingsFeatureGraph,
@@ -21,5 +28,7 @@ export {
   SettingsNavigationTarget,
   SettingsPage,
   SettingsPageBuilder,
+  SettingsStorageActions,
+  SettingsStorageUsage,
   SettingsViewContract,
 } from './src/main/ets/Index';

@@ -1,6 +1,8 @@
 import {
   AppSettings,
+  ComplexPageMode,
   ReadingSettingsRange,
+  ReadingTextAlign,
   ThemeMode,
   normalizeReadingFontSize,
   normalizeReadingLineHeight,
@@ -15,6 +17,10 @@ export class SettingsViewModel {
   @Trace immersiveMaterialEnabled: boolean = true;
   @Trace fontSize: number = ReadingSettingsRange.FONT_SIZE_DEFAULT;
   @Trace lineHeightMultiple: number = ReadingSettingsRange.LINE_HEIGHT_DEFAULT;
+  @Trace complexPageMode: ComplexPageMode = ComplexPageMode.SMART;
+  @Trace defaultRevealHiddenText: boolean = false;
+  @Trace readingTextAlign: ReadingTextAlign = ReadingTextAlign.JUSTIFY;
+  @Trace keepScreenOnReading: boolean = false;
   @Trace errorMessage: string = '';
 
   private readonly repository: SettingsRepository;
@@ -127,6 +133,80 @@ export class SettingsViewModel {
     return true;
   }
 
+  setComplexPageMode(value: ComplexPageMode): boolean {
+    if (this.lifecycleDisposed) {
+      return false;
+    }
+    if (this.complexPageMode === value) {
+      return true;
+    }
+    if (!this.repository.saveComplexPageMode(value)) {
+      this.errorMessage = this.repository.lastError ?? '设置保存失败';
+      return false;
+    }
+    this.errorMessage = '';
+    this.complexPageMode = value;
+    return true;
+  }
+
+  setDefaultRevealHiddenText(value: boolean): boolean {
+    if (this.lifecycleDisposed) {
+      return false;
+    }
+    if (this.defaultRevealHiddenText === value) {
+      return true;
+    }
+    if (!this.repository.saveDefaultRevealHiddenText(value)) {
+      this.errorMessage = this.repository.lastError ?? '设置保存失败';
+      return false;
+    }
+    this.errorMessage = '';
+    this.defaultRevealHiddenText = value;
+    return true;
+  }
+
+  setReadingTextAlign(value: ReadingTextAlign): boolean {
+    if (this.lifecycleDisposed) {
+      return false;
+    }
+    if (this.readingTextAlign === value) {
+      return true;
+    }
+    if (!this.repository.saveReadingTextAlign(value)) {
+      this.errorMessage = this.repository.lastError ?? '设置保存失败';
+      return false;
+    }
+    this.errorMessage = '';
+    this.readingTextAlign = value;
+    return true;
+  }
+
+  setKeepScreenOnReading(value: boolean): boolean {
+    if (this.lifecycleDisposed) {
+      return false;
+    }
+    if (this.keepScreenOnReading === value) {
+      return true;
+    }
+    if (!this.repository.saveKeepScreenOnReading(value)) {
+      this.errorMessage = this.repository.lastError ?? '设置保存失败';
+      return false;
+    }
+    this.errorMessage = '';
+    this.keepScreenOnReading = value;
+    return true;
+  }
+
+  resetReadingTypography(): boolean {
+    if (this.lifecycleDisposed) {
+      return false;
+    }
+    const fontOk = this.setFontSize(ReadingSettingsRange.FONT_SIZE_DEFAULT);
+    const lineOk = this.setLineHeightMultiple(ReadingSettingsRange.LINE_HEIGHT_DEFAULT);
+    const alignOk = this.setReadingTextAlign(ReadingTextAlign.JUSTIFY);
+    return fontOk && lineOk && alignOk;
+  }
+
   flush(): Promise<void> {
     return this.repository.flush().catch((error: Object): never => {
       this.errorMessage = this.repository.lastError ??
@@ -159,5 +239,9 @@ export class SettingsViewModel {
     this.immersiveMaterialEnabled = settings.immersiveMaterialEnabled;
     this.fontSize = settings.fontSize;
     this.lineHeightMultiple = settings.lineHeightMultiple;
+    this.complexPageMode = settings.complexPageMode;
+    this.defaultRevealHiddenText = settings.defaultRevealHiddenText;
+    this.readingTextAlign = settings.readingTextAlign;
+    this.keepScreenOnReading = settings.keepScreenOnReading;
   }
 }
