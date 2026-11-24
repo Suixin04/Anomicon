@@ -1,5 +1,5 @@
 import { ScpCachedPage, ScpPageCacheService } from './ScpPageCacheService';
-import { ScpPageFetchService } from './ScpPageFetchService';
+import { ScpPageFetchService, ScpPageRequestSchedule } from './ScpPageFetchService';
 import { ScpCachePolicy } from '../domain/ScpCachePolicy';
 import {
   ArticleHtmlRepository,
@@ -18,8 +18,7 @@ import { ScpRequestScheduler } from './ScpRequestScheduler';
 export class CachedArticleRepo implements ArticleHtmlRepository {
   private readonly inflight: Map<string, Promise<ScpHtmlLoadResult>> =
     new Map<string, Promise<ScpHtmlLoadResult>>();
-  private readonly inflightPriorities: Map<string, ScpHtmlRequestPriority> =
-    new Map<string, ScpHtmlRequestPriority>();
+  private readonly inflightSchedules: Map<string, ScpPageRequestSchedule> = new Map();
   // A force refresh and a normal refresh use different inflight keys, so keep
   // one monotonic generation per normalized URL for cache-write ordering.
   private nextRequestGeneration: number = 0;
@@ -68,15 +67,16 @@ export class CachedArticleRepo implements ArticleHtmlRepository {
     const generation = this.cacheService.registerGeneration(normalizedUrl, requestedGeneration);
     this.nextRequestGeneration = Math.max(this.nextRequestGeneration, generation);
     this.requestGenerations.set(normalizedUrl, generation);
-    this.inflightPriorities.set(requestKey, priority);
-    const task = this.loadHtmlNow(normalizedUrl, forceNetwork, requestKey, generation);
+    const schedule: ScpPageRequestSchedule = { key: normalizedUrl, priority: priority };
+    this.inflightSchedules.set(requestKey, schedule);
+    const task = this.loadHtmlNow(normalizedUrl, forceNetwork, schedule, generation);
     this.inflight.set(requestKey, task);
     task.then((): void => {
       this.inflight.delete(requestKey);
-      this.inflightPriorities.delete(requestKey);
+      this.inflightSchedules.delete(requestKey);
     }).catch((): void => {
       this.inflight.delete(requestKey);
-      this.inflightPriorities.delete(requestKey);
+      this.inflightSchedules.delete(requestKey);
     });
     return task;
   }
@@ -84,7 +84,7 @@ export class CachedArticleRepo implements ArticleHtmlRepository {
   private async loadHtmlNow(
     sourceUrl: string,
     forceNetwork: boolean,
-    requestKey: string,
+    schedule: ScpPageRequestSchedule,
     generation: number
   ): Promise<ScpHtmlLoadResult> {
     let cached: ScpCachedPage | undefined = undefined;
@@ -99,13 +99,11 @@ export class CachedArticleRepo implements ArticleHtmlRepository {
     }
 
     try {
-      const priority = this.inflightPriorities.get(requestKey) ??
-        ScpHtmlRequestPriority.USER_INITIATED;
       let fetched = await this.fetchService.fetchPage(
         sourceUrl,
         cached?.etag ?? '',
         cached?.lastModified ?? '',
-        priority
+        schedule
       );
       let fetchedAt = Date.now();
       if (fetched.notModified && cached !== undefined) {
@@ -122,7 +120,7 @@ export class CachedArticleRepo implements ArticleHtmlRepository {
             ScpHtmlSource.FRESH_CACHE : ScpHtmlSource.STALE_CACHE;
           return new ScpHtmlLoadResult(current.html, source, current.fetchedAt);
         }
-        fetched = await this.fetchService.fetchPage(sourceUrl, '', '', priority);
+        fetched = await this.fetchService.fetchPage(sourceUrl, '', '', schedule);
         fetchedAt = Date.now();
       }
       if (fetched.notModified) {
@@ -155,9 +153,9 @@ export class CachedArticleRepo implements ArticleHtmlRepository {
   }
 
   private promoteRequestKey(requestKey: string, priority: ScpHtmlRequestPriority): void {
-    const currentPriority = this.inflightPriorities.get(requestKey);
-    if (currentPriority !== undefined && priority < currentPriority) {
-      this.inflightPriorities.set(requestKey, priority);
+    const schedule = this.inflightSchedules.get(requestKey);
+    if (schedule !== undefined && priority < schedule.priority) {
+      schedule.priority = priority;
     }
   }
 

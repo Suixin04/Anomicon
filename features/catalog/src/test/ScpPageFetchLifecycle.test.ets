@@ -5,7 +5,7 @@ import { CachedArticleRepo } from '../main/ets/data/CachedArticleRepo';
 import { CatalogRepoAdapter } from '../main/ets/data/CatalogRepoAdapter';
 import { ScpCatalogCacheService, ScpStoredCatalog } from '../main/ets/data/ScpCatalogCacheService';
 import { ScpCachedPage, ScpPageCacheService } from '../main/ets/data/ScpPageCacheService';
-import { ScpPageFetchService } from '../main/ets/data/ScpPageFetchService';
+import { ScpPageFetchService, ScpPageRequestSchedule } from '../main/ets/data/ScpPageFetchService';
 import { ScpRequestScheduler } from '../main/ets/data/ScpRequestScheduler';
 import { StaticCatalogHtmlParser } from '../main/ets/data/StaticCatalogHtmlParser';
 import {
@@ -186,9 +186,9 @@ class ScpLifecycleArticleFixture {
     const mock = new MockKit();
     const fetchPage = mock.mockFunc(this.fetchService, this.fetchService.fetchPage);
     when(fetchPage)(ARTICLE_URL).afterAction((
-      _url: string, etag: string, lastModified: string, priority: ScpHtmlRequestPriority
+      _url: string, etag: string, lastModified: string, schedule: ScpPageRequestSchedule
     ): Promise<ScpLifecycleFetchReply> => {
-      const request: ScpLifecycleFetchRequest = { etag: etag, lastModified: lastModified, priority: priority };
+      const request: ScpLifecycleFetchRequest = { etag: etag, lastModified: lastModified, priority: schedule.priority };
       this.requests.push(request);
       return respond(this.requests.length);
     });

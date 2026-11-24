@@ -130,6 +130,7 @@ export struct CatalogSearchHeader {
     }
     if (trimmed.length > 0) {
       this.viewModel.addHistory(trimmed);
+      this.viewModel.checkMissingSeries();
     }
   }
 
@@ -304,14 +305,15 @@ struct CatalogSearchContent {
       snapshot.error !== undefined;
   }
 
+  private hasMissingSeries(): boolean {
+    const data = this.viewModel.snapshot.data;
+    return data !== undefined && data.seriesId === ALL_SERIES_ID && data.loadedSeriesCount > 0 &&
+      data.loadedSeriesCount < data.totalSeriesCount;
+  }
+
   private hasPartialError(): boolean {
     const snapshot = this.viewModel.snapshot;
-    return (snapshot.state === ViewModelLoadState.ERROR ||
-      snapshot.state === ViewModelLoadState.PARTIAL) &&
-      ((snapshot.data?.entries.length ?? 0) > 0 ||
-        (snapshot.data?.tales.length ?? 0) > 0 ||
-        snapshot.data?.directTarget !== undefined) &&
-      snapshot.error !== undefined;
+    return this.hasMissingSeries() || (snapshot.state === ViewModelLoadState.PARTIAL && snapshot.error !== undefined);
   }
 
   private loadingProgressText(): string {
@@ -559,13 +561,15 @@ struct CatalogSearchContent {
       SymbolGlyph($r('sys.symbol.exclamationmark_circle'))
         .fontSize(17)
         .fontColor([$r('sys.color.icon_secondary')])
-      Text(this.viewModel.snapshot.error?.message ?? '目录更新失败，正在显示已有结果')
+      Text(this.viewModel.snapshot.error?.message ??
+        `已检索 ${this.viewModel.loadedSeriesCount}/${this.viewModel.snapshot.data?.totalSeriesCount ?? 0} 个系列`)
         .fontSize(AppTypography.CAPTION_L)
         .fontColor($r('sys.color.font_secondary'))
         .maxLines(2)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
         .layoutWeight(1)
-      Button('重试', { stateEffect: false })
+      Button(this.hasMissingSeries() ? '补查缺失系列' : '重试', { stateEffect: false })
+        .enabled(!this.viewModel.checkingMissingSeries)
         .fontSize(AppTypography.CAPTION_L)
         .onClick(() => this.viewModel.retry())
     }
@@ -972,9 +976,13 @@ struct CatalogSearchContent {
         this.idleContent()
       } else if (!this.hasAnyQueryResults()) {
         Column() {
-          Text(this.emptyMessage('无匹配条目'))
-            .fontSize(14)
-            .fontColor($r('sys.color.font_tertiary'))
+          if (this.hasPartialError()) {
+            this.partialErrorContent()
+          } else {
+            Text(this.emptyMessage('无匹配条目'))
+              .fontSize(14)
+              .fontColor($r('sys.color.font_tertiary'))
+          }
         }
         .width('100%')
         .padding({

@@ -35,9 +35,13 @@ export class ExploreContentUseCase {
     this.titleResolver = titleResolver;
   }
 
-  async loadTopRated(force: boolean = false): Promise<ExploreSourceSnapshot> {
+  async loadTopRated(
+    force: boolean = false,
+    onProgress?: (snapshot: ExploreSourceSnapshot) => void
+  ): Promise<ExploreSourceSnapshot> {
     const snapshot = await this.loadSource(ExploreSource.TOP_RATED, force);
-    return this.withResolvedTitles(snapshot);
+    onProgress?.(snapshot);
+    return this.withResolvedTitles(snapshot, onProgress);
   }
 
   async loadRecent(
@@ -151,27 +155,24 @@ export class ExploreContentUseCase {
    * surface (top-rated, recent and joke collections) shares the same title
    * semantics as the article and recommendation cards.
    */
-  private async withResolvedTitles(snapshot: ExploreSourceSnapshot): Promise<ExploreSourceSnapshot> {
-    if (snapshot.entries.length === 0) {
+  private async withResolvedTitles(
+    snapshot: ExploreSourceSnapshot,
+    onProgress?: (snapshot: ExploreSourceSnapshot) => void
+  ): Promise<ExploreSourceSnapshot> {
+    if (this.titleResolver === undefined || snapshot.entries.length === 0) {
       return snapshot;
     }
-    return new ExploreSourceSnapshot(
-      await this.resolveTitles(snapshot.entries),
-      snapshot.error,
-      snapshot.origin,
-      snapshot.fetchedAt
-    );
-  }
-
-  private async resolveTitles(entries: ExploreEntry[]): Promise<ExploreEntry[]> {
-    if (this.titleResolver === undefined || entries.length === 0) {
-      return entries;
-    }
-    const tasks: Promise<ExploreEntry>[] = [];
-    for (let index = 0; index < entries.length; index++) {
-      tasks.push(this.resolveEntryTitle(entries[index]));
-    }
-    return Promise.all(tasks);
+    const entries = snapshot.entries.slice();
+    const current = (): ExploreSourceSnapshot =>
+      new ExploreSourceSnapshot(entries, snapshot.error, snapshot.origin, snapshot.fetchedAt);
+    await Promise.all(entries.map(async (entry: ExploreEntry, index: number): Promise<void> => {
+      const resolved = await this.resolveEntryTitle(entry);
+      if (resolved !== entry) {
+        entries[index] = resolved;
+        onProgress?.(current());
+      }
+    }));
+    return current();
   }
 
   private async resolveEntryTitle(entry: ExploreEntry): Promise<ExploreEntry> {

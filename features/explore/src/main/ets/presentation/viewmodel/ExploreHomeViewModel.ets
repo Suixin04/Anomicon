@@ -242,22 +242,25 @@ export class ExploreHomeViewModel implements ViewModelLifecycle {
     }
     const token = ++this.topRatedRequestToken;
     this.topRatedLoading = true;
+    this.topRatedLoaded = false;
     this.topRatedError = '';
     this.topRatedStatus = this.topRatedEntries.length > 0 ?
       ViewModelLoadState.REFRESHING : ViewModelLoadState.LOADING;
     try {
-      const snapshot: ExploreSourceSnapshot = await this.contentUseCase.loadTopRated(force);
+      const snapshot = await this.contentUseCase.loadTopRated(force, (progress: ExploreSourceSnapshot): void => {
+        if (this.isSourceCurrent(epoch, token, this.topRatedRequestToken)) {
+          this.topRatedEntries = progress.entries;
+          this.topRatedError = progress.error;
+          this.topRatedStale = progress.stale;
+          this.topRatedPartial = progress.partial;
+          this.topRatedStatus = this.statusOf(progress.entries.length, progress.error, progress.stale);
+          this.topRatedLoading = false;
+        }
+      });
       if (!this.isSourceCurrent(epoch, token, this.topRatedRequestToken)) {
         return;
       }
-      this.topRatedEntries = snapshot.entries;
-      this.topRatedError = snapshot.error;
-      this.topRatedStale = snapshot.stale;
-      this.topRatedPartial = snapshot.partial;
-      this.topRatedStatus = this.statusOf(snapshot.entries.length, snapshot.error, snapshot.stale);
-      // A successful empty payload is still an attempted load and must not be
-      // re-requested on every tab activation.  Semantic/network errors remain
-      // retryable when no usable entries were returned.
+      // If the tab hid midway through enrichment, its next activation can use the cached index.
       this.topRatedLoaded = snapshot.error.length === 0 || snapshot.entries.length > 0;
     } catch (error) {
       if (this.isSourceCurrent(epoch, token, this.topRatedRequestToken)) {

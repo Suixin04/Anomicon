@@ -13,6 +13,12 @@ const RCP_SESSION_CLOSED_CODE: number = 1007900993;
 const DOMAIN: number = 0x0000;
 const TAG: string = 'AnomiconPageFetch';
 
+/** A logical fetch keeps its original queue key and any promotion across attempts and redirects. */
+export interface ScpPageRequestSchedule {
+  readonly key: string;
+  priority: ScpHtmlRequestPriority;
+}
+
 class ScpRequestError extends Error {
   readonly code: number;
 
@@ -119,7 +125,7 @@ export class ScpPageFetchService {
     url: string,
     etag: string = '',
     lastModified: string = '',
-    priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.USER_INITIATED
+    schedule: ScpPageRequestSchedule = { key: url, priority: ScpHtmlRequestPriority.USER_INITIATED }
   ): Promise<ScpFetchedPage> {
     this.assertActive();
     const normalizedUrl = ScpWikiUrlPolicy.normalizePageUrl(url);
@@ -135,7 +141,7 @@ export class ScpPageFetchService {
       header['If-Modified-Since'] = lastModified;
     }
     try {
-      const response = await this.requestFollowingRedirects(normalizedUrl, header, priority);
+      const response = await this.requestFollowingRedirects(normalizedUrl, header, schedule);
       this.assertActive();
       return this.toFetchedPage(response, etag, lastModified);
     } catch (error) {
@@ -150,7 +156,7 @@ export class ScpPageFetchService {
           'User-Agent': header['User-Agent']
         };
         try {
-          const retryResponse = await this.requestFollowingRedirects(normalizedUrl, retryHeaders, priority);
+          const retryResponse = await this.requestFollowingRedirects(normalizedUrl, retryHeaders, schedule);
           return this.toFetchedPage(retryResponse, '', '');
         } catch (retryError) {
           throw this.fetchError(retryError);
@@ -213,13 +219,13 @@ export class ScpPageFetchService {
   private async requestFollowingRedirects(
     initialUrl: string,
     header: rcp.RequestHeaders,
-    priority: ScpHtmlRequestPriority
+    schedule: ScpPageRequestSchedule
   ): Promise<ScpPageResponse> {
     let currentUrl: string = ScpWikiUrlPolicy.normalizePageUrl(initialUrl);
     let redirectCount: number = 0;
 
     while (true) {
-      const response = await this.requestWithRetry(currentUrl, header, priority);
+      const response = await this.requestWithRetry(currentUrl, header, schedule);
       if (!this.isRedirectResponse(response.statusCode)) {
         return response;
       }
@@ -242,13 +248,13 @@ export class ScpPageFetchService {
   private async requestWithRetry(
     url: string,
     header: rcp.RequestHeaders,
-    priority: ScpHtmlRequestPriority
+    schedule: ScpPageRequestSchedule
   ): Promise<ScpPageResponse> {
     let lastError: ScpRequestError | undefined = undefined;
     for (let attempt = 0; attempt < MAX_REQUEST_ATTEMPTS; attempt++) {
       this.assertActive();
       try {
-        const response = await this.requestOnce(url, header, priority);
+        const response = await this.requestOnce(url, header, schedule);
         this.assertActive();
         if (!this.isTransientResponse(response.statusCode) ||
           attempt === MAX_REQUEST_ATTEMPTS - 1) {
@@ -284,7 +290,7 @@ export class ScpPageFetchService {
   private async requestOnce(
     url: string,
     header: rcp.RequestHeaders,
-    priority: ScpHtmlRequestPriority
+    schedule: ScpPageRequestSchedule
   ): Promise<ScpPageResponse> {
     return this.scheduler.run(async (): Promise<ScpPageResponse> => {
       const collector = new ScpPageByteCollector();
@@ -317,7 +323,7 @@ export class ScpPageFetchService {
           this.releaseSessionFetch(session);
         }
       }
-    }, priority, url);
+    }, schedule.priority, schedule.key);
   }
 
   private acquireSessionFetch(session: rcp.Session): void {

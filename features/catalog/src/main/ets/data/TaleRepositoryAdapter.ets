@@ -1,32 +1,48 @@
-import {
-  ScpHtmlRequestPriority,
-  ScpHtmlLoadResult,
-  ScpHtmlSource
-} from '../domain/ArticleHtmlRepository';
-import {
-  CatalogParser,
-  CatalogSnapshotSource,
-  CatalogTaleEntry,
-  TaleParseResult,
-  TaleSnapshot
-} from '../domain/CatalogContracts';
+import { ScpHtmlRequestPriority, ScpHtmlSource } from '../domain/ArticleHtmlRepository';
+import { CatalogParser, CatalogSnapshotSource, CatalogTaleEntry, TaleSnapshot } from '../domain/CatalogContracts';
 import { TaleRepository, TaleSnapshotListener } from '../domain/CatalogRepositories';
 import { ScpCachePolicy } from '../domain/ScpCachePolicy';
-import {
-  TALE_LIST_PARSER_VERSION,
-  TalePayload,
-  TaleRawEntry
-} from '../domain/StaticCatalogContracts';
-import {
-  ScpStoredTaleList,
-  TaleListService
-} from './TaleListService';
+import { TALE_LIST_PARSER_VERSION, TaleRawEntry } from '../domain/StaticCatalogContracts';
+import { TaleDirectoryCache, TaleIndexPart, TaleListService } from './TaleListService';
 
-/** 故事列表 Data adapter；持久化与解析依赖由 feature composition 显式注入。 */
+interface IndexRead {
+  part?: TaleIndexPart;
+  network: boolean;
+}
+
+function unavailable(part?: TaleIndexPart): boolean {
+  return part === undefined || part.needsRetry;
+}
+
+function validPart(part?: TaleIndexPart): boolean {
+  return part === undefined || (part !== null && Array.isArray(part.tales) &&
+    part.tales.length > 0 && Number.isFinite(part.fetchedAt) && typeof part.needsRetry === 'boolean');
+}
+
+function mergeEntries(translated: TaleRawEntry[], original: TaleRawEntry[], legacy: TaleRawEntry[]): CatalogTaleEntry[] {
+  const seen = new Set<string>();
+  const result: CatalogTaleEntry[] = [];
+  for (const tale of translated.concat(original, legacy)) {
+    if (tale === null || typeof tale !== 'object' || typeof tale.id !== 'string' || typeof tale.title !== 'string') {
+      continue;
+    }
+    const id = tale.id.trim();
+    const title = tale.title.trim();
+    if (id.length > 0 && title.length >= 2 && !seen.has(id)) {
+      seen.add(id);
+      result.push(new CatalogTaleEntry(id, title));
+    }
+  }
+  return result;
+}
+
+/** A refresh publishes the independently validated indexes together in one cache row. */
 export class TaleRepositoryAdapter implements TaleRepository {
   private readonly service: TaleListService;
   private readonly parser: CatalogParser;
-  private readonly listeners: Array<TaleSnapshotListener> = [];
+  private readonly listeners: TaleSnapshotListener[] = [];
+  private generation: number = 0;
+  private writing: Promise<void> = Promise.resolve();
 
   constructor(service: TaleListService, parser: CatalogParser) {
     this.service = service;
@@ -34,65 +50,17 @@ export class TaleRepositoryAdapter implements TaleRepository {
   }
 
   async getCached(): Promise<TaleSnapshot | undefined> {
-    let stored: ScpStoredTaleList | undefined = undefined;
-    try {
-      stored = await this.service.read();
-    } catch (error) {
-      // The tale list is a rebuildable cache.  Continue to the network path
-      // when RDB reads fail instead of turning a transient cache error into a
-      // page-level failure.
-      console.warn(`Read tale cache failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-      return undefined;
-    }
-    if (stored === undefined) {
-      return undefined;
-    }
-    return this.decodeStored(stored);
+    const cache = await this.readCache();
+    return cache === undefined ? undefined : this.snapshot(cache, false);
   }
 
   async load(priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.USER_INITIATED): Promise<TaleSnapshot> {
     const cached = await this.getCached();
-    if (cached !== undefined) {
-      return cached;
-    }
-    return this.fetchAndParse(priority);
+    return cached ?? await this.update(false, priority);
   }
 
-  async refresh(priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.BACKGROUND): Promise<TaleSnapshot> {
-    const cached = await this.getCached();
-    const results = await this.loadSources(true, priority);
-    if (results.length === 0 && cached !== undefined) {
-      return cached;
-    }
-    const parsed = await this.parseSources(results);
-    const tales = this.validatedTales(parsed);
-    const rawTales: TaleRawEntry[] = [];
-    for (let index = 0; index < tales.length; index++) {
-      const tale = tales[index];
-      const rawTale: TaleRawEntry = { id: tale.id, title: tale.title };
-      rawTales.push(rawTale);
-    }
-    const payload: TalePayload = {
-      parserVersion: parsed.parserVersion,
-      ok: parsed.ok,
-      error: typeof parsed.error === 'string' ? parsed.error : '',
-      tales: rawTales
-    };
-    const fetchedAt = this.latestFetchedAt(results);
-    await this.persist(payload, fetchedAt);
-    const stale = this.hasStaleSource(results);
-    const snapshot = new TaleSnapshot(
-      tales,
-      stale ? CatalogSnapshotSource.STALE_CACHE :
-        (results.some((result: ScpHtmlLoadResult): boolean => result.source === ScpHtmlSource.NETWORK) ?
-          CatalogSnapshotSource.NETWORK : CatalogSnapshotSource.CACHE),
-      fetchedAt,
-      stale,
-      false,
-      parsed.parserVersion
-    );
-    this.notify(snapshot);
-    return snapshot;
+  refresh(priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.BACKGROUND): Promise<TaleSnapshot> {
+    return this.update(true, priority);
   }
 
   subscribe(listener: TaleSnapshotListener): () => void {
@@ -107,179 +75,113 @@ export class TaleRepositoryAdapter implements TaleRepository {
     };
   }
 
-  private async fetchAndParse(priority: ScpHtmlRequestPriority): Promise<TaleSnapshot> {
-    const results = await this.loadSources(false, priority);
-    if (results.length === 0) {
-      throw new Error('故事目录网络请求失败');
-    }
-    const parsed = await this.parseSources(results);
-    const tales = this.validatedTales(parsed);
-    const rawTales: TaleRawEntry[] = [];
-    for (let index = 0; index < tales.length; index++) {
-      const tale = tales[index];
-      const rawTale: TaleRawEntry = { id: tale.id, title: tale.title };
-      rawTales.push(rawTale);
-    }
-    const payload: TalePayload = {
-      parserVersion: parsed.parserVersion,
-      ok: parsed.ok,
-      error: typeof parsed.error === 'string' ? parsed.error : '',
-      tales: rawTales
-    };
-    const fetchedAt = this.latestFetchedAt(results);
-    await this.persist(payload, fetchedAt);
-    const stale = this.hasStaleSource(results);
-    const snapshot = new TaleSnapshot(
-      tales,
-      stale ? CatalogSnapshotSource.STALE_CACHE :
-        (results.some((result: ScpHtmlLoadResult): boolean => result.source === ScpHtmlSource.NETWORK) ?
-          CatalogSnapshotSource.NETWORK : CatalogSnapshotSource.CACHE),
-      fetchedAt,
-      stale,
-      false,
-      parsed.parserVersion
-    );
-    this.notify(snapshot);
-    return snapshot;
-  }
-
-  private decodeStored(stored: ScpStoredTaleList): TaleSnapshot | undefined {
+  private async readCache(): Promise<TaleDirectoryCache | undefined> {
+    await this.writing;
     try {
-      const payload = JSON.parse(stored.json) as TalePayload;
-      if (payload === undefined || payload === null || typeof payload !== 'object' ||
-        payload.parserVersion !== TALE_LIST_PARSER_VERSION ||
-        payload.ok !== true || !Array.isArray(payload.tales)) {
+      const stored = await this.service.read();
+      if (stored === undefined) {
         return undefined;
       }
-      const tales = this.normalize(payload.tales.map((tale) =>
-        new CatalogTaleEntry(tale.id, tale.title)));
+      const cache = JSON.parse(stored.json) as TaleDirectoryCache;
+      if (cache === null || cache.parserVersion !== TALE_LIST_PARSER_VERSION || cache.ok !== true ||
+        !validPart(cache.translated) || !validPart(cache.original) ||
+        (cache.tales !== undefined && !Array.isArray(cache.tales))) {
+        return undefined;
+      }
+      return cache;
+    } catch (error) {
+      console.warn(`Read tale cache failed: ${error instanceof Error ? error.message : 'invalid cache'}`);
+      return undefined;
+    }
+  }
+
+  private async readSource(original: boolean, force: boolean, priority: ScpHtmlRequestPriority,
+    previous?: TaleIndexPart): Promise<IndexRead> {
+    try {
+      const html = original ? await this.service.loadOriginalHtmlForRequest(force, priority) :
+        await this.service.loadHtmlForRequest(force, priority);
+      const parsed = await this.parser.parseTales(html.html);
+      if (!parsed.ok || parsed.parserVersion !== TALE_LIST_PARSER_VERSION || parsed.tales.length === 0) {
+        throw new Error(parsed.error || '故事索引没有有效条目');
+      }
+      const tales = mergeEntries(parsed.tales, [], []);
       if (tales.length === 0) {
-        return undefined;
+        throw new Error('故事索引没有有效条目');
       }
-      return new TaleSnapshot(
-        tales,
-        CatalogSnapshotSource.CACHE,
-        stored.parsedAt,
-        !ScpCachePolicy.isFresh(stored.parsedAt),
-        false,
-        payload.parserVersion
-      );
-    } catch (error) {
-      return undefined;
-    }
-  }
-
-  private validatedTales(parsed: TaleParseResult): CatalogTaleEntry[] {
-    if (parsed === undefined || parsed === null || typeof parsed !== 'object') {
-      throw new Error('故事目录解析结果不是对象');
-    }
-    if (!Array.isArray(parsed.tales)) {
-      throw new Error('故事目录解析结果字段不完整');
-    }
-    const tales = this.normalize(parsed.tales);
-    if (parsed.parserVersion !== TALE_LIST_PARSER_VERSION || parsed.ok !== true || tales.length === 0) {
-      throw new Error(parsed.parserVersion !== TALE_LIST_PARSER_VERSION ?
-        `故事目录解析器版本不兼容：${parsed.parserVersion}` :
-        (parsed.ok === true ? '故事目录解析结果为空' :
-          `故事目录解析失败：${typeof parsed.error === 'string' ? parsed.error : '未知错误'}`));
-    }
-    return tales;
-  }
-
-  private async persist(payload: TalePayload, fetchedAt: number): Promise<void> {
-    try {
-      await this.service.put(payload, fetchedAt);
-    } catch (error) {
-      // Persistence is an acceleration layer; a valid network response is
-      // still useful when the local database is read-only/full/unavailable.
-      console.warn(`Write tale cache failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-    }
-  }
-
-  /** 主站翻译故事与中文分部原创故事分别请求，单一来源故障不遮蔽另一来源。 */
-  private async loadSources(
-    forceNetwork: boolean,
-    priority: ScpHtmlRequestPriority
-  ): Promise<ScpHtmlLoadResult[]> {
-    const results: ScpHtmlLoadResult[] = [];
-    const main = await this.service.loadHtmlForRequest(forceNetwork, priority).catch((error: Object): undefined => {
-      console.warn(`Load translated tale index failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-      return undefined;
-    });
-    if (main !== undefined) {
-      results.push(main);
-    }
-    const original = await this.service.loadOriginalHtmlForRequest(forceNetwork, priority)
-      .catch((error: Object): undefined => {
-        console.warn(`Load original tale index failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-        return undefined;
-      });
-    if (original !== undefined) {
-      results.push(original);
-    }
-    return results;
-  }
-
-  private async parseSources(results: ScpHtmlLoadResult[]): Promise<TaleParseResult> {
-    const all: CatalogTaleEntry[] = [];
-    let parserVersion: number = TALE_LIST_PARSER_VERSION;
-    const errors: string[] = [];
-    for (let index = 0; index < results.length; index++) {
-      const parsed = await this.parser.parseTales(results[index].html);
-      parserVersion = Math.max(parserVersion, parsed.parserVersion);
-      if (parsed.ok) {
-        for (let taleIndex = 0; taleIndex < parsed.tales.length; taleIndex++) {
-          all.push(parsed.tales[taleIndex]);
-        }
-      } else if (parsed.error.length > 0) {
-        errors.push(parsed.error);
+      const stale = html.source === ScpHtmlSource.STALE_CACHE;
+      if (!stale || previous === undefined || html.fetchedAt > previous.fetchedAt) {
+        const part: TaleIndexPart = { tales: tales, fetchedAt: html.fetchedAt, needsRetry: stale };
+        return { part: part, network: html.source === ScpHtmlSource.NETWORK };
       }
+    } catch (error) {
+      console.warn(`Load ${original ? 'original' : 'translated'} tale index failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
-    return {
-      parserVersion: parserVersion,
-      ok: all.length > 0,
-      error: all.length > 0 ? '' : errors.join('；'),
-      tales: all
+    if (previous === undefined) {
+      return { network: false };
+    }
+    const retained: TaleIndexPart = { tales: previous.tales, fetchedAt: previous.fetchedAt, needsRetry: true };
+    return { part: retained, network: false };
+  }
+
+  private async update(force: boolean, priority: ScpHtmlRequestPriority): Promise<TaleSnapshot> {
+    const generation = ++this.generation;
+    const old = await this.readCache();
+    const parts = await Promise.all([
+      this.readSource(false, force, priority, old?.translated),
+      this.readSource(true, force, priority, old?.original)
+    ]);
+    const cache: TaleDirectoryCache = {
+      parserVersion: TALE_LIST_PARSER_VERSION,
+      ok: true,
+      translated: parts[0].part,
+      original: parts[1].part,
+      tales: parts[0].part === undefined || parts[1].part === undefined ? old?.tales : undefined
     };
-  }
-
-  private latestFetchedAt(results: ScpHtmlLoadResult[]): number {
-    let latest: number = 0;
-    for (let index = 0; index < results.length; index++) {
-      latest = Math.max(latest, results[index].fetchedAt);
+    const next = this.snapshot(cache, parts[0].network || parts[1].network);
+    if (next === undefined) {
+      throw new Error('翻译和原创故事目录均未加载成功');
     }
-    return latest;
-  }
-
-  private hasStaleSource(results: ScpHtmlLoadResult[]): boolean {
-    return results.some((result: ScpHtmlLoadResult): boolean => result.source === ScpHtmlSource.STALE_CACHE);
-  }
-
-  private normalize(tales: CatalogTaleEntry[]): CatalogTaleEntry[] {
-    const seen: Set<string> = new Set<string>();
-    const result: CatalogTaleEntry[] = [];
-    for (let index = 0; index < tales.length; index++) {
-      const tale = tales[index];
-      if (tale === undefined || tale === null || typeof tale !== 'object' ||
-        typeof tale.id !== 'string' || typeof tale.title !== 'string') {
-        continue;
+    if (generation === this.generation) {
+      // Queue complete records so an older in-flight database write cannot replace the latest one.
+      this.writing = this.writing.then(() => this.service.put(cache, next.fetchedAt)).catch((error: Object): void => {
+        console.warn(`Write tale cache failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      });
+      await this.writing;
+      if (generation === this.generation) {
+        this.notify(next);
       }
-      const id = tale.id.trim();
-      const title = tale.title.trim();
-      if (id.length === 0 || title.length < 2 || seen.has(id)) {
-        continue;
-      }
-      seen.add(id);
-      result.push(new CatalogTaleEntry(id, title));
     }
-    return result;
+    return next;
+  }
+
+  private snapshot(cache: TaleDirectoryCache, network: boolean): TaleSnapshot | undefined {
+    const translated = cache.translated;
+    const original = cache.original;
+    const entries = mergeEntries(translated?.tales ?? [], original?.tales ?? [], cache.tales ?? []);
+    if (entries.length === 0) {
+      return undefined;
+    }
+    const missing: string[] = [];
+    if (unavailable(translated)) {
+      missing.push('翻译');
+    }
+    if (unavailable(original)) {
+      missing.push('原创');
+    }
+    const partial = missing.length > 0;
+    const fetchedAt = translated && original ? Math.min(translated.fetchedAt, original.fetchedAt) :
+      (translated?.fetchedAt ?? original?.fetchedAt ?? 0);
+    const stale = partial || !ScpCachePolicy.isFresh(fetchedAt);
+    const source = stale ? CatalogSnapshotSource.STALE_CACHE :
+      (network ? CatalogSnapshotSource.NETWORK : CatalogSnapshotSource.CACHE);
+    return new TaleSnapshot(entries, source, fetchedAt, stale, partial, TALE_LIST_PARSER_VERSION,
+      partial ? `${missing.join('、')}故事目录待更新，可重试` : '');
   }
 
   private notify(snapshot: TaleSnapshot): void {
-    const listeners = this.listeners.slice();
-    for (let index = 0; index < listeners.length; index++) {
+    for (const listener of this.listeners.slice()) {
       try {
-        listeners[index](snapshot);
+        listener(snapshot);
       } catch (error) {
         console.warn(`Notify tale snapshot failed: ${error instanceof Error ? error.message : 'unknown error'}`);
       }
