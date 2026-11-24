@@ -1,5 +1,12 @@
 import { ArchiveModelDescriptor, ArchiveSceneSource } from './ArchiveModelDescriptor';
 
+/** The verified on-demand package is absent; the reader can acquire it from the gallery. */
+export class ArchiveModelNotInstalledError extends Error {
+  constructor() {
+    super('三维模型尚未下载');
+  }
+}
+
 /** Installation state is separate from the viewer's scene-load state. */
 export enum ArchiveModelInstallState {
   UNKNOWN = 'unknown',

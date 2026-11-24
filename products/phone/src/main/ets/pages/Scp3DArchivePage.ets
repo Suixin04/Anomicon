@@ -10,8 +10,6 @@ import {
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
 import {
-  accentPillBackgroundColor,
-  accentPillForegroundColor,
   adaptivePageMarginForWidth,
   AppMotion,
   AppTypography,
@@ -38,12 +36,15 @@ import {
 import { SettingsViewModel } from 'settings';
 import {
   ArchiveModelDescriptor,
+  ArchiveModelNotInstalledError,
   ArchiveSceneSource,
   Scp3DModelAsset,
   resolveScp3DModelAsset
 } from 'archive3d';
 import { LibraryContentKind } from 'library';
-import { Scp3DArchiveRouteParams } from '../navigation/AppRoutes';
+import { ArchiveStageControls } from './ArchiveStageControls';
+import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
+import { AppRoutes, Scp3DArchiveGalleryRouteParams, Scp3DArchiveRouteParams } from '../navigation/AppRoutes';
 import { parseScp3DArchiveRoute } from '../navigation/RouteParamAdapters';
 import {
   Archive3DSceneHandle,
@@ -147,6 +148,7 @@ struct Scp3DArchivePage {
   // state changes never look like a dynamic scene-option mutation.
   private sceneOptions: SceneOptions | undefined = undefined;
   @Local private errorMessage: string = '';
+  @Local private needsModelPackage: boolean = false;
   @Local private autoRotate: boolean = false;
   @Local private creditsVisible: boolean = false;
   @Local private paneWidth: number = 0;
@@ -273,6 +275,7 @@ struct Scp3DArchivePage {
     this.contentId = '';
     this.title = '';
     this.asset = undefined;
+    this.needsModelPackage = false;
     this.errorMessage = '';
     this.creditsVisible = false;
     this.loading = false;
@@ -313,6 +316,7 @@ struct Scp3DArchivePage {
     const generation: number = ++this.loadGeneration;
     this.releaseScene();
     this.loading = true;
+    this.needsModelPackage = false;
     this.errorMessage = '';
     this.sceneLoadHint.begin();
     this.loadSceneAsync(asset, generation);
@@ -350,14 +354,18 @@ struct Scp3DArchivePage {
       }
       this.loading = false;
       this.sceneReady = false;
-      const message = error instanceof Error ? error.message : '';
-      this.errorMessage = message.indexOf('尚未下载') >= 0 ||
-        message.indexOf('未安装') >= 0 ?
-        '该模型尚未下载，请先前往三维档案馆获取。' :
+      this.needsModelPackage = error instanceof ArchiveModelNotInstalledError;
+      this.errorMessage = this.needsModelPackage ?
+        '该模型需要下载后才能查看。' :
         '三维模型暂时无法加载，请稍后重试。';
     } finally {
       this.sceneLoadHint.end();
     }
+  }
+
+  private acquireModel(asset: Scp3DModelAsset): void {
+    const params: Scp3DArchiveGalleryRouteParams = { assetId: asset.assetId };
+    AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARCHIVE_3D_GALLERY, params);
   }
 
   private retryLoad(): void {
@@ -767,28 +775,12 @@ struct Scp3DArchivePage {
 
   @Builder
   private stageControls() {
-    Row({ space: 8 }) {
-      Button(this.autoRotate ? '停止自动旋转' : '自动旋转', { stateEffect: false })
-        .height(36)
-        .fontSize(12)
-        .fontColor(this.autoRotate ? accentPillForegroundColor() : badgeInfoForegroundColor())
-        .backgroundColor(this.autoRotate ? accentPillBackgroundColor() : badgeInfoBackgroundColor())
-        .onClick(() => this.toggleAutoRotate());
-      Blank().layoutWeight(1);
-      Button('复位', { stateEffect: false })
-        .height(36)
-        .fontSize(12)
-        .fontColor('#EAF0FF')
-        .backgroundColor('#2BFFFFFF')
-        .onClick(() => this.resetView());
-    }
-    .width('100%')
-    .padding({ left: 14, right: 14, top: 10, bottom: 12 })
-    .borderRadius(18)
-    .backgroundColor(this.isMaterialEnabled() ? '#88101826' : '#CC141C2B')
-    .backgroundBlurStyle(this.isMaterialEnabled() ? BlurStyle.COMPONENT_THIN : undefined)
-    .border({ width: 0.5, color: '#33FFFFFF' })
-    .accessibilityText('三维模型控制：自动旋转与复位');
+    ArchiveStageControls({
+      autoRotate: this.autoRotate,
+      materialEnabled: this.isMaterialEnabled(),
+      onToggleRotation: () => this.toggleAutoRotate(),
+      onReset: () => this.resetView()
+    });
   }
 
   @Builder
@@ -823,12 +815,18 @@ struct Scp3DArchivePage {
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis });
       if (this.asset !== undefined) {
-        Button('重新加载', { stateEffect: false })
+        Button(this.needsModelPackage ? '获取此模型' : '重新加载', { stateEffect: false })
           .height(38)
           .fontSize(13)
           .fontColor('#FFFFFF')
           .backgroundColor('#3E65B2')
-          .onClick(() => this.retryLoad());
+          .onClick(() => {
+            if (this.needsModelPackage && this.asset !== undefined) {
+              this.acquireModel(this.asset);
+            } else {
+              this.retryLoad();
+            }
+          });
       } else {
         Text('请返回档案页重新进入三维档案')
           .fontSize(AppTypography.BODY_S)

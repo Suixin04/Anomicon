@@ -36,6 +36,11 @@ export interface LibraryCollectionRouteParams {
   mode: LibraryCollectionMode;
 }
 
+/** Open just the requested package from its viewer. No payload opens the full gallery. */
+export interface Scp3DArchiveGalleryRouteParams {
+  readonly assetId: string;
+}
+
 /** Strict, serializable payload for the independent three-dimensional view. */
 export interface Scp3DArchiveRouteParams {
   readonly content: LibraryContentRef;

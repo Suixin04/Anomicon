@@ -40,6 +40,7 @@ import {
 } from 'library';
 import {
   AppRoutes,
+  Scp3DArchiveGalleryRouteParams,
   Scp3DArchiveRouteParams
 } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
@@ -62,6 +63,7 @@ export enum Scp3DArchiveInstallState {
   QUEUED = 'queued',
   WAITING = 'waiting',
   DOWNLOADING = 'downloading',
+  PAUSED = 'paused',
   VERIFYING = 'verifying',
   FAILED = 'failed'
 }
@@ -85,6 +87,7 @@ export interface Scp3DArchiveInstallActions {
     listener: (state: Scp3DArchiveInstallState) => void
   ): () => void;
   install(entry: Scp3DAssetManifestEntry): Promise<void>;
+  resume(entry: Scp3DAssetManifestEntry): Promise<void>;
   remove(entry: Scp3DAssetManifestEntry): Promise<void>;
 }
 
@@ -124,6 +127,7 @@ struct Scp3DArchiveGalleryPage {
   @Param settings: SettingsViewModel | undefined = undefined;
   @Local private selectedFilter: Scp3DArchiveGalleryFilter =
     Scp3DArchiveGalleryFilter.ALL;
+  @Local private requestedEntry: Scp3DAssetManifestEntry | undefined = undefined;
   @Local private stateVersion: number = 0;
   @Local private activeActionAssetId: string = '';
   @Local private paneWidth: number = 0;
@@ -188,6 +192,9 @@ struct Scp3DArchiveGalleryPage {
   }
 
   private visibleEntries(): Scp3DAssetManifestEntry[] {
+    if (this.requestedEntry !== undefined) {
+      return [this.requestedEntry];
+    }
     if (this.selectedFilter === Scp3DArchiveGalleryFilter.ALL) {
       return this.manifest;
     }
@@ -231,6 +238,8 @@ struct Scp3DArchiveGalleryPage {
         return '等待网络';
       case Scp3DArchiveInstallState.DOWNLOADING:
         return '下载中';
+      case Scp3DArchiveInstallState.PAUSED:
+        return '已暂停';
       case Scp3DArchiveInstallState.VERIFYING:
         return '校验中';
       case Scp3DArchiveInstallState.FAILED:
@@ -275,6 +284,11 @@ struct Scp3DArchiveGalleryPage {
     if (!this.isReady(entry)) {
       return;
     }
+    if (this.requestedEntry !== undefined) {
+      // The viewer below the focused gallery resolves the verified package on return.
+      popNavigationDestination(this.pageStack);
+      return;
+    }
     const content = createLibraryContentRef(
       LibraryContentKind.SCP,
       entry.contentId,
@@ -293,12 +307,18 @@ struct Scp3DArchiveGalleryPage {
     if (actions === undefined || this.isActionInFlight(entry)) {
       return;
     }
+    const resume = this.currentState(entry) === Scp3DArchiveInstallState.PAUSED;
     this.activeActionAssetId = entry.assetId;
     try {
-      await actions.install(entry);
+      if (resume) {
+        await actions.resume(entry);
+      } else {
+        await actions.install(entry);
+      }
     } catch (_error) {
-      // Repository publishes FAILED with a user-facing reason.  Keep the
-      // page alive here so a transient network error never breaks navigation.
+      this.getUIContext().getPromptAction().showToast({
+        message: resume ? '未能继续下载，请重试' : '未能开始下载，请重试'
+      });
     } finally {
       this.activeActionAssetId = '';
       this.stateVersion++;
@@ -454,6 +474,11 @@ struct Scp3DArchiveGalleryPage {
             Text(this.statusLabel(entry))
               .fontSize(AppTypography.CAPTION_L)
               .fontColor($r('sys.color.font_secondary'));
+          } else if (this.isReady(entry) && this.requestedEntry !== undefined) {
+            Text('查看模型')
+              .fontSize(AppTypography.BODY_S)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(badgeInfoForegroundColor());
           } else if (this.isReady(entry)) {
             Button('删除', { stateEffect: true })
               .height(32)
@@ -465,7 +490,7 @@ struct Scp3DArchiveGalleryPage {
               .hitTestBehavior(HitTestMode.Block)
               .onClick(() => { this.removeAsset(entry); });
           } else {
-            Button('下载', { stateEffect: true })
+            Button(this.currentState(entry) === Scp3DArchiveInstallState.PAUSED ? '继续下载' : '下载', { stateEffect: true })
               .height(32)
               .fontSize(AppTypography.CAPTION_L)
               .fontColor(badgeInfoForegroundColor())
@@ -538,7 +563,7 @@ struct Scp3DArchiveGalleryPage {
               // The destination is laid out through the system bars. Keep
               // interactive content below the status bar, MINI title bar and bottom filter bar;
               // the surrounding background remains fully immersive.
-              top: pageContentTop() + GALLERY_FILTER_BAR_HEIGHT + 4,
+              top: pageContentTop() + (this.requestedEntry === undefined ? GALLERY_FILTER_BAR_HEIGHT : 0) + 4,
               bottom: 34
             });
           }
@@ -579,16 +604,16 @@ struct Scp3DArchiveGalleryPage {
       enableComponentSafeArea: false,
       content: {
         title: {
-          mainTitle: '三维档案馆',
-          subTitle: `${this.manifest.length} 个档案`
+          mainTitle: this.requestedEntry === undefined ? '三维档案馆' : '获取三维模型',
+          subTitle: this.requestedEntry?.contentId.toUpperCase() ?? `${this.manifest.length} 个档案`
         },
         backIcon: createAppBackIcon('scp3dArchiveGalleryBackButton', (): void => {
           popNavigationDestination(this.pageStack);
         }),
-        bottomBuilder: {
+        bottomBuilder: this.requestedEntry === undefined ? {
           builder: (): void => this.filterBarBuilder(),
           height: GALLERY_FILTER_BAR_HEIGHT
-        }
+        } : undefined
       },
       style: createAppTitleBarStyle(this.isMaterialEnabled())
     })
@@ -604,6 +629,9 @@ struct Scp3DArchiveGalleryPage {
     })
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      const param = context.pathInfo.param as Scp3DArchiveGalleryRouteParams | undefined;
+      this.requestedEntry = this.manifest.find((entry: Scp3DAssetManifestEntry): boolean =>
+        entry.assetId === param?.assetId);
       this.navDestinationId = context.navDestinationId ?? '';
       NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
     })

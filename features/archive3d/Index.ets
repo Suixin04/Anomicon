@@ -17,6 +17,7 @@ export {
   ArchiveModelAttribution,
   ArchiveModelDescriptor,
   ArchiveSceneSource,
+  ArchiveModelNotInstalledError,
   ArchiveModelInstallState,
   ArchiveModelInstallSnapshot,
   ArchiveModelInstallListener,
