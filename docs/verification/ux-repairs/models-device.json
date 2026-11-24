@@ -1,0 +1,71 @@
+{
+  "commit": "f5c6220c8f767ac8729f83bd3d442cd762a9a091",
+  "bundle": "com.suixin.anomicon.uxfix",
+  "api": 26,
+  "steps": {
+    "models-131-target": [
+      {
+        "id": "",
+        "text": "SCP-131",
+        "type": "Text",
+        "bounds": "[92,330][286,384]",
+        "clickable": "false"
+      },
+      {
+        "id": "",
+        "text": "11.9 MB",
+        "type": "Text",
+        "bounds": "[787,510][916,550]",
+        "clickable": "false"
+      },
+      {
+        "id": "",
+        "text": "下载",
+        "type": "Button",
+        "bounds": "[755,585][916,677]",
+        "clickable": "true"
+      }
+    ],
+    "models-final-download-state": [
+      {
+        "id": "",
+        "text": "已下载",
+        "type": "Text",
+        "bounds": "[727,330][864,392]",
+        "clickable": "false"
+      },
+      {
+        "id": "",
+        "text": "查看模型",
+        "type": "Text",
+        "bounds": "[778,585][916,625]",
+        "clickable": "false"
+      }
+    ],
+    "models-return": [
+      {
+        "id": "scp3dArchiveBackButton",
+        "text": "",
+        "type": "Button",
+        "bounds": "[46,135][161,250]",
+        "clickable": "true"
+      }
+    ],
+    "models-131-original-article": [
+      {
+        "id": "articleBackButton",
+        "text": "",
+        "type": "Button",
+        "bounds": "[46,135][161,250]",
+        "clickable": "true"
+      },
+      {
+        "id": "",
+        "text": "SCP-131",
+        "type": "Text",
+        "bounds": "[184,135][409,197]",
+        "clickable": "false"
+      }
+    ]
+  }
+}

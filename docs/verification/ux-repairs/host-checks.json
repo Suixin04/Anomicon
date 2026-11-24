@@ -1,0 +1,876 @@
+{
+  "git": "0c95f1fe5887748ccd8b802640231ddf630eaab9",
+  "tree": "ac1b3191e17526972c922ca30d582c8ea6d2552c",
+  "productionRelease": {
+    "bundle": "com.suixin.anomicon",
+    "versionName": "1.2.7",
+    "versionCode": 1020007,
+    "module": "phone",
+    "path": "products/phone/build/default/outputs/default/phone-default-unsigned.hap",
+    "bytes": 25414889,
+    "sha256": "ab5cb6f5e7f68eed2fcbabc75005f25acfe4a86141cfd008304de547fb5d8c30"
+  },
+  "diffCheck": "git diff --check 04996ca..HEAD",
+  "architecture": "architecture-check: dependency direction and cycle checks passed",
+  "debugAndRelease": "assembleHap succeeded",
+  "hypiumTotals": {
+    "total": 157,
+    "success": 157,
+    "failure": 0,
+    "error": 0,
+    "ignore": 0
+  },
+  "hypiumModules": {
+    "anomiconbasic": {
+      "count": 6,
+      "cases": [
+        {
+          "suite": "AppMotionDestinationTransitionRegistry",
+          "case": "resets DestinationMotionState fields back to rest values",
+          "result": "Success"
+        },
+        {
+          "suite": "AppMotionDestinationTransitionRegistry",
+          "case": "registers, resolves, and unregisters DestinationMotionState by id",
+          "result": "Success"
+        },
+        {
+          "suite": "ExternalUrlPolicy",
+          "case": "rejects credentials, custom ports, and non-HTTPS schemes",
+          "result": "Success"
+        },
+        {
+          "suite": "ResponsiveLayoutPolicy",
+          "case": "classifies width breakpoints across SM, MD, LG and XL boundaries",
+          "result": "Success"
+        },
+        {
+          "suite": "ResponsiveLayoutPolicy",
+          "case": "matches HdsTitleBar adaptive page margins across container widths",
+          "result": "Success"
+        },
+        {
+          "suite": "ResponsiveLayoutPolicy",
+          "case": "resolves list lanes, split navigation, sheets and article workbench thresholds",
+          "result": "Success"
+        }
+      ]
+    },
+    "article": {
+      "count": 53,
+      "cases": [
+        {
+          "suite": "ArticleCachePolicy",
+          "case": "uses an exclusive six-hour freshness boundary",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "maps the complete schema-v4 payload into Article-owned models",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "discards a cache record with an unsupported parser version",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "rejects payloads from unsupported parser versions",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "rejects malformed nested payload entries before mapping",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "normalizes Traditional prose and removes empty footnote rows",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "decodes numeric scalars and literal entities once in text and attributes",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "parses common Wikidot article HTML without ArkWeb",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "publishes the native result directly from ContentGateway",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "keeps only the visible language branch in original CN markup",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "filters nested presentation nodes by semantic id, not string shape",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "strips Wikidot footnote backlink numbering and keeps inline spans together",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "deduplicates legacy cached footnote numbering without harming plain numbers",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "purifies CSS/JS, display:none, rate widgets, avatars and extracts credits",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "emits in-place images with cleaned filename captions and preferred width",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "parses ACS header, Tabviews, Colmod, Callouts, Code, Lists, Tables and CN Ruby",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "keeps interactive html-block-iframe widgets as EMBED without leaking CSS/JS",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "unwraps double-wrapped iframe lists, adult modal warnings, extensionless image alts, and colmod hide labels",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "parses combinable inline styles and inherited block alignment",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "detects context-aware hidden Easter eggs while keeping dark-terminal white text and dropping transparent spacers",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "detects listpages-offset links and large custom format-screw CSS without BHL/ACS false positives",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleDocumentMapper",
+          "case": "preserves anchors across preceding empty blocks and detects pre-expanded collapsibles",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleNavigation",
+          "case": "normalizes anchors, filters noise ids, and extracts URL fragments",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleNavigation",
+          "case": "resolves anchors with u- prefix fallback, flattened quote extras, nested collapsibles, and inactive tabs",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleNavigation",
+          "case": "searches across visible, collapsed, tab, credit, and footnote blocks with location metadata",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleNavigation",
+          "case": "returns from a footnote to the first referencing child of a collapsed, inactive tab",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleNavigation",
+          "case": "splits text into highlight segments case-insensitively",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "normalizes image URLs, strips control whitespace, and rejects unsafe schemes",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "collects deduplicated article images across blocks, collapsibles, and footnotes",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "evaluates exact reader-facing offline readiness labels and interactive detection",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "opens shelf body and images from v1 beside cached v2, then publishes the confirmed update",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "keeps the old shelf revision when a forced request yields stale HTML or the fallback archive",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "accepts a conditionally confirmed page through the compatibility extractor",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "repairs the saved revision even when the ordinary reader is showing a newer document",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleOfflineContractsAndGateway",
+          "case": "loads saved offline archive when temporary document cache is cleared and resolves local image URIs",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticlePayloadCompatibility",
+          "case": "maps a normal JSON extraction result",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticlePayloadCompatibility",
+          "case": "unwraps an extra JSON string layer returned by ArkWeb",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticlePayloadCompatibility",
+          "case": "uses the same extraction payload for project and story content",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleRendererProjection",
+          "case": "projects spans and collapse state immutably",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleRendererProjection",
+          "case": "finds footnotes by referenceId and numeric label fallback",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleRendererProjection",
+          "case": "steps footnote index within bounds",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleRendererProjection",
+          "case": "formats footnote sheet header title and subtitle",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleRendererProjection",
+          "case": "adapts inline colors across light and dark surfaces and counts hidden Easter eggs",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleRendererProjection",
+          "case": "evaluates original web mode recommendation across normal, recommended, and auto-direct articles",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleReadingRestore",
+          "case": "does not persist the provisional zero while restore is pending",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleReadingRestore",
+          "case": "allows an authoritative zero after the lookup resolves",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleReadingRestore",
+          "case": "lets an explicit reader scroll save zero before a late restore",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleReadingRestore",
+          "case": "preserves readingPercent updated while inactive without notifying listeners",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleReadingRestore",
+          "case": "locks progress persistence when completed and resumes saving when unmarked",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleRequestIdGuard",
+          "case": "drops extraction callbacks from a different request",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleScrollRestore",
+          "case": "restores regardless of whether history or layout finishes first",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleScrollRestore",
+          "case": "distinguishes provisional zero from a resolved zero",
+          "result": "Success"
+        },
+        {
+          "suite": "ArticleScrollRestore",
+          "case": "lets an early reader interaction win over a late history result",
+          "result": "Success"
+        }
+      ]
+    },
+    "catalog": {
+      "count": 45,
+      "cases": [
+        {
+          "suite": "SearchHistoryPersistence",
+          "case": "keeps the record available for retry until deletion is durable",
+          "result": "Success"
+        },
+        {
+          "suite": "SearchHistoryPersistence",
+          "case": "retries a failed query addition and persists the newest query first",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "reloads externally cleared history when returning to a retained search",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "publishes a revisioned immutable snapshot after a cold load",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "ends the pending state when a cold load fails",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "recovers when the cold load returns after timeout without a cache notification",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "recovers from a retry timeout through observe and applies its returned duplicate only once",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "keeps the timeout message when the current load eventually fails",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "keeps old returns and queued notifications out after retry, series switch and page exit",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "merges cached and progressive series snapshots and deduplicates items in ALL_SERIES_ID",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "degrades partially failed ALL_SERIES_ID loads and preserves query across deactivate and activate",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "shows the missing 1 of 15 series on zero matches and recovers only that title on retry",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "under zero background quota an explicit search promotes one missing series and leaves other prefetch queued",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "unifies CN archives, tales, and Wiki direct-open targets in ALL_SERIES_ID",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogSearchSnapshotContract",
+          "case": "balances Main and CN entries in random discovery and refreshes when CN arrives",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogDirectTargetContract",
+          "case": "resolves CN shorthands and zero-pads short numbers",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogDirectTargetContract",
+          "case": "resolves explicit SCP IDs and 3-4 digit shorthands",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogDirectTargetContract",
+          "case": "resolves Chinese and English Wiki URLs including anchor fragments and rejects unknown origins",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogDirectTargetContract",
+          "case": "enriches matched SCP and Tale direct targets while preserving anchors",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogDirectTargetContract",
+          "case": "supports compact catalog filtering and ranks exact before prefix and substring matches",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogDirectTargetContract",
+          "case": "exposes Main I-X and CN I-V series descriptors consistently",
+          "result": "Success"
+        },
+        {
+          "suite": "TaleDirectorySources",
+          "case": "replaces the valid source, keeps an empty index result retryable across reopen, and recovers",
+          "result": "Success"
+        },
+        {
+          "suite": "TaleDirectorySources",
+          "case": "retains unclassified v4 rows during a one-source outage until both indexes are available",
+          "result": "Success"
+        },
+        {
+          "suite": "SeriesTalesEditionContract",
+          "case": "maps Main I-X and CN I-V SCP IDs to Wiki series tales edition slugs",
+          "result": "Success"
+        },
+        {
+          "suite": "SeriesTalesEditionContract",
+          "case": "matches exact SCP references without false positives from longer numbers or joke variants",
+          "result": "Success"
+        },
+        {
+          "suite": "SeriesTalesEditionContract",
+          "case": "parses nested SCP-to-tale mappings while skipping newpage stubs and system links",
+          "result": "Success"
+        },
+        {
+          "suite": "SeriesTalesEditionContract",
+          "case": "uses memory and persistent cache, caches 404 misses, and falls back to stale cache on network failure",
+          "result": "Success"
+        },
+        {
+          "suite": "ScpPageFetchLifecycle",
+          "case": "rejects new requests after repeated disposal",
+          "result": "Success"
+        },
+        {
+          "suite": "CachedArticleRepo",
+          "case": "returns the 200 HTML while the queued cache put is still pending",
+          "result": "Success"
+        },
+        {
+          "suite": "CachedArticleRepo",
+          "case": "retries without validators when a 304 cannot renew a discarded body",
+          "result": "Success"
+        },
+        {
+          "suite": "CachedArticleRepo",
+          "case": "uses the newer cached body when a late 304 cannot renew",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogRepoAdapter",
+          "case": "discards a bad 200 so the next cold load can get a usable 200",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogRepoAdapter",
+          "case": "keeps the old derived snapshot through a bad 304 and renews it on a valid 304",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogRepoAdapter",
+          "case": "preserves good HTML on transient parser rejection or failure payload",
+          "result": "Success"
+        },
+        {
+          "suite": "CatalogRepoAdapter",
+          "case": "does not discard a newer good response when an earlier bad parse finishes late",
+          "result": "Success"
+        },
+        {
+          "suite": "StaticCatalogHtmlParserContract",
+          "case": "returns a validated catalog payload for the series panel",
+          "result": "Success"
+        },
+        {
+          "suite": "StaticCatalogHtmlParserContract",
+          "case": "keeps original CN SCP entries and their parent titles",
+          "result": "Success"
+        },
+        {
+          "suite": "StaticCatalogHtmlParserContract",
+          "case": "keeps entertainment SCP-J entries from a joke index",
+          "result": "Success"
+        },
+        {
+          "suite": "StaticCatalogHtmlParserContract",
+          "case": "normalizes Traditional Chinese tale titles before rendering",
+          "result": "Success"
+        },
+        {
+          "suite": "StaticCatalogHtmlParserContract",
+          "case": "rejects malformed pages with a typed failure payload",
+          "result": "Success"
+        },
+        {
+          "suite": "ScpRequestScheduler",
+          "case": "uses 4 total / 2 low-priority default concurrency",
+          "result": "Success"
+        },
+        {
+          "suite": "ScpRequestScheduler",
+          "case": "holds low-priority tasks under weak policy until raised",
+          "result": "Success"
+        },
+        {
+          "suite": "ScpRequestScheduler",
+          "case": "promotes queued prefetch tasks to user priority immediately",
+          "result": "Success"
+        },
+        {
+          "suite": "ScpPreviewHtmlExtractor",
+          "case": "extracts description and handles no-image articles cleanly",
+          "result": "Success"
+        },
+        {
+          "suite": "ScpPreviewHtmlExtractor",
+          "case": "reports missing page-content node",
+          "result": "Success"
+        }
+      ]
+    },
+    "explore": {
+      "count": 20,
+      "cases": [
+        {
+          "suite": "ExploreInitializationContract",
+          "case": "shares the first attempt and retries after rejection",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreCollectionSnapshotContract",
+          "case": "publishes revisioned partial and route-error snapshots",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreCollectionSnapshotContract",
+          "case": "publishes the first source while the other is still waiting",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreCollectionSnapshotContract",
+          "case": "enriches id-only original SCP index rows through the shared title port",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreCollectionSnapshotContract",
+          "case": "combines Main jokes, CN original jokes, and joke tales with title enrichment",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationService",
+          "case": "pads one and two digit candidate ids and interleaves Main with CN originals",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationService",
+          "case": "returns both Main and CN original cards in one daily batch",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationService",
+          "case": "resolves a human title when the article shell only contains its SCP id",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationService",
+          "case": "publishes out of order and immediately refills a failed candidate slot",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationService",
+          "case": "does not wait for titles and suppresses queued enrichment after invalidation",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationService",
+          "case": "shares candidate concurrency with a superseded batch and skips invalid work",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationPreviewContract",
+          "case": "passes the fetched page and complete preview value to each card",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationPreviewContract",
+          "case": "returns an empty recommendation set only for genuine missing pages",
+          "result": "Success"
+        },
+        {
+          "suite": "RecommendationPreviewContract",
+          "case": "surfaces transport failures instead of publishing an empty ready batch",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreHomeViewModelLoadingContract",
+          "case": "keeps an empty recommendation resume in initial loading state",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreHomeViewModelLoadingContract",
+          "case": "publishes cached ranked rows before lookup and fills in only the current request’s title",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreHomeViewModelLoadingContract",
+          "case": "publishes the first card while the home index is still pending",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreHomeViewModelLoadingContract",
+          "case": "retains the old deck until the first card and preserves index on append or title update",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreHomeViewModelLoadingContract",
+          "case": "ignores stale candidates, titles and completion on day rollover",
+          "result": "Success"
+        },
+        {
+          "suite": "ExploreHtmlParseTask",
+          "case": "parses small and large top-rated payloads seamlessly",
+          "result": "Success"
+        }
+      ]
+    },
+    "library": {
+      "count": 16,
+      "cases": [
+        {
+          "suite": "LibraryCollectionSnapshotContract",
+          "case": "publishes immutable data with a monotonic revision",
+          "result": "Success"
+        },
+        {
+          "suite": "LibraryCollectionSnapshotContract",
+          "case": "publishes invalid route errors through the common snapshot",
+          "result": "Success"
+        },
+        {
+          "suite": "PermanentReadingStateDecoupling",
+          "case": "preserves completed status and scroll offset beyond 500 history pruning",
+          "result": "Success"
+        },
+        {
+          "suite": "PermanentReadingStateDecoupling",
+          "case": "restores saved offset, completed flag and title when reopening a pruned entry",
+          "result": "Success"
+        },
+        {
+          "suite": "PermanentReadingStateDecoupling",
+          "case": "clears permanent state entries cleanly when offset and completed both reset",
+          "result": "Success"
+        },
+        {
+          "suite": "PermanentReadingStateDecoupling",
+          "case": "enriches placeholder titles for both in-history and pruned permanent states without changing timestamps or re-adding pruned items",
+          "result": "Success"
+        },
+        {
+          "suite": "PermanentReadingStateDecoupling",
+          "case": "opens both unfinished articles from CONTINUE_READING after 500 newer visits",
+          "result": "Success"
+        },
+        {
+          "suite": "PermanentReadingStateDecoupling",
+          "case": "restores permanent completed badges, offsets and counts after cold-reload from persistent storage",
+          "result": "Success"
+        },
+        {
+          "suite": "PermanentReadingStateDecoupling",
+          "case": "maps archivist rank titles across all level thresholds",
+          "result": "Success"
+        },
+        {
+          "suite": "StorySeriesContractsAndParser",
+          "case": "parses hub sections cleanly while skipping author, tag, and offset links",
+          "result": "Success"
+        },
+        {
+          "suite": "StorySeriesContractsAndParser",
+          "case": "chains Antimemetics Division mainline chapters across Wiki groups in exact order",
+          "result": "Success"
+        },
+        {
+          "suite": "StorySeriesViewModel",
+          "case": "enrolls series, syncs permanent completion, and preserves progress across detours",
+          "result": "Success"
+        },
+        {
+          "suite": "FoundationAssessment",
+          "case": "exposes 3 curated 5-question exams including interactive hidden clues in CERT-03",
+          "result": "Success"
+        },
+        {
+          "suite": "FoundationAssessment",
+          "case": "awards one-time XP only on first pass and preserves certification on failed retry",
+          "result": "Success"
+        },
+        {
+          "suite": "FoundationAssessment",
+          "case": "returns the first-pass receipt before refresh settles and retries only the profile read",
+          "result": "Success"
+        },
+        {
+          "suite": "FoundationAssessment",
+          "case": "adds earned assessment bonus XP into derived ResearchProgress and advances rank",
+          "result": "Success"
+        }
+      ]
+    },
+    "settings": {
+      "count": 4,
+      "cases": [
+        {
+          "suite": "SettingsModelsAndHelpers",
+          "case": "normalizes defaults and parses reading preferences",
+          "result": "Success"
+        },
+        {
+          "suite": "SettingsModelsAndHelpers",
+          "case": "formats typography labels and storage sizes cleanly",
+          "result": "Success"
+        },
+        {
+          "suite": "SettingsViewModelState",
+          "case": "updates new preferences, resets typography, and handles persistence failures",
+          "result": "Success"
+        },
+        {
+          "suite": "SettingsViewModelState",
+          "case": "preserves active state on failed retryLoad and recovers when storage succeeds",
+          "result": "Success"
+        }
+      ]
+    },
+    "terminal": {
+      "count": 11,
+      "cases": [
+        {
+          "suite": "TerminalViewModelLifecycle",
+          "case": "projects the current shared state immediately when activated",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalViewModelLifecycle",
+          "case": "drops title enrichment that resolves after deactivation",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalViewModelLifecycle",
+          "case": "disposes idempotently and ignores later source or title results",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalViewModelLifecycle",
+          "case": "surfaces pruned permanent resumable entries and enriches their placeholder titles",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalViewModelLifecycle",
+          "case": "excludes completed entries from resumeEntries while retaining them in recentEntries",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalViewModelLifecycle",
+          "case": "projects and reactively updates enrolled story series cards",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalViewModelLifecycle",
+          "case": "projects and reactively updates foundation assessment seals",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalProfileHelpersAndManual",
+          "case": "builds 7 ordered daily bars from the dated reading ledger",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalProfileHelpersAndManual",
+          "case": "moves ten credited minutes to yesterday at local midnight without consuming today’s quota",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalProfileHelpersAndManual",
+          "case": "formats today quota labels across zero, sub-minute, and minute states",
+          "result": "Success"
+        },
+        {
+          "suite": "TerminalProfileHelpersAndManual",
+          "case": "keeps featured overview plus 8 unique grid topics aligned with manual sections",
+          "result": "Success"
+        }
+      ]
+    },
+    "phone": {
+      "count": 2,
+      "cases": [
+        {
+          "suite": "TerminalStorySeriesAdapter",
+          "case": "offers the directory at 19/19 and resumes an earlier unread chapter at 18/19",
+          "result": "Success"
+        },
+        {
+          "suite": "SettingsStorage",
+          "case": "reads and clears history while offline storage inspection is pending",
+          "result": "Success"
+        }
+      ]
+    }
+  },
+  "additionalHostChecks": {
+    "reader": [
+      "folded, inactive tab: first and 61st paragraphs scroll to their own positions",
+      "searching a long Wikidot footnote opens and aligns the first matching passage",
+      "paragraphs, list items, table rows and cells, and tab panels expose their navigation IDs",
+      "footer builds an activatable native button in both completion states",
+      "web input renews the 90-second idle window; load events alone leave it idle",
+      "iteration, fragment and browser back hand off the committed main document"
+    ],
+    "offline-vault": [
+      "last SQLite write fails, cold reopen keeps complete legacy archive",
+      "last SQLite write fails, cold reopen keeps complete versioned archive",
+      "incomplete explicit update preserves v1 until a complete retry publishes v2",
+      "repair copies the saved image and downloads only the missing one",
+      "embedded body timeout and stale fallback keep v1; confirmed nested retry publishes v2",
+      "a same-URL image refresh bypasses both caches and publishes current GIF bytes after retry",
+      "a PNG replaced by a GIF stays current after removing and saving the article again"
+    ],
+    "model-acquisition": [
+      "SCP-131 正文 → 获取此模型 → 专属卡片 → 查看模型 → 原查看器",
+      "重开档案馆与重建仓库均显示已暂停并续传。任务 42，保留 4096 字节，创建 1 次、继续 2 次。"
+    ],
+    "weak-search": [
+      "a promoted series retries HTTP 503 under continuous WEAK without starting unrelated prefetches"
+    ]
+  }
+}

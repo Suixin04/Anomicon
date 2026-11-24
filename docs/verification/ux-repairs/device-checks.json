@@ -1,0 +1,112 @@
+{
+  "git": "0c95f1fe5887748ccd8b802640231ddf630eaab9",
+  "device": "HarmonyOS API 26 emulator",
+  "release": {
+    "bundle": "com.suixin.anomicon.uxfix",
+    "bytes": 25414965,
+    "sha256": "b7e942893fc5a0df0756bb3f5d1907027b50a6f2d725f020f80a63f131b67f9a"
+  },
+  "uiAndStorage": [
+    {
+      "check": "SCP-173 文章和首次保存",
+      "observed": [
+        "原生图注与正文",
+        "ArkWeb 照片和段落",
+        "离线已就绪 · 更新副本"
+      ]
+    },
+    {
+      "check": "原生页尾已读开关",
+      "observed": [
+        "系统 Button",
+        "标为已读",
+        "已读完 · 进度已锁定",
+        "取消已读标记",
+        "恢复为未读"
+      ]
+    },
+    {
+      "check": "历史清除后原路返回同一搜索页",
+      "observed": [
+        "当前保留 1 条本地搜索记录",
+        "暂无本地搜索记录",
+        "随机发现",
+        "旧词按钮 0 个"
+      ]
+    },
+    {
+      "check": "合并版本获取模型",
+      "observed": [
+        "SCP-131",
+        "定向卡片仅 1 项",
+        "下载",
+        "已下载",
+        "查看模型",
+        "查看器",
+        "返回原文"
+      ]
+    },
+    {
+      "check": "探索榜单行打开文章",
+      "observed": [
+        "scp-cn-2000",
+        "articleBackButton",
+        "SCP-CN-2000"
+      ]
+    },
+    {
+      "check": "冷启动书架与更新完成",
+      "observed": {
+        "article": "SCP-173",
+        "rendered": [
+          "照片",
+          "收容中的SCP-173",
+          "项目编号：SCP-173"
+        ],
+        "before": {
+          "contentKey": "main:scp-173",
+          "path": "/data/storage/el2/base/files/offline_articles/v1/main_scp-173_9e84d21037d1c900/version-0cd3f541-3e5f-4c8e-95e2-536102ca768b/document.json",
+          "savedAt": 1795534346014,
+          "totalImages": 1,
+          "savedImages": 1
+        },
+        "after": {
+          "contentKey": "main:scp-173",
+          "path": "/data/storage/el2/base/files/offline_articles/v1/main_scp-173_9e84d21037d1c900/version-0eee83e8-0641-45d1-aa5b-a327708ff6b5/document.json",
+          "savedAt": 1795534992976,
+          "totalImages": 1,
+          "savedImages": 1
+        },
+        "source": "隔离应用的 offline_articles 表；设备 sqlite3 只读查询"
+      }
+    },
+    {
+      "check": "设备更新后文件",
+      "observed": {
+        "documentBytes": 4500,
+        "pictureBytes": 172831,
+        "manifestBytes": 172831
+      }
+    },
+    {
+      "check": "设备收尾",
+      "observed": {
+        "removed": "com.suixin.anomicon.uxfix",
+        "originalInstalled": "com.suixin.anomicon"
+      }
+    }
+  ],
+  "shelfScreenshot": {
+    "file": "shelf-device.png",
+    "sha256": "1c21b1799e0c31e23adaa1b008c874bba34bb4fb8c57447de2eec7c8d425a80d"
+  },
+  "deviceHypium": {
+    "bundle": "com.suixin.anomicon.uxfix",
+    "module": "phone_test",
+    "bytes": 24459550,
+    "sha256": "5f71533762f8ac6b659cae7fe96eb27af7ca7b9a1d3e9613d73ba8d938c16ea6",
+    "case": "PhoneTestAbility / starts the Hypium test ability",
+    "summary": "Tests run: 1, Failure: 0, Error: 0, Pass: 1, Ignore: 0",
+    "finishCode": 0
+  }
+}
