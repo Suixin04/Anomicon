@@ -57,7 +57,7 @@ function native(bindings = {}) {
   }), { getUniqueId: () => 7, pendingAnchorTimer: -1, observeComponentCreation2: observe });
 }
 
-test('folded, inactive tab: first and 61st paragraphs scroll to their own positions', () => {
+function navigationFixture(bindings = {}) {
   const callbacks = new Set();
   const geometry = new Map();
   const moves = [];
@@ -67,18 +67,26 @@ test('folded, inactive tab: first and 61st paragraphs scroll to their own positi
     off: (event, fn) => { assert.equal(event, 'didLayout'); assert(callbacks.delete(fn)); }
   };
   const list = { getPositionToWindow: () => ({ y: 40 }), getFrameNodeById: id => geometry.get(id) ?? null };
-  const view = native();
-  const fold = { key: 'fold', expanded: false };
-  const tabs = { key: 'tabs', activeTabIndex: 0 };
+  const view = native(bindings);
   Object.assign(view, {
-    topPadding: 30, searchBarOpen: true, sectionRows: [{ blockRow: tabs }],
-    blockRowByKey: new Map([['tabs', tabs], ['fold', { block: fold }]]),
+    topPadding: 30, searchBarOpen: true,
     getUIContext: () => ({ getUIObserver: () => observer,
       getFrameNodeById: id => id === view.listNodeId() ? list : null }),
     scroller: { scrollToIndex: (...args) => moves.push(args), scrollBy: (...args) => moves.push(args) },
+    onAnchorJump: noop, triggerAnchorHighlight: key => highlights.push(key)
+  });
+  return { view, callbacks, geometry, moves, highlights };
+}
+
+test('folded, inactive tab: first and 61st paragraphs scroll to their own positions', () => {
+  const { view, callbacks, geometry, moves, highlights } = navigationFixture();
+  const fold = { key: 'fold', expanded: false };
+  const tabs = { key: 'tabs', activeTabIndex: 0 };
+  Object.assign(view, {
+    sectionRows: [{ blockRow: tabs }], blockRowByKey: new Map([['tabs', tabs], ['fold', { block: fold }]]),
     isExpanded: block => block.expanded, onEnsureExpanded: keys => {
       assert.deepEqual(keys, ['fold']); fold.expanded = true;
-    }, onAnchorJump: noop, triggerAnchorHighlight: key => highlights.push(key)
+    }
   });
   for (const n of [0, 60]) {
     const key = `p${n}`;
@@ -102,6 +110,59 @@ test('folded, inactive tab: first and 61st paragraphs scroll to their own positi
   Object.assign(view, { closeSheet: noop, highlightTimer: -1 });
   view.aboutToDisappear();
   assert.equal(callbacks.size, 0);
+});
+
+test('searching a long Wikidot footnote opens and aligns the first matching passage', () => {
+  const modules = new Map();
+  function load(path) {
+    if (!modules.has(path)) {
+      const source = generatedSource(path);
+      const js = ts.transpileModule(source.text, { compilerOptions: {
+        module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020
+      } }).outputText;
+      const exports = {};
+      Function('exports', 'require', js)(exports, name => load(name.split('&').at(-2)));
+      modules.set(path, exports);
+    }
+    return modules.get(path);
+  }
+  const base = 'article/src/main/ets';
+  const { buildArticleNavigationIndex, searchArticleDocument } = load(`${base}/domain/ArticleNavigation`);
+  const { ScpNativeHtmlParser } = load(`${base}/data/ScpNativeHtmlParser`);
+  const { ScpDocumentMapper } = load(`${base}/data/ScpDocumentMapper`);
+  const html = '<div id="page-title">SCP-999</div><div id="page-content"><p>正文</p>' +
+    '<div class="footnotes-footer"><div class="footnote-footer" id="footnote-1">' +
+    '<p>普通段落</p>'.repeat(60) + '<p>后段 共同词</p><div class="collapsible-block">' +
+    '<div class="collapsible-block-folded"><a class="collapsible-block-link">展开</a></div>' +
+    '<div class="collapsible-block-unfolded" style="display:none"><div class="collapsible-block-content">' +
+    '<p>折叠内 共同词</p></div></div></div></div></div></div>';
+  const document = new ScpDocumentMapper().toDocument(ScpNativeHtmlParser.parse(html),
+    'https://scp-wiki-cn.wikidot.com/scp-999', 1000);
+  const note = document.footnotes[0];
+  const late = note.blocks[60], fold = note.blocks[61], nested = fold.children[0];
+  const sections = note.blocks.map(block => ({ sectionIndex: 1, block }));
+  const { view, callbacks, geometry, moves, highlights } = navigationFixture({ searchArticleDocument,
+    supportsArticleSidePanel: () => false });
+  const expanded = new Set();
+  Object.assign(view, { document, navigationIndex: buildArticleNavigationIndex(sections, [note], 0),
+    sectionRows: [{}, { footnoteRow: note }], blockRowByKey: new Map([[fold.key, { block: fold }]]),
+    isExpanded: block => expanded.has(block.key), onEnsureExpanded: keys => keys.forEach(key => expanded.add(key)) });
+  for (const [query, target, y] of [['后段', late, 2570], ['共同词', late, 2570],
+    ['共同词 折叠内', late, 2570], ['折叠内', nested, 2610]]) {
+    view.updateSearchResults(query, true);
+    assert.equal(view.searchHits.length, 1);
+    assert.equal(view.searchHits[0].blockKey, target.key);
+    assert.equal(view.searchHits[0].isFootnote, true);
+    assert.equal(expanded.has(fold.key), target === nested);
+    assert.deepEqual(moves.at(-1), [1, false, 0]);
+    geometry.set(view.blockNodeId(target.key), { getMeasuredSize: () => ({ height: 40 }),
+      getPositionToWindow: () => ({ y }) });
+    const [layout] = callbacks;
+    layout();
+    assert.equal(callbacks.size, 0);
+    assert.deepEqual(moves.at(-1), [0, y - 150]);
+    assert.equal(highlights.at(-1), `block:${target.key}`);
+  }
 });
 
 test('paragraphs, list items, table rows and cells, and tab panels expose their navigation IDs', () => {
