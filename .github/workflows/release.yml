@@ -84,6 +84,7 @@ jobs:
           command -v ohpm
           command -v hvigorw
           ohpm install --all
+          node scripts/test-host.mjs
           hvigorw --no-daemon --mode module -p module=phone@default -p product=default -p buildMode=release assembleHap
           mkdir -p "$OUTPUT_DIR"
           cp products/phone/build/default/outputs/default/phone-default-unsigned.hap "$OUTPUT_DIR/$ASSET"

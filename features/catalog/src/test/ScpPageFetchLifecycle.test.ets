@@ -1,5 +1,6 @@
 import { MockKit, when } from '@ohos/hamock';
-import { describe, expect, it } from '@ohos/hypium';
+import { afterAll, beforeAll, describe, expect, it } from '@ohos/hypium';
+import { installArticleUrlFixture } from './PreviewUrlFixture';
 import { CachedArticleRepo } from '../main/ets/data/CachedArticleRepo';
 import { CatalogRepoAdapter } from '../main/ets/data/CatalogRepoAdapter';
 import { ScpCatalogCacheService, ScpStoredCatalog } from '../main/ets/data/ScpCatalogCacheService';
@@ -217,6 +218,10 @@ export default function scpPageFetchLifecycleTest(): void {
   });
 
   describe('CachedArticleRepo', () => {
+    let restoreUrlParser: () => void;
+    beforeAll((): void => { restoreUrlParser = installArticleUrlFixture(); });
+    afterAll((): void => { restoreUrlParser(); });
+
     it('returns the 200 HTML while the queued cache put is still pending', 0, async (): Promise<void> => {
       const fixture = new ScpLifecycleArticleFixture();
       fixture.stubFetch(async (): Promise<ScpLifecycleFetchReply> => ARTICLE_200);
