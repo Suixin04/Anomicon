@@ -259,6 +259,26 @@ function createSearchViewModel(
 
 export default function catalogSearchSnapshotTest(): void {
   describe('CatalogSearchSnapshotContract', () => {
+    it('reloads externally cleared history when returning to a retained search', 0, async () => {
+      const history = new MemorySearchHistoryRepository();
+      const search = new CatalogSearchUseCase(
+        new CatalogContentUseCase(new ColdCatalogRepository()), new SearchHistoryUseCase(history)
+      );
+      const viewModel = new CatalogSearchViewModel(search);
+      viewModel.activate();
+      await drainMicrotasks();
+      viewModel.setQuery('173');
+      viewModel.addHistory('SCP-173');
+      expect(viewModel.snapshot.data?.history[0]).assertEqual('SCP-173');
+      viewModel.deactivate();
+      history.clear();
+      viewModel.activate();
+      expect(viewModel.snapshot.data?.history.length).assertEqual(0);
+      expect(viewModel.snapshot.data?.query).assertEqual('173');
+      expect(viewModel.snapshot.data?.seriesId).assertEqual(DEFAULT_SERIES_ID);
+      expect(viewModel.snapshot.data?.entries[0].itemId).assertEqual('SCP-173');
+      viewModel.dispose();
+    });
     it('publishes a revisioned immutable snapshot after a cold load', 0, async () => {
       const repository = new ColdCatalogRepository();
       const viewModel = createSearchViewModel(repository);

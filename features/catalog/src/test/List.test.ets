@@ -1,3 +1,4 @@
+import searchHistoryPersistenceTest from './SearchHistoryPersistence.test';
 import catalogSearchSnapshotTest from './CatalogSearchSnapshot.test';
 import catalogDirectTargetTest from './CatalogDirectTarget.test';
 import seriesTalesEditionTest from './SeriesTalesEdition.test';
@@ -9,6 +10,7 @@ import scpPreviewHtmlExtractorTest from './ScpPreviewHtmlExtractor.test';
 
 /** Local Hypium entry point for the Catalog HAR. */
 export default function testsuite(): void {
+  searchHistoryPersistenceTest();
   catalogSearchSnapshotTest();
   catalogDirectTargetTest();
   seriesTalesEditionTest();

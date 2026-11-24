@@ -1,6 +1,5 @@
 import { fileIo as fs } from '@kit.CoreFileKit';
-import { ArticleFeatureGraph } from 'article';
-import { CatalogFeatureGraph, SearchHistoryRepository } from 'catalog';
+import { SearchHistoryRepository } from 'catalog';
 import { SettingsStorageActions, SettingsStorageUsage } from 'settings';
 
 const MAX_TRAVERSAL_DEPTH: number = 4;
@@ -9,21 +8,21 @@ const MAX_TRAVERSAL_DEPTH: number = 4;
 export class SettingsStorageAdapter implements SettingsStorageActions {
   private readonly cacheDir: string;
   private readonly filesDir: string;
-  private readonly articleGraph: ArticleFeatureGraph;
-  private readonly catalogGraph: CatalogFeatureGraph;
+  private readonly countOfflineArticles: () => Promise<number>;
+  private readonly clearTemporaryCaches: () => Promise<void>;
   private readonly searchHistory: SearchHistoryRepository;
 
   constructor(
     cacheDir: string,
     filesDir: string,
-    articleGraph: ArticleFeatureGraph,
-    catalogGraph: CatalogFeatureGraph,
+    countOfflineArticles: () => Promise<number>,
+    clearTemporaryCaches: () => Promise<void>,
     searchHistory: SearchHistoryRepository
   ) {
     this.cacheDir = cacheDir;
     this.filesDir = filesDir;
-    this.articleGraph = articleGraph;
-    this.catalogGraph = catalogGraph;
+    this.countOfflineArticles = countOfflineArticles;
+    this.clearTemporaryCaches = clearTemporaryCaches;
     this.searchHistory = searchHistory;
   }
 
@@ -46,7 +45,7 @@ export class SettingsStorageAdapter implements SettingsStorageActions {
       await this.measureDirectoryBytes(`${this.filesDir}/offline_articles/v1`, 0) : 0;
     let offlineArticlesCount: number = 0;
     try {
-      offlineArticlesCount = (await this.articleGraph.listOfflineArticles()).length;
+      offlineArticlesCount = await this.countOfflineArticles();
     } catch (_offlineListError) {
       offlineArticlesCount = 0;
     }
@@ -54,22 +53,21 @@ export class SettingsStorageAdapter implements SettingsStorageActions {
       tempCacheBytes,
       archive3DBytes,
       offlineArticlesBytes,
-      offlineArticlesCount,
-      searchHistoryCount: this.searchHistory.list().length
+      offlineArticlesCount
     };
   }
 
   async clearTempCaches(): Promise<SettingsStorageUsage> {
-    await Promise.all([
-      this.articleGraph.clearDocumentCache(),
-      this.catalogGraph.clearTemporaryCaches()
-    ]);
+    await this.clearTemporaryCaches();
     return this.inspect();
   }
 
-  async clearSearchHistory(): Promise<SettingsStorageUsage> {
+  searchHistoryCount(): number {
+    return this.searchHistory.list().length;
+  }
+
+  clearSearchHistory(): void {
     this.searchHistory.clear();
-    return this.inspect();
   }
 
   private async measureDirectoryBytes(dirPath: string, depth: number): Promise<number> {

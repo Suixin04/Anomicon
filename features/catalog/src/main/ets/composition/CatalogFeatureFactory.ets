@@ -238,7 +238,7 @@ export function createCatalogFeatureGraph(
     applyNetworkCondition(networkBoost.currentCondition());
     unsubscribeNetworkBoost = networkBoost.subscribe(applyNetworkCondition);
   }
-  const searchHistoryService = new ScpSearchHistoryService();
+  const searchHistoryService = ScpSearchHistoryService.forContext(context);
   const taleListService = new TaleListService(articleHtmlRepository);
   const previewService = new ScpPreviewService(
     articleHtmlRepository,
@@ -291,7 +291,7 @@ export function createCatalogFeatureGraph(
     // in-flight attempt so the product can retry instead of caching a false
     // successful initialization forever.
     const tasks: Promise<void>[] = [
-      Promise.resolve(searchHistoryService.initialize(context)),
+      Promise.resolve(searchHistoryService.initialize()),
       pageCacheService.initialize(context),
       catalogCacheService.initialize(context),
       previewService.initialize(context),

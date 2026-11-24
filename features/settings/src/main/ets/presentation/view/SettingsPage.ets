@@ -232,7 +232,8 @@ export struct SettingsPage {
   @Local private immersiveMaterialDraft: boolean = false;
   @Local private paneWidth: number = 0;
   @Local private storageUsage: SettingsStorageUsage | undefined = undefined;
-  @Local private storageBusy: boolean = false;
+  @Local private searchHistoryCount: number | undefined = undefined;
+  @Local private clearingTempCaches: boolean = false;
   private fontSizeDraftDirty: boolean = false;
   private lineHeightDraftDirty: boolean = false;
 
@@ -256,7 +257,6 @@ export struct SettingsPage {
     this.immersiveMaterialDraft = this.viewModel.immersiveMaterialEnabled;
     this.fontSizeDraftDirty = false;
     this.lineHeightDraftDirty = false;
-    this.refreshStorageUsage();
   }
 
   aboutToDisappear(): void {
@@ -287,6 +287,7 @@ export struct SettingsPage {
     if (actions === undefined) {
       return;
     }
+    this.searchHistoryCount = actions.searchHistoryCount();
     actions.inspect().then((usage: SettingsStorageUsage): void => {
       this.storageUsage = usage;
     }).catch((): void => {
@@ -473,7 +474,7 @@ export struct SettingsPage {
   }
 
   private confirmClearTempCaches(): void {
-    if (this.storageActions === undefined || this.storageBusy) {
+    if (this.storageActions === undefined || this.clearingTempCaches) {
       return;
     }
     this.onHaptic(this.viewModel.hapticEnabled);
@@ -499,23 +500,22 @@ export struct SettingsPage {
 
   private performClearTempCaches(): void {
     const actions = this.storageActions;
-    if (actions === undefined || this.storageBusy) {
+    if (actions === undefined || this.clearingTempCaches) {
       return;
     }
-    this.storageBusy = true;
+    this.clearingTempCaches = true;
     actions.clearTempCaches().then((usage: SettingsStorageUsage): void => {
       this.storageUsage = usage;
       this.showToast('临时缓存已清理');
     }).catch((): void => {
       this.showToast('缓存清理失败，请稍后重试');
     }).finally((): void => {
-      this.storageBusy = false;
+      this.clearingTempCaches = false;
     });
   }
 
   private confirmClearSearchHistory(): void {
-    if (this.storageActions === undefined || this.storageBusy ||
-      (this.storageUsage?.searchHistoryCount ?? 0) <= 0) {
+    if (this.storageActions === undefined || (this.searchHistoryCount ?? 0) <= 0) {
       return;
     }
     this.onHaptic(this.viewModel.hapticEnabled);
@@ -539,22 +539,21 @@ export struct SettingsPage {
 
   private performClearSearchHistory(): void {
     const actions = this.storageActions;
-    if (actions === undefined || this.storageBusy) {
+    if (actions === undefined) {
       return;
     }
-    this.storageBusy = true;
-    actions.clearSearchHistory().then((usage: SettingsStorageUsage): void => {
-      this.storageUsage = usage;
-      this.showToast('搜索历史已清空');
-    }).catch((): void => {
-      this.showToast('清空搜索历史失败');
-    }).finally((): void => {
-      this.storageBusy = false;
-    });
+    try {
+      actions.clearSearchHistory();
+    } catch (error) {
+      this.showToast('清空搜索历史失败，请重试');
+      return;
+    }
+    this.searchHistoryCount = 0;
+    this.showToast('搜索历史已清空');
   }
 
   private tempCacheBadgeText(): string {
-    if (this.storageBusy) {
+    if (this.clearingTempCaches) {
       return '清理中…';
     }
     if (this.storageUsage === undefined) {
@@ -564,13 +563,13 @@ export struct SettingsPage {
   }
 
   private searchHistorySubtitle(): string {
-    if (this.storageUsage === undefined) {
+    if (this.searchHistoryCount === undefined) {
       return '正在读取本地搜索记录…';
     }
-    if (this.storageUsage.searchHistoryCount <= 0) {
+    if (this.searchHistoryCount <= 0) {
       return '暂无本地搜索记录';
     }
-    return `当前保留 ${this.storageUsage.searchHistoryCount} 条本地搜索记录`;
+    return `当前保留 ${this.searchHistoryCount} 条本地搜索记录`;
   }
 
   private archive3DSubtitle(): string {
@@ -916,7 +915,7 @@ export struct SettingsPage {
         subtitle: '文章解析、网页快照与配图缓存（保留收藏、进度与离线文章）',
         trailingBadge: this.tempCacheBadgeText(),
         showChevron: false,
-        rowEnabled: !this.storageBusy,
+        rowEnabled: !this.clearingTempCaches,
         componentId: 'clearTempCacheSettingsRow',
         onAction: (): void => this.confirmClearTempCaches()
       })
@@ -938,7 +937,7 @@ export struct SettingsPage {
         subtitle: this.searchHistorySubtitle(),
         trailingBadge: '',
         showChevron: false,
-        rowEnabled: !this.storageBusy && (this.storageUsage?.searchHistoryCount ?? 0) > 0,
+        rowEnabled: (this.searchHistoryCount ?? 0) > 0,
         componentId: 'clearSearchHistorySettingsRow',
         onAction: (): void => this.confirmClearSearchHistory()
       })

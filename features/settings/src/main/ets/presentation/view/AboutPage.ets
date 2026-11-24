@@ -14,12 +14,14 @@ import {
   READING_CONTENT_MAX_WIDTH,
   windowWidthVp
 } from 'anomiconbasic';
+import { SettingsViewModel } from '../viewmodel/SettingsViewModel';
 import { AboutPageContent } from './SettingsViewContracts';
 
 @Builder
-export function AboutPageBuilder(content: AboutPageContent) {
+export function AboutPageBuilder(content: AboutPageContent, settings: SettingsViewModel) {
   AboutPage({
-    content: content
+    content: content,
+    settings: settings
   })
 }
 
@@ -27,6 +29,7 @@ export function AboutPageBuilder(content: AboutPageContent) {
 @ComponentV2
 export struct AboutPage {
   @Require @Param content: AboutPageContent;
+  @Require @Param settings: SettingsViewModel;
   private pageStack: NavPathStack | undefined = undefined;
   private scroller: Scroller = new Scroller();
   @Local private paneWidth: number = 0;
@@ -141,7 +144,7 @@ export struct AboutPage {
           popNavigationDestination(this.pageStack);
         })
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.settings.immersiveMaterialEnabled)
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))

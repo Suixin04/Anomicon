@@ -232,7 +232,7 @@ export function uiImmersiveMaterialSupported(): boolean {
 }
 
 /** Build the shared title-bar style while hiding platform details from Views. */
-export function createAppTitleBarStyle(materialEnabled: boolean = true): TitleBarStyleOptions {
+export function createAppTitleBarStyle(materialEnabled: boolean): TitleBarStyleOptions {
   const immersiveSupported = materialEnabled && supportsImmersiveMaterial();
   return {
     scrollEffectOpts: {

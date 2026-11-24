@@ -156,7 +156,6 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   private token: number = 0;
   private active: boolean = false;
   private disposed: boolean = false;
-  private initialized: boolean = false;
   private unsubscribes: Array<() => void> = [];
   private cancelPendingTimeout: (() => void) | undefined = undefined;
   private loadTimedOut: boolean = false;
@@ -200,22 +199,16 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
       return;
     }
     this.active = true;
+    // Settings can clear the shared history while this destination is hidden.
+    try {
+      this.history = this.search.listHistory();
+    } catch (error) {
+      this.history = [];
+      console.warn(`Read search history failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+    }
     this.publishVisible();
     this.publishSnapshot();
-    if (!this.initialized) {
-      this.initialized = true;
-      try {
-        this.history = this.search.listHistory();
-      } catch (error) {
-        // History is optional; a preferences failure must not prevent the
-        // catalog itself from becoming usable.
-        this.history = [];
-        console.warn(`Read search history failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-      }
-      this.observeCurrentScope();
-    } else {
-      this.observeCurrentScope();
-    }
+    this.observeCurrentScope();
   }
 
   deactivate(): void {
@@ -272,7 +265,6 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.stopObservation();
     this.allSeriesSnapshots.clear();
     this.seriesId = normalizedId;
-    this.initialized = false;
     this.entries = [];
     this.visibleEntries = [];
     this.taleEntries = [];

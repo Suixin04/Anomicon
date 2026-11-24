@@ -3,6 +3,7 @@ import {
   HdsNavDestination,
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
+import { SettingsViewModel } from 'settings';
 import {
   LibraryCollectionMode,
   LibraryCollectionView,
@@ -25,8 +26,8 @@ import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator
 
 /** Product route adapter supplies an already-assembled screen ViewModel. */
 @Builder
-export function LibraryCollectionPageBuilder(viewModel: LibraryCollectionVM) {
-  LibraryCollectionPage({ viewModel: viewModel });
+export function LibraryCollectionPageBuilder(viewModel: LibraryCollectionVM, settings: SettingsViewModel) {
+  LibraryCollectionPage({ viewModel: viewModel, settings: settings });
 }
 
 /**
@@ -39,6 +40,7 @@ export function LibraryCollectionPageBuilder(viewModel: LibraryCollectionVM) {
 @ComponentV2
 struct LibraryCollectionPage {
   @Require @Param viewModel: LibraryCollectionVM;
+  @Require @Param settings: SettingsViewModel;
 
   private pageStack: NavPathStack | undefined = undefined;
   private navDestinationId: string = '';
@@ -90,7 +92,7 @@ struct LibraryCollectionPage {
           popNavigationDestination(this.pageStack);
         })
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.settings.immersiveMaterialEnabled)
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))

@@ -67,14 +67,15 @@ export interface SettingsStorageUsage {
   readonly archive3DBytes: number;
   readonly offlineArticlesBytes: number;
   readonly offlineArticlesCount: number;
-  readonly searchHistoryCount: number;
 }
 
 /** Narrow storage maintenance port supplied by the product composition layer. */
 export interface SettingsStorageActions {
   inspect(): Promise<SettingsStorageUsage>;
   clearTempCaches(): Promise<SettingsStorageUsage>;
-  clearSearchHistory(): Promise<SettingsStorageUsage>;
+  searchHistoryCount(): number;
+  /** Returns after durable deletion, or throws so the caller can offer a retry. */
+  clearSearchHistory(): void;
 }
 
 /** Branding resources remain product-customizable and are injected into the Settings HAR. */
