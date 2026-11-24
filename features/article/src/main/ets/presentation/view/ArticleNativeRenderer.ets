@@ -458,8 +458,6 @@ export struct ArticleNativeRenderer {
   @Param revealHiddenText: boolean = false;
   @Param justifyBodyText: boolean = true;
   @Param webModeHint: string = '';
-  @Param previewVisible: boolean = false;
-  @Param previewSourceKey: string = '';
 
   @Event onRetryPartial: () => void = () => {};
   @Event onHiddenRevealInteraction: () => void = () => {};
@@ -472,7 +470,7 @@ export struct ArticleNativeRenderer {
   @Event onOpenUrl: (url: string) => void;
   /** Open a readable same-site article through the product route. */
   @Event onOpenArticleLink: (url: string, title: string) => void;
-  @Event onOpenImage: (index: number, sourceKey?: string) => void;
+  @Event onOpenImage: (index: number) => void;
   @Event onToggleExpanded: (block: ScpContentBlock) => void;
   @Event onOpenRelatedTale: (tale: ArticleRelatedTale) => void;
   @Event onContentLaidOut: () => void;
@@ -1664,10 +1662,10 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private quoteBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
+  private quoteBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     Column({ space: 8 }) {
       ForEach(row.children, (child: ArticleBlockRowState) => {
-        this.blockView(child, inTerminal, heroEnabled)
+        this.blockView(child, inTerminal)
       }, (child: ArticleBlockRowState) => child.key)
     }
     .width('100%')
@@ -1678,7 +1676,7 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private collapsibleBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
+  private collapsibleBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
@@ -1709,7 +1707,7 @@ export struct ArticleNativeRenderer {
       if (this.isExpanded(row.block)) {
         Column({ space: 12 }) {
           ForEach(row.children, (child: ArticleBlockRowState) => {
-            this.blockView(child, inTerminal, heroEnabled)
+            this.blockView(child, inTerminal)
           }, (child: ArticleBlockRowState) => child.key)
         }
         .width('100%')
@@ -1880,7 +1878,7 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private tabsBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
+  private tabsBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     Column({ space: 10 }) {
       Scroll() {
         Row({ space: 8 }) {
@@ -1914,7 +1912,7 @@ export struct ArticleNativeRenderer {
           ForEach(
             row.children[Math.max(0, Math.min(row.activeTabIndex, row.children.length - 1))].children,
             (child: ArticleBlockRowState) => {
-              this.blockView(child, inTerminal, heroEnabled)
+              this.blockView(child, inTerminal)
             },
             (child: ArticleBlockRowState) => child.key
           )
@@ -1934,13 +1932,12 @@ export struct ArticleNativeRenderer {
   @Builder
   private calloutBlock(
     row: ArticleBlockRowState,
-    parentInTerminal: boolean = false,
-    heroEnabled: boolean = true
+    parentInTerminal: boolean = false
   ) {
     if (row.block.calloutTone === ScpCalloutTone.TERMINAL || parentInTerminal) {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, true, heroEnabled)
+          this.blockView(child, true)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -1952,7 +1949,7 @@ export struct ArticleNativeRenderer {
     } else if (row.block.calloutTone === ScpCalloutTone.WARNING) {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false, heroEnabled)
+          this.blockView(child, false)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -1964,7 +1961,7 @@ export struct ArticleNativeRenderer {
     } else if (row.block.calloutTone === ScpCalloutTone.NOTE) {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false, heroEnabled)
+          this.blockView(child, false)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -1980,7 +1977,7 @@ export struct ArticleNativeRenderer {
     } else {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false, heroEnabled)
+          this.blockView(child, false)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -2013,7 +2010,7 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private listBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
+  private listBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     Column({ space: 6 }) {
       ForEach(row.children, (item: ArticleBlockRowState, itemIndex: number) => {
         Column({ space: 6 }) {
@@ -2035,7 +2032,7 @@ export struct ArticleNativeRenderer {
           if (item.children.length > 0) {
             Column({ space: 6 }) {
               ForEach(item.children, (nested: ArticleBlockRowState) => {
-                this.blockView(nested, inTerminal, heroEnabled)
+                this.blockView(nested, inTerminal)
               }, (nested: ArticleBlockRowState) => nested.key)
             }
             .width('100%')
@@ -2074,22 +2071,17 @@ export struct ArticleNativeRenderer {
   @Builder
   private standaloneImageBlock(
     row: ArticleBlockRowState,
-    inTerminal: boolean = false,
-    heroEnabled: boolean = true
+    inTerminal: boolean = false
   ) {
     Column({ space: 6 }) {
       ScpArticleImage({
         url: row.block.source,
         preferredWidth: row.block.preferredWidth,
         inlineMode: true,
-        geometryId: (heroEnabled && !isReduceMotionEnabled() && this.imageIndexOf(row.block.source) >= 0) ?
-          `article-hero:inline:${row.key}` : '',
-        hiddenForPreview: heroEnabled && this.previewVisible &&
-          this.previewSourceKey === `inline:${row.key}`,
         onOpen: () => {
           const galleryIndex = this.imageIndexOf(row.block.source);
           if (galleryIndex >= 0) {
-            this.onOpenImage(galleryIndex, heroEnabled ? `inline:${row.key}` : '');
+            this.onOpenImage(galleryIndex);
           } else {
             this.handleOpenUrl(row.block.source);
           }
@@ -2111,15 +2103,14 @@ export struct ArticleNativeRenderer {
   @Builder
   private unsupportedBlock(
     row: ArticleBlockRowState,
-    inTerminal: boolean = false,
-    heroEnabled: boolean = true
+    inTerminal: boolean = false
   ) {
     if (row.spans.length > 0) {
       this.spanText(row, inTerminal)
     } else if (row.children.length > 0) {
       Column({ space: 12 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, inTerminal, heroEnabled)
+          this.blockView(child, inTerminal)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -2133,7 +2124,7 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private blockView(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
+  private blockView(row: ArticleBlockRowState, inTerminal: boolean = false) {
     if (row.block.type === ScpBlockType.PARAGRAPH) {
       if (ArticleRenderer.isPureWhisperBlock(row.block)) {
         this.pureWhisperBlock(row, inTerminal)
@@ -2143,27 +2134,27 @@ export struct ArticleNativeRenderer {
     } else if (row.block.type === ScpBlockType.HEADING) {
       this.headingBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.QUOTE) {
-      this.quoteBlock(row, inTerminal, heroEnabled)
+      this.quoteBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.COLLAPSIBLE) {
-      this.collapsibleBlock(row, inTerminal, heroEnabled)
+      this.collapsibleBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.ACS_HEADER) {
       this.acsHeaderBlock(row)
     } else if (row.block.type === ScpBlockType.TABS) {
-      this.tabsBlock(row, inTerminal, heroEnabled)
+      this.tabsBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.CALLOUT) {
-      this.calloutBlock(row, inTerminal, heroEnabled)
+      this.calloutBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.CODE_BLOCK) {
       this.codeBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.LIST) {
-      this.listBlock(row, inTerminal, heroEnabled)
+      this.listBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.TABLE) {
       this.tableBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.EMBED) {
       this.embedBlock(row)
     } else if (row.block.type === ScpBlockType.IMAGE) {
-      this.standaloneImageBlock(row, inTerminal, heroEnabled)
+      this.standaloneImageBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.UNSUPPORTED) {
-      this.unsupportedBlock(row, inTerminal, heroEnabled)
+      this.unsupportedBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.DIVIDER) {
       Divider()
         .strokeWidth(0.5)
@@ -2229,10 +2220,7 @@ export struct ArticleNativeRenderer {
             Column({ space: 6 }) {
               ScpArticleImage({
                 url: row.block.source,
-                geometryId: !isReduceMotionEnabled() ? `article-hero:gallery:${row.index}` : '',
-                hiddenForPreview: this.previewVisible &&
-                  this.previewSourceKey === `gallery:${row.index}`,
-                onOpen: () => this.onOpenImage(row.index, `gallery:${row.index}`),
+                onOpen: () => this.onOpenImage(row.index),
                 onOpenInBrowser: (url: string) => this.onOpenUrl(url)
               })
               if (row.block.caption.length > 0) {
@@ -2296,7 +2284,7 @@ export struct ArticleNativeRenderer {
         .fontColor($r('sys.color.font_emphasize'))
       Column({ space: 6 }) {
         ForEach(row.blocks, (block: ArticleBlockRowState) => {
-          this.blockView(block, false, false)
+          this.blockView(block, false)
         }, (block: ArticleBlockRowState) => block.key)
         Row({ space: 4 }) {
           SymbolGlyph($r('sys.symbol.arrow_up'))
@@ -2540,7 +2528,7 @@ export struct ArticleNativeRenderer {
         Scroll(this.footnoteSheetScroller) {
           Column({ space: 10 }) {
             ForEach(this.currentFootnoteBlocks(), (block: ArticleBlockRowState) => {
-              this.blockView(block, false, false)
+              this.blockView(block, false)
             }, (block: ArticleBlockRowState) => block.key)
           }
           .width('100%')
@@ -2630,7 +2618,7 @@ export struct ArticleNativeRenderer {
         .fontColor($r('sys.color.font_emphasize'))
       Column({ space: 6 }) {
         ForEach(fnRow.blocks, (block: ArticleBlockRowState) => {
-          this.blockView(block, false, false)
+          this.blockView(block, false)
         }, (block: ArticleBlockRowState) => block.key)
       }
       .layoutWeight(1)

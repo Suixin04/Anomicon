@@ -1168,10 +1168,7 @@ struct Scp3DArchivePage {
       this.applyRouteParam(context.pathInfo.param as Object | null | undefined);
     })
     .opacity(this.navMotion.opacity)
-    .translate({ x: this.navMotion.translateX, y: this.navMotion.translateY })
-    .scale({ x: this.navMotion.scaleX, y: this.navMotion.scaleY })
-    .borderRadius(this.navMotion.radius)
-    .clip(this.navMotion.clipActive)
+    .translate({ x: this.navMotion.translateX })
     .onShown(() => {
       this.pageShown = true;
       this.requestLoadIfNeeded();

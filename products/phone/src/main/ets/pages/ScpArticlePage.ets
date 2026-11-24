@@ -27,25 +27,21 @@ import {
 } from 'article';
 import {
   AppRoutes,
-  ArticleHeroPreview,
   ScpArticleRouteParams,
   Scp3DArchiveRouteParams
 } from '../navigation/AppRoutes';
 import {
-  parseArticleRouteContent,
-  parseArticleRouteHeroPreview
+  parseArticleRouteContent
 } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import {
   adaptivePageMarginForWidth,
   AppMotion,
-  AppTypography,
   createAppBackIcon,
   createAppTitleBarStyle,
   DestinationMotionState,
   isDetailFullscreen,
-  materialCardBorderColor,
-  materialCardSurfaceColor,
+  isReduceMotionEnabled,
   NavigationTransitionRegistry,
   pageContentTop,
   popNavigationDestination,
@@ -148,15 +144,12 @@ struct ScpArticlePage {
   @Local private expandedKeys: string[] = [];
   @Local private previewVisible: boolean = false;
   @Local private previewIndex: number = 0;
-  @Local private previewSourceKey: string = '';
   @Local private galleryReturnEpoch: number = 0;
   // 标题栏用 @Local 状态承载：onReady 在首帧后才赋值，
   // 普通字段的变化不会触发标题栏重渲染，必须走状态。
   @Local private itemId: string = '';
   @Local private itemName: string = '';
   @Local private contentKind: LibraryContentKind = LibraryContentKind.SCP;
-  @Local private heroImageSource: string = '';
-  @Local private heroDescription: string = '';
   /** 关联故事（缓存中匹配当前 SCP 编号的故事）；未加载/无匹配时为空。 */
   @Local private relatedTales: ArticleRelatedTale[] = [];
   // 阅读设置快照：进入与重新显示时从全局设置同步，
@@ -376,8 +369,6 @@ struct ScpArticlePage {
     this.webModeCanGoBack = false;
     this.webModeHint = '';
     this.autoWebEvaluatedItemId = '';
-    this.heroImageSource = '';
-    this.heroDescription = '';
     this.galleryReturnEpoch++;
   }
 
@@ -404,9 +395,6 @@ struct ScpArticlePage {
     this.routeResolved = true;
     this.routeErrorMessage = '';
     this.resetContentProjection();
-    const heroPreview: ArticleHeroPreview | undefined = parseArticleRouteHeroPreview(param);
-    this.heroImageSource = heroPreview?.imageSource ?? '';
-    this.heroDescription = heroPreview?.description ?? '';
     this.itemName = content.title;
     this.contentKind = content.kind;
     // 内容主键统一小写；SCP 标题栏仍沿用站点惯例展示大写编号。
@@ -482,30 +470,25 @@ struct ScpArticlePage {
     this.viewModel.setContinuousInteraction(active, this.currentReadingOffset());
   }
 
-  private openPreview(index: number, sourceKey?: string): void {
+  private openPreview(index: number): void {
     if (this.document === undefined || this.document.images.length === 0 ||
       !Number.isFinite(index)) {
       return;
     }
     this.noteReadingInteraction();
-    const clampedIndex = Math.max(0, Math.min(Math.floor(index), this.document.images.length - 1));
-    this.previewIndex = clampedIndex;
-    this.previewSourceKey = (sourceKey !== undefined && sourceKey.length > 0) ?
-      sourceKey : `gallery:${clampedIndex}`;
+    this.previewIndex = Math.max(0, Math.min(Math.floor(index), this.document.images.length - 1));
     setPreviewFullscreen(true);
-    this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
+    this.getUIContext().animateTo(AppMotion.standardAnimateParam(220), (): void => {
       this.previewVisible = true;
     });
   }
 
   private closePreview(): void {
     setPreviewFullscreen(false);
-    // Notify the feature renderer before the reverse hero flight so any
-    // gallery Swiper realigns to the active slide before returning.
-    this.galleryReturnEpoch++;
-    this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
+    this.getUIContext().animateTo(AppMotion.microAnimateParam(), (): void => {
       this.previewVisible = false;
     });
+    this.galleryReturnEpoch++;
   }
 
   private toggleRendererBlock(block: ScpContentBlock): void {
@@ -946,103 +929,29 @@ struct ScpArticlePage {
     })
   }
 
-  @Builder
-  private heroLandingLoadingView() {
-    Column({ space: 16 }) {
-      Column({ space: 14 }) {
-        if (this.heroImageSource.length > 0) {
-          Image(this.heroImageSource)
-            .width('100%')
-            .height(248)
-            .objectFit(ImageFit.Cover)
-            .borderRadius(16)
-            .backgroundColor($r('sys.color.comp_background_tertiary'))
-        }
-        Column({ space: 6 }) {
-          Text(this.itemId)
-            .fontSize(AppTypography.BODY_S)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('sys.color.font_emphasize'))
-          Text(this.itemName.length > 0 ? this.itemName : this.itemId)
-            .fontSize(AppTypography.TITLE_M)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('sys.color.font_primary'))
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-          if (this.heroDescription.length > 0) {
-            Text(this.heroDescription)
-              .fontSize(AppTypography.BODY_M)
-              .fontColor($r('sys.color.font_secondary'))
-              .lineHeight(22)
-              .maxLines(4)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-        }
-        .alignItems(HorizontalAlign.Start)
-        .width('100%')
-      }
-      .width('100%')
-      .padding(18)
-      .borderRadius(24)
-      .backgroundColor(materialCardSurfaceColor(this.settings.immersiveMaterialEnabled))
-      .backgroundBlurStyle(
-        this.settings.immersiveMaterialEnabled ? BlurStyle.COMPONENT_THICK : undefined
-      )
-      .border({
-        width: 1,
-        color: materialCardBorderColor(this.settings.immersiveMaterialEnabled)
-      })
-
-      Row({ space: 10 }) {
-        LoadingProgress()
-          .width(20)
-          .height(20)
-          .color($r('sys.color.icon_emphasize'))
-        Text(this.parsing ? '正在整理正文…' : '正在加载完整档案…')
-          .fontSize(13)
-          .fontColor($r('sys.color.font_secondary'))
-      }
-      .padding({ left: 6, top: 4 })
-    }
-    .width('100%')
-    .height('100%')
-    .padding({
-      left: adaptivePageMarginForWidth(windowWidthVp()),
-      right: adaptivePageMarginForWidth(windowWidthVp()),
-      top: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT + 12,
-      bottom: 48
-    })
-    .alignItems(HorizontalAlign.Start)
-    .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
-  }
-
   build() {
     HdsNavDestination() {
       Stack() {
         if (this.loading || (this.parsing && this.document === undefined)) {
-          if (this.heroImageSource.length > 0 || this.heroDescription.length > 0) {
-            this.heroLandingLoadingView()
-          } else {
-            Column({ space: 12 }) {
-              LoadingProgress()
-                .width(32)
-                .height(32)
-                .color($r('sys.color.icon_emphasize'))
-              Text(this.parsing ? '正在整理正文…' : '正在加载正文…')
-                .fontSize(14)
-                .fontColor($r('sys.color.font_secondary'))
-            }
-            .width('100%')
-            .height('100%')
-            .padding({
-              left: adaptivePageMarginForWidth(windowWidthVp()),
-              right: adaptivePageMarginForWidth(windowWidthVp()),
-              top: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
-              bottom: 48
-            })
-            .justifyContent(FlexAlign.Center)
-            .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
+          Column({ space: 12 }) {
+            LoadingProgress()
+              .width(32)
+              .height(32)
+              .color($r('sys.color.icon_emphasize'))
+            Text(this.parsing ? '正在整理正文…' : '正在加载正文…')
+              .fontSize(14)
+              .fontColor($r('sys.color.font_secondary'))
           }
+          .width('100%')
+          .height('100%')
+          .padding({
+            left: adaptivePageMarginForWidth(windowWidthVp()),
+            right: adaptivePageMarginForWidth(windowWidthVp()),
+            top: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
+            bottom: 48
+          })
+          .justifyContent(FlexAlign.Center)
+          .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
         } else if (this.errorMessage.length > 0) {
           Column({ space: 12 }) {
             Text(this.errorMessage)
@@ -1094,8 +1003,6 @@ struct ScpArticlePage {
             revealHiddenText: this.revealHiddenText,
             justifyBodyText: this.justifyBodyText,
             webModeHint: this.webModeHint,
-            previewVisible: this.previewVisible,
-            previewSourceKey: this.previewSourceKey,
             onSwitchToWebMode: (): void => {
               this.hapticService.playSelection(this.settings.hapticEnabled);
               this.enterWebMode(this.sourceUrl);
@@ -1139,7 +1046,7 @@ struct ScpArticlePage {
             },
             onOpenUrl: (url: string) => this.openUrl(url),
             onOpenArticleLink: (url: string, title: string) => this.openArticleLink(url, title),
-            onOpenImage: (index: number, sourceKey?: string) => this.openPreview(index, sourceKey),
+            onOpenImage: (index: number) => this.openPreview(index),
             onToggleExpanded: (block: ScpContentBlock) => this.toggleRendererBlock(block),
             onOpenRelatedTale: (tale: ArticleRelatedTale) => this.openTale(tale),
             onContentLaidOut: () => this.onRendererContentLaidOut()
@@ -1196,15 +1103,11 @@ struct ScpArticlePage {
               initialIndex: this.previewIndex,
               actions: this.imageActions,
               materialEnabled: this.settings.immersiveMaterialEnabled,
-              heroGeometryId: this.previewSourceKey.length > 0 ?
-                `article-hero:${this.previewSourceKey}` : '',
               onClose: () => {
                 this.closePreview();
               },
               onIndexChange: (index: number) => {
                 this.previewIndex = index;
-                this.previewSourceKey = `gallery:${index}`;
-                this.galleryReturnEpoch++;
               },
               onNotice: (message: string) => {
                 this.showToast(message);
@@ -1213,7 +1116,11 @@ struct ScpArticlePage {
           }
           .width('100%')
           .height('100%')
-          .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
+          .transition(
+            isReduceMotionEnabled() ? TransitionEffect.IDENTITY :
+              TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
+                .animation({ duration: 220, curve: Curve.FastOutSlowIn })
+          )
         }
       }
       .width('100%')
@@ -1258,10 +1165,7 @@ struct ScpArticlePage {
       this.applyRouteParam(param);
     })
     .opacity(this.navMotion.opacity)
-    .translate({ x: this.navMotion.translateX, y: this.navMotion.translateY })
-    .scale({ x: this.navMotion.scaleX, y: this.navMotion.scaleY })
-    .borderRadius(this.navMotion.radius)
-    .clip(this.navMotion.clipActive)
+    .translate({ x: this.navMotion.translateX })
     .onShown(() => {
       this.acceptsProgressEvents = true;
       this.syncReadingSettings();

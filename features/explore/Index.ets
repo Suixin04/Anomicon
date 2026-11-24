@@ -39,8 +39,6 @@ export {
   ExploreHomeEventType,
   ExploreHomeViewModel,
   ExploreHeroAnchor,
-  ExploreHeroPreviewPayload,
-  exploreHeroCardId,
   ExploreCollectionViewContract,
   ExploreHomeViewContract,
   ExploreNavigationEvent,

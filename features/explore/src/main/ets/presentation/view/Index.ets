@@ -1,7 +1,5 @@
 export {
   ExploreHeroAnchor,
-  ExploreHeroPreviewPayload,
-  exploreHeroCardId,
   ExploreCollectionViewContract,
   ExploreHomeViewContract,
   ExploreNavigationEvent

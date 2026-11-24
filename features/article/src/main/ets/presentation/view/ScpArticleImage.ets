@@ -10,8 +10,6 @@ export struct ScpArticleImage {
   @Require @Param url: string;
   @Param preferredWidth: number = 0;
   @Param inlineMode: boolean = false;
-  @Param geometryId: string = '';
-  @Param hiddenForPreview: boolean = false;
   @Event onOpen: () => void;
   @Event onOpenInBrowser: (url: string) => void;
 
@@ -20,8 +18,6 @@ export struct ScpArticleImage {
   @Local private failed: boolean = false;
   @Local private intrinsicWidth: number = 0;
   @Local private intrinsicHeight: number = 0;
-  @Local private lockedWidth: number = 0;
-  @Local private lockedHeight: number = 0;
   /** Ignore Image callbacks belonging to a URL that has already changed. */
   private loadEpoch: number = 0;
   /** Keep the last safe/raw request for the failure-state browser action. */
@@ -130,10 +126,6 @@ export struct ScpArticleImage {
       .justifyContent(FlexAlign.Center)
       .backgroundColor($r('sys.color.comp_background_primary'))
       .borderRadius(10)
-    } else if (this.hiddenForPreview) {
-      Column()
-        .width(this.lockedWidth > 0 ? this.lockedWidth : this.inlineDisplayWidth())
-        .height(this.lockedHeight > 0 ? this.lockedHeight : this.skeletonHeight())
     } else {
       Stack({ alignContent: Alignment.Center }) {
         Image(this.resolvedUrl)
@@ -143,19 +135,8 @@ export struct ScpArticleImage {
           .autoResize(true)
           .backgroundColor(this.inlineMode && !this.loading ? Color.Transparent : $r('sys.color.comp_background_primary'))
           .borderRadius(this.inlineMode ? 8 : 10)
-          .geometryTransition(this.geometryId, { follow: true })
           .opacity(this.loading ? 0 : 1)
           .animation(AppMotion.microAnimateParam())
-          .onAreaChange((_oldArea: Area, newArea: Area): void => {
-            const width = Number(newArea.width);
-            const height = Number(newArea.height);
-            if (Number.isFinite(width) && width > 0) {
-              this.lockedWidth = width;
-            }
-            if (Number.isFinite(height) && height > 0) {
-              this.lockedHeight = height;
-            }
-          })
           .onComplete((event) => {
             const w = event?.loadingStatus === 1 ? (event?.width ?? 0) : 0;
             const h = event?.loadingStatus === 1 ? (event?.height ?? 0) : 0;

@@ -35,15 +35,3 @@ export interface ExploreNavigationEvent {
   content?: LibraryContentRef;
   collectionMode?: ExploreCollectionMode;
 }
-
-/** Hero preview payload handed off from top recommendation card to ArticlePage. */
-export interface ExploreHeroPreviewPayload {
-  readonly sourceId: string;
-  readonly imageSource?: string;
-  readonly description?: string;
-}
-
-/** Builds the deterministic anchor component id for an Explore recommendation hero card. */
-export function exploreHeroCardId(itemId: string): string {
-  return `explore-hero-card:${itemId}`;
-}

@@ -19,7 +19,7 @@ import {
 } from 'anomiconbasic';
 import { ExploreCollectionMode } from '../../domain/ExploreContracts';
 import { ExploreHomeViewModel } from '../viewmodel/ExploreHomeViewModel';
-import { ExploreHeroAnchor, ExploreHeroPreviewPayload } from './ExploreViewContracts';
+import { ExploreHeroAnchor } from './ExploreViewContracts';
 
 const SECTION_SPACE: number = 24;
 const EXPLORE_DUAL_SCREEN_MIN_WIDTH: number = 640;
@@ -35,10 +35,7 @@ export struct ExploreHome {
   @Require @Param scroller: Scroller;
   @Require @Param viewModel: ExploreHomeViewModel;
   @Require @Param materialEnabled: boolean;
-  @Require @Param onOpenContent: (
-    content: LibraryContentRef,
-    heroPreview?: ExploreHeroPreviewPayload
-  ) => void;
+  @Require @Param onOpenContent: (content: LibraryContentRef) => void;
   @Require @Param onOpenCollection: (mode: ExploreCollectionMode) => void;
   @Event onSelection: () => void;
   @Event onHeroAnchorChange: (anchor: ExploreHeroAnchor) => void =
@@ -95,13 +92,8 @@ export struct ExploreHome {
     }
   }
 
-  private openContent(
-    id: string,
-    title: string,
-    kind: LibraryContentKind,
-    heroPreview?: ExploreHeroPreviewPayload
-  ): void {
-    this.onOpenContent(createLibraryContentRef(kind, id, title), heroPreview);
+  private openContent(id: string, title: string, kind: LibraryContentKind): void {
+    this.onOpenContent(createLibraryContentRef(kind, id, title));
   }
 
   @Builder
@@ -117,8 +109,8 @@ export struct ExploreHome {
       skeletonAnimated: this.recommendationSkeletonAnimated,
       horizontal: horizontal,
       materialEnabled: this.materialEnabled,
-      onOpen: (itemId: string, name: string, heroPreview?: ExploreHeroPreviewPayload) =>
-        this.openContent(itemId, name, LibraryContentKind.SCP, heroPreview),
+      onOpen: (itemId: string, name: string) =>
+        this.openContent(itemId, name, LibraryContentKind.SCP),
       onDismiss: (deckVersion: number) => this.nextRecommendation(deckVersion),
       onRefresh: () => this.refreshRecommendations(),
       onHeroAnchorChange: (anchor: ExploreHeroAnchor): void =>

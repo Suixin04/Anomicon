@@ -8,27 +8,7 @@ import {
   SkeletonBlock,
   ViewModelLoadState
 } from 'anomiconbasic';
-import {
-  ExploreHeroAnchor,
-  exploreHeroCardId,
-  ExploreHeroPreviewPayload
-} from './ExploreViewContracts';
-
-function resolveRecommendationImageSource(
-  path: string,
-  url: string,
-  failed: boolean = false
-): string {
-  if (failed) {
-    return '';
-  }
-  if (path.length > 0) {
-    // Adapters may already provide a file URI.  Prefix only plain paths so
-    // Image never receives the malformed `file://file://…` variant.
-    return path.startsWith('file://') ? path : `file://${path}`;
-  }
-  return url;
-}
+import { ExploreHeroAnchor } from './ExploreViewContracts';
 
 const CARD_DISMISS_THRESHOLD: number = 88;
 const CARD_DISMISS_VELOCITY: number = 800;
@@ -257,7 +237,12 @@ struct ExploreRecommendationCard {
 
   private previewSource(): string {
     const preview = this.row.recommendation.preview;
-    return resolveRecommendationImageSource(preview.path, preview.url, false);
+    if (preview.path.length > 0) {
+      // Adapters may already provide a file URI.  Prefix only plain paths so
+      // Image never receives the malformed `file://file://…` variant.
+      return preview.path.startsWith('file://') ? preview.path : `file://${preview.path}`;
+    }
+    return preview.url;
   }
 
   private handleAppear(): void {
@@ -476,8 +461,6 @@ struct ExploreRecommendationCard {
     })
     .rotate({ angle: this.rotation() })
     .opacity(this.opacityOfDepth())
-    .id(this.row.depth === 0 ? exploreHeroCardId(this.row.itemId) :
-      `explore-deck-card:${this.row.itemId}`)
     .hitTestBehavior(HitTestMode.None)
     .onAppear(() => this.handleAppear())
     .onDisAppear(() => this.handleDisAppear())
@@ -509,11 +492,7 @@ export struct ExploreRecommendationDeck {
   @Param skeletonAnimated: boolean = true;
   @Param horizontal: boolean = false;
   @Require @Param materialEnabled: boolean;
-  @Event onOpen: (
-    itemId: string,
-    name: string,
-    heroPreview?: ExploreHeroPreviewPayload
-  ) => void;
+  @Event onOpen: (itemId: string, name: string) => void;
   @Event onDismiss: (deckVersion: number) => void;
   @Event onRefresh: () => void;
   @Event onHeroAnchorChange: (anchor: ExploreHeroAnchor) => void =
@@ -724,26 +703,9 @@ export struct ExploreRecommendationDeck {
   }
 
   private openTopRecommendation(): void {
-    const topRow: ExploreRecommendationRowState | undefined = this.recommendationAt(0);
-    const recommendation: ExploreRecommendation | undefined = topRow?.recommendation;
+    const recommendation = this.topRecommendation();
     if (recommendation !== undefined && !this.suppressClick && !this.dismissing) {
-      const previewFailed: boolean =
-        recommendation.preview.failed || (topRow !== undefined && topRow.imageFailed);
-      const imageSource: string = resolveRecommendationImageSource(
-        recommendation.preview.path,
-        recommendation.preview.url,
-        previewFailed
-      );
-      const description: string =
-        recommendation.preview.description.length > 0
-          ? recommendation.preview.description
-          : '收录自 SCP 中文主站。';
-      const heroPreview: ExploreHeroPreviewPayload = {
-        sourceId: exploreHeroCardId(recommendation.entry.itemId),
-        imageSource: imageSource.length > 0 ? imageSource : undefined,
-        description: description
-      };
-      this.onOpen(recommendation.entry.itemId, recommendation.entry.title, heroPreview);
+      this.onOpen(recommendation.entry.itemId, recommendation.entry.title);
     }
   }
 

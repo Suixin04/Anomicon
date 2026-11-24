@@ -13,7 +13,6 @@ import {
 struct ScpPreviewPage {
   @Require @Param url: string;
   @Require @Param actions: ImagePreviewActions;
-  @Param geometryId: string = '';
   @Event onBrowserOpen: (url: string) => void;
   @Event onZoomedChange: (zoomed: boolean) => void;
 
@@ -141,7 +140,6 @@ struct ScpPreviewPage {
             .height('100%')
             .objectFit(ImageFit.Contain)
             .autoResize(true)
-            .geometryTransition(this.geometryId, { follow: true })
             .onComplete(this.onImageComplete(this.loadEpoch))
             .onError(this.onImageError(this.loadEpoch))
         }
@@ -218,7 +216,6 @@ export struct ScpImagePreviewer {
   @Require @Param initialIndex: number;
   @Require @Param actions: ImagePreviewActions;
   @Param materialEnabled: boolean = true;
-  @Param heroGeometryId: string = '';
   @Event onClose: () => void;
   @Event onIndexChange: (index: number) => void;
   /** Product-owned system notice/effect boundary. */
@@ -310,7 +307,6 @@ export struct ScpImagePreviewer {
         .width('100%')
         .height('100%')
         .backgroundColor('#000000')
-        .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
 
       Swiper(this.previewController) {
         Repeat<ScpContentBlock>(this.images)
@@ -318,8 +314,6 @@ export struct ScpImagePreviewer {
             ScpPreviewPage({
               url: row.item.source,
               actions: this.actions,
-              geometryId: (!isReduceMotionEnabled() && row.index === this.currentIndex) ?
-                this.heroGeometryId : '',
               onBrowserOpen: (url: string) => this.openInBrowser(url),
               onZoomedChange: (zoomed: boolean) => {
                 this.zoomed = zoomed;
@@ -378,7 +372,6 @@ export struct ScpImagePreviewer {
       .padding({ left: 16, right: 16 })
       // 预览打开时宿主页已隐藏标题栏，控件避开实时状态栏高度布局。
       .margin({ top: windowAvoidTop() + 8 })
-      .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
 
       // 底部图注：铺满高度的容器底部对齐。
       Column() {
@@ -400,7 +393,6 @@ export struct ScpImagePreviewer {
       .height('100%')
       .justifyContent(FlexAlign.End)
       .hitTestBehavior(HitTestMode.None)
-      .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
     }
     .width('100%')
     .height('100%')
