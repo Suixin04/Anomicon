@@ -497,20 +497,6 @@ function measureFootnoteWeight(footnote: ScpFootnote): number {
   return Math.max(60, total);
 }
 
-function collectFootnoteRefIdsRecursive(block: ScpContentBlock, output: string[]): void {
-  for (let index: number = 0; index < block.spans.length; index++) {
-    const span = block.spans[index];
-    if (span.style === ScpTextStyle.FOOTNOTE_REFERENCE &&
-      span.referenceId.length > 0 &&
-      output.indexOf(span.referenceId) < 0) {
-      output.push(span.referenceId);
-    }
-  }
-  for (let index: number = 0; index < block.children.length; index++) {
-    collectFootnoteRefIdsRecursive(block.children[index], output);
-  }
-}
-
 /**
  * Device-independent native article body.
  *
@@ -632,12 +618,13 @@ export struct ArticleNativeRenderer {
   private lastReportedPercent: number = -1;
   private cumulativeWeights: number[] = [0];
   private totalWeight: number = 0;
-  private readonly anchorIndexByKey: Map<string, number> = new Map();
+  private readonly footnoteSectionById: Map<string, number> = new Map();
   private readonly blockRowByKey: Map<string, ArticleBlockRowState> = new Map();
   private navigationIndex: ArticleNavigationIndex =
     new ArticleNavigationIndex(new Map(), new Map(), []);
   private highlightTimer: number = -1;
   private pendingAnchorTimer: number = -1;
+  private afterAnchorLayout: (() => void) | undefined = undefined;
   private pendingRouteAnchor: string = '';
   private hasLaidOutCurrentDoc: boolean = false;
   private readonly bottomPullTriggerVp: number = 72;
@@ -846,6 +833,9 @@ export struct ArticleNativeRenderer {
     if (!sameArticleFootnoteRows(this.footnoteRows, nextFootnotes)) {
       this.footnoteRows = nextFootnotes;
     }
+    for (const row of this.footnoteRows) {
+      indexBlockRowsRecursive(row.blocks, this.blockRowByKey);
+    }
     const nextTales = syncArticleRelatedTaleRows(this.relatedTaleRows, this.relatedTales);
     if (!sameArticleRelatedTaleRows(this.relatedTaleRows, nextTales)) {
       this.relatedTaleRows = nextTales;
@@ -859,7 +849,7 @@ export struct ArticleNativeRenderer {
     const nextSections: ArticleSectionRow[] = [];
     const navInputs: ArticleIndexSectionInput[] = [];
     let footnotesHeaderSectionIndex: number = -1;
-    this.anchorIndexByKey.clear();
+    this.footnoteSectionById.clear();
     const pushSection = (
       key: string,
       kind: ArticleSectionKind,
@@ -974,14 +964,6 @@ export struct ArticleNativeRenderer {
             block: child.block,
             extraAnchors: childIndex === 0 ? blockRow.block.anchors : undefined
           });
-          const refIds: string[] = [];
-          collectFootnoteRefIdsRecursive(child.block, refIds);
-          for (let r: number = 0; r < refIds.length; r++) {
-            const refKey = `ref:${refIds[r]}`;
-            if (!this.anchorIndexByKey.has(refKey)) {
-              this.anchorIndexByKey.set(refKey, sectionIndex);
-            }
-          }
         }
       } else if (blockRow.block.type === ScpBlockType.CALLOUT && blockRow.children.length > 0) {
         const childCount = blockRow.children.length;
@@ -1003,14 +985,6 @@ export struct ArticleNativeRenderer {
             block: child.block,
             extraAnchors: childIndex === 0 ? blockRow.block.anchors : undefined
           });
-          const refIds: string[] = [];
-          collectFootnoteRefIdsRecursive(child.block, refIds);
-          for (let r: number = 0; r < refIds.length; r++) {
-            const refKey = `ref:${refIds[r]}`;
-            if (!this.anchorIndexByKey.has(refKey)) {
-              this.anchorIndexByKey.set(refKey, sectionIndex);
-            }
-          }
         }
       } else {
         const sectionIndex = pushSection(
@@ -1027,14 +1001,6 @@ export struct ArticleNativeRenderer {
           sectionIndex: sectionIndex,
           block: blockRow.block
         });
-        const refIds: string[] = [];
-        collectFootnoteRefIdsRecursive(blockRow.block, refIds);
-        for (let r: number = 0; r < refIds.length; r++) {
-          const refKey = `ref:${refIds[r]}`;
-          if (!this.anchorIndexByKey.has(refKey)) {
-            this.anchorIndexByKey.set(refKey, sectionIndex);
-          }
-        }
       }
     }
 
@@ -1062,7 +1028,7 @@ export struct ArticleNativeRenderer {
           false,
           index === count - 1 ? 16 : 12
         );
-        this.anchorIndexByKey.set(`fn:${fnRow.footnote.id}`, sectionIndex);
+        this.footnoteSectionById.set(fnRow.footnote.id, sectionIndex);
         for (let fb: number = 0; fb < fnRow.footnote.blocks.length; fb++) {
           navInputs.push({
             sectionIndex: sectionIndex,
@@ -1171,6 +1137,7 @@ export struct ArticleNativeRenderer {
     const changed = event.changedTouches;
     const touch = touches.length > 0 ? touches[0] : (changed.length > 0 ? changed[0] : undefined);
     if (event.type === TouchType.Down) {
+      this.cancelBlockAlignment();
       if (touch === undefined) {
         this.resetBottomPullState();
         return;
@@ -1293,6 +1260,7 @@ export struct ArticleNativeRenderer {
   }
 
   private clearPendingAnchorTimer(): void {
+    this.cancelBlockAlignment();
     if (this.pendingAnchorTimer >= 0) {
       clearTimeout(this.pendingAnchorTimer);
       this.pendingAnchorTimer = -1;
@@ -1331,7 +1299,46 @@ export struct ArticleNativeRenderer {
     );
   }
 
-  private jumpToBlockLocation(location: ArticleBlockLocation): void {
+  private blockNodeId(blockKey: string): string {
+    return `article:${this.getUniqueId()}:block:${blockKey}`;
+  }
+
+  private listNodeId(): string {
+    return `article:${this.getUniqueId()}:list`;
+  }
+
+  private cancelBlockAlignment(): void {
+    if (this.afterAnchorLayout !== undefined) {
+      this.getUIContext().getUIObserver().off('didLayout', this.afterAnchorLayout);
+      this.afterAnchorLayout = undefined;
+    }
+  }
+
+  private alignNestedBlock(location: ArticleBlockLocation, highlightKey: string): void {
+    const context = this.getUIContext();
+    const targetId = this.blockNodeId(location.blockKey);
+    // The virtual List must mount the section and lay out its expanded children first.
+    this.afterAnchorLayout = (): void => {
+      const list = context.getFrameNodeById(this.listNodeId());
+      if (list === null) {
+        return;
+      }
+      const target = list.getFrameNodeById(targetId);
+      if (target === null || target.getMeasuredSize().height <= 0) {
+        return;
+      }
+      const inset = this.topPadding + (this.searchBarOpen ? 68 : 0) + 12;
+      const delta = Number(target.getPositionToWindow().y) - Number(list.getPositionToWindow().y) - inset;
+      this.cancelBlockAlignment();
+      this.scroller.scrollBy(0, delta);
+      this.triggerAnchorHighlight(highlightKey);
+    };
+    context.getUIObserver().on('didLayout', this.afterAnchorLayout);
+    this.scroller.scrollToIndex(location.sectionIndex, false, ScrollAlign.START);
+  }
+
+  private jumpToBlockLocation(location: ArticleBlockLocation, highlightKey: string = `block:${location.blockKey}`): void {
+    this.clearPendingAnchorTimer();
     const keysToToggle: string[] = [];
     for (let index: number = 0; index < location.expandCollapsibleKeys.length; index++) {
       const collapsibleKey = location.expandCollapsibleKeys[index];
@@ -1345,25 +1352,18 @@ export struct ArticleNativeRenderer {
       this.onEnsureExpanded(keysToToggle);
     }
 
-    let tabMutated: boolean = false;
     for (let index: number = 0; index < location.tabTargets.length; index++) {
       const targetTab = location.tabTargets[index];
       const tabsRow = this.blockRowByKey.get(targetTab.tabsBlockKey);
       if (tabsRow !== undefined && tabsRow.activeTabIndex !== targetTab.tabIndex) {
         tabsRow.activeTabIndex = targetTab.tabIndex;
-        tabMutated = true;
       }
     }
 
     this.onAnchorJump();
-    const highlightKey = `block:${location.blockKey}`;
-    if (keysToToggle.length > 0 || tabMutated) {
-      this.clearPendingAnchorTimer();
-      this.pendingAnchorTimer = setTimeout((): void => {
-        this.pendingAnchorTimer = -1;
-        this.scrollToSectionIndex(location.sectionIndex);
-        this.triggerAnchorHighlight(highlightKey);
-      }, 90);
+    const section = this.sectionRows[location.sectionIndex];
+    if (section.footnoteRow !== undefined || (section.blockRow !== undefined && section.blockRow.key !== location.blockKey)) {
+      this.alignNestedBlock(location, highlightKey);
       return;
     }
     this.scrollToSectionIndex(location.sectionIndex);
@@ -1380,19 +1380,14 @@ export struct ArticleNativeRenderer {
       this.openFootnoteSheet(fnId, fnId);
       return true;
     }
-    if (target.startsWith('footnoteref-')) {
-      const refKey = `ref:${target.substring(12)}`;
-      if (this.anchorIndexByKey.has(refKey)) {
-        this.jumpTo(refKey);
-        return true;
-      }
-    }
     const location = resolveAnchorLocation(this.navigationIndex, target);
     if (location !== undefined) {
-      this.jumpToBlockLocation(location);
+      const highlightKey = target.startsWith('footnoteref-') ? `ref:${target.substring(12)}` : `block:${location.blockKey}`;
+      this.jumpToBlockLocation(location, highlightKey);
       return true;
     }
     if (target === 'page-top' || target === 'top') {
+      this.clearPendingAnchorTimer();
       this.onAnchorJump();
       this.scroller.scrollToIndex(0, true, ScrollAlign.START);
       return true;
@@ -1508,14 +1503,13 @@ export struct ArticleNativeRenderer {
     }, 320);
   }
 
-  private jumpTo(key: string): void {
-    const targetIndex = this.anchorIndexByKey.get(key);
-    if (targetIndex === undefined) {
-      return;
+  private jumpToFootnoteReference(id: string): boolean {
+    const location = resolveAnchorLocation(this.navigationIndex, `footnoteref-${id}`);
+    if (location === undefined) {
+      return false;
     }
-    this.onAnchorJump();
-    this.scrollToSectionIndex(targetIndex);
-    this.triggerAnchorHighlight(key);
+    this.jumpToBlockLocation(location, `ref:${id}`);
+    return true;
   }
 
   private currentFootnoteRow(): ArticleFootnoteRowState | undefined {
@@ -1655,7 +1649,13 @@ export struct ArticleNativeRenderer {
       labelText
     );
     if (targetIndex < 0 || targetIndex >= this.footnoteRows.length) {
-      this.jumpTo(`fn:${referenceId}`);
+      const section = this.footnoteSectionById.get(referenceId);
+      if (section !== undefined) {
+        this.clearPendingAnchorTimer();
+        this.onAnchorJump();
+        this.scrollToSectionIndex(section);
+        this.triggerAnchorHighlight(`fn:${referenceId}`);
+      }
       return;
     }
     this.activeFootnoteIndex = targetIndex;
@@ -1694,12 +1694,9 @@ export struct ArticleNativeRenderer {
 
   private selectSidePanelFootnote(row: ArticleFootnoteRowState): void {
     this.activeFootnoteIndex = row.index;
-    const refKey = `ref:${row.footnote.id}`;
-    if (this.anchorIndexByKey.has(refKey)) {
-      this.jumpTo(refKey);
-      return;
+    if (!this.jumpToFootnoteReference(row.footnote.id)) {
+      this.onAnchorJump();
     }
-    this.onAnchorJump();
   }
 
   private stepFootnote(delta: number): void {
@@ -1719,14 +1716,9 @@ export struct ArticleNativeRenderer {
       this.scrollSidePanelToFootnote(next);
     }
     const row = this.currentFootnoteRow();
-    if (row !== undefined) {
-      const refKey = `ref:${row.footnote.id}`;
-      if (this.anchorIndexByKey.has(refKey)) {
-        this.jumpTo(refKey);
-        return;
-      }
+    if (row === undefined || !this.jumpToFootnoteReference(row.footnote.id)) {
+      this.onAnchorJump();
     }
-    this.onAnchorJump();
   }
 
   private handleOpenArticleLink(url: string, title: string): void {
@@ -2580,6 +2572,7 @@ export struct ArticleNativeRenderer {
           .fontSize(this.fontSize)
       }
     }
+    .id(this.blockNodeId(cell.key))
     .width(fixedWidth > 0 ? fixedWidth : undefined)
     .layoutWeight(fixedWidth > 0 ? 0 : 1)
     .padding({ left: 10, right: 10, top: 8, bottom: 8 })
@@ -2601,6 +2594,7 @@ export struct ArticleNativeRenderer {
             this.tableCellContent(cell, inTerminal, fixedWidth, cellIndex)
           }, (cell: ArticleBlockRowState) => cell.key)
         }
+        .id(this.blockNodeId(row.key))
         .width(fixedWidth > 0 ? undefined : '100%')
         .alignItems(VerticalAlign.Top)
         .border({
@@ -2726,6 +2720,7 @@ export struct ArticleNativeRenderer {
         Row({ space: 8 }) {
           ForEach(row.children, (panel: ArticleBlockRowState, index: number) => {
             Text(panel.block.caption.length > 0 ? panel.block.caption : `标签 ${index + 1}`)
+              .id(this.blockNodeId(panel.key))
               .fontSize(AppTypography.CAPTION_L)
               .fontWeight(row.activeTabIndex === index ? FontWeight.Bold : FontWeight.Medium)
               .fontColor(row.activeTabIndex === index ?
@@ -2886,6 +2881,7 @@ export struct ArticleNativeRenderer {
             .padding({ left: 16 })
           }
         }
+        .id(this.blockNodeId(item.key))
         .width('100%')
       }, (item: ArticleBlockRowState) => item.key)
     }
@@ -2975,6 +2971,15 @@ export struct ArticleNativeRenderer {
 
   @Builder
   private blockView(row: ArticleBlockRowState, inTerminal: boolean = false) {
+    Column() {
+      this.blockContent(row, inTerminal)
+    }
+    .width('100%')
+    .id(this.blockNodeId(row.key))
+  }
+
+  @Builder
+  private blockContent(row: ArticleBlockRowState, inTerminal: boolean) {
     if (row.block.type === ScpBlockType.PARAGRAPH) {
       if (ArticleRenderer.isPureWhisperBlock(row.block)) {
         this.pureWhisperBlock(row, inTerminal)
@@ -3528,7 +3533,7 @@ export struct ArticleNativeRenderer {
         .padding({ left: 10, right: 10, top: 6, bottom: 6 })
         .backgroundColor($r('sys.color.comp_background_tertiary'))
         .borderRadius(17)
-        .onClick(() => this.jumpTo(`ref:${row.footnote.id}`))
+        .onClick(() => this.jumpToFootnoteReference(row.footnote.id))
       }
       .layoutWeight(1)
       .alignItems(HorizontalAlign.Start)
@@ -3716,11 +3721,10 @@ export struct ArticleNativeRenderer {
       }
       .alignItems(VerticalAlign.Center)
 
-      if (this.completed && this.bottomPullProgress === 0) {
-        Text('继续上滑可取消已读')
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_tertiary'))
-      }
+      Button(this.completed ? '取消已读标记' : '标为已读')
+        .id('articleCompletionButton')
+        .fontSize(AppTypography.CAPTION_L)
+        .onClick((): void => this.onToggleCompleted())
 
       if (this.document.pageVersion.length > 0) {
         Text(this.document.pageVersion)
@@ -4733,6 +4737,7 @@ export struct ArticleNativeRenderer {
         }
         .width('100%')
         .height('100%')
+        .id(this.listNodeId())
         .alignListItem(ListItemAlign.Center)
         .cachedCount(6)
         .contentStartOffset(this.topPadding + (this.searchBarOpen ? 68 : 0))

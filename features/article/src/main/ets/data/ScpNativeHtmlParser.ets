@@ -396,21 +396,23 @@ export class ScpNativeHtmlParser {
   }
 
   private static decode(value: string): string {
-    return value
-      .replace(/&nbsp;?/gi, ' ')
-      .replace(/&amp;/gi, '&')
-      .replace(/&lt;/gi, '<')
-      .replace(/&gt;/gi, '>')
-      .replace(/&quot;/gi, '"')
-      .replace(/&#39;|&apos;/gi, "'")
-      .replace(/&#x([0-9a-f]+);/gi, (_match: string, code: string): string => {
-        const value = Number.parseInt(code, 16);
-        return Number.isFinite(value) ? String.fromCharCode(value) : '';
-      })
-      .replace(/&#(\d+);/g, (_match: string, code: string): string => {
-        const value = Number.parseInt(code, 10);
-        return Number.isFinite(value) ? String.fromCharCode(value) : '';
-      });
+    return value.replace(/&(?:nbsp;?|amp;|lt;|gt;|quot;|apos;|#x[\da-f]+;|#\d+;)/gi, (entity: string): string => {
+      switch (entity.toLowerCase()) {
+        case '&nbsp':
+        case '&nbsp;': return ' ';
+        case '&amp;': return '&';
+        case '&lt;': return '<';
+        case '&gt;': return '>';
+        case '&quot;': return '"';
+        case '&apos;': return "'";
+      }
+      const hex = entity.charAt(2).toLowerCase() === 'x';
+      const scalar = Number.parseInt(entity.slice(hex ? 3 : 2, -1), hex ? 16 : 10);
+      if (scalar === 0 || scalar > 0x10FFFF || (scalar >= 0xD800 && scalar <= 0xDFFF)) {
+        return '\uFFFD';
+      }
+      return String.fromCodePoint(scalar);
+    });
   }
 
   private static attr(node: HtmlNode, name: string): string {

@@ -190,6 +190,18 @@ export default function articleDocumentMapperTest(): void {
       expect(document.footnotes[0].blocks[0].spans[0].text).assertEqual('脚注内容');
     });
 
+    it('decodes numeric scalars and literal entities once in text and attributes', 0, () => {
+      const html = '<div id="page-title">&#x20000; &#128512;</div>' +
+        '<div id="page-content"><p>&#x20000; &#128512; &amp;lt; &#x4E2D; &amp;#65;</p>' +
+        '<p><a href="/test?value=&amp;lt;&amp;n=&#50;">示例</a></p></div>';
+      const document = createArticleDocumentParser().parse(
+        JSON.stringify(ScpNativeHtmlParser.parse(html)), 'https://scp-wiki-cn.wikidot.com/test', 1000
+      );
+      expect(document.title).assertEqual('𠀀 😀');
+      expect(document.blocks[0].spans[0].text).assertEqual('𠀀 😀 &lt; 中 &#65;');
+      expect(document.blocks[1].spans[0].target).assertEqual('/test?value=&lt;&n=2');
+    });
+
     it('parses common Wikidot article HTML without ArkWeb', 0, () => {
       const html = '<div id="page-title">SCP-999 - 測試</div>' +
         '<span id="prw123">+42</span>' +

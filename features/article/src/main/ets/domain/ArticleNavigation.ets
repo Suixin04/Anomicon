@@ -242,6 +242,15 @@ export function buildArticleNavigationIndex(
     }
     registerAnchors(extraAnchors, location);
     registerAnchors(block.anchors, location);
+    for (let index = 0; index < block.spans.length; index++) {
+      const span = block.spans[index];
+      if (span.style === ScpTextStyle.FOOTNOTE_REFERENCE && span.referenceId.length > 0) {
+        const refAnchor = normalizeArticleAnchor(`footnoteref-${span.referenceId}`);
+        if (!anchorMap.has(refAnchor)) {
+          anchorMap.set(refAnchor, location);
+        }
+      }
+    }
 
     if (block.type === ScpBlockType.HEADING) {
       const title = readableHeadingText(block);
