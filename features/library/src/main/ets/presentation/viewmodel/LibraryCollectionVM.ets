@@ -186,13 +186,17 @@ export class LibraryCollectionVM implements ViewModelLifecycle {
       for (let index = 0; index < favorites.length; index++) {
         projected.push(new LibraryCollectionItem(favorites[index].content, favorites[index].favoritedAt));
       }
+    } else if (this.mode === LibraryCollectionMode.CONTINUE_READING) {
+      const resumable: ReadingHistoryEntry[] = this.history.resumableItems;
+      for (let index = 0; index < resumable.length; index++) {
+        const entry = resumable[index];
+        projected.push(new LibraryCollectionItem(entry.content, entry.lastReadAt));
+      }
     } else {
       const history: ReadingHistoryEntry[] = this.history.items;
       for (let index = 0; index < history.length; index++) {
         const entry = history[index];
-        if (this.mode !== LibraryCollectionMode.CONTINUE_READING || entry.scrollOffset > 0) {
-          projected.push(new LibraryCollectionItem(entry.content, entry.lastReadAt));
-        }
+        projected.push(new LibraryCollectionItem(entry.content, entry.lastReadAt));
       }
     }
     this.items = projected;

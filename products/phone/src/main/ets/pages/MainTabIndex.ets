@@ -409,14 +409,7 @@ export struct MainTabIndex {
   }
 
   private isReadCompleted(contentId: string): boolean {
-    const normalizedId = contentId.trim().toLowerCase();
-    for (let index: number = 0; index < this.readingHistory.items.length; index++) {
-      const entry = this.readingHistory.items[index];
-      if (entry.completed && entry.content.id.trim().toLowerCase() === normalizedId) {
-        return true;
-      }
-    }
-    return false;
+    return this.readingHistory.isCompleted(contentId);
   }
 
   private openLibraryCollection(mode: LibraryCollectionMode): void {

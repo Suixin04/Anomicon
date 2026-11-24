@@ -11,26 +11,25 @@ import {
 import {
   READING_HISTORY_LIMIT,
   ReadingHistoryEntry,
-  normalizeReadingScrollOffset
+  ReadingStateEntry
 } from '../domain/ReadingHistoryEntry';
 import { ReadingHistoryRepository } from '../domain/LibraryRepositories';
-
-const TABLE_NAME: string = 'library_reading_history';
-const CREATE_TABLE: string =
-  'CREATE TABLE IF NOT EXISTS library_reading_history (' +
-  'content_key TEXT PRIMARY KEY, content_id TEXT NOT NULL, title TEXT NOT NULL, ' +
-  'content_kind TEXT NOT NULL, opened_at INTEGER NOT NULL, ' +
-  'last_read_at INTEGER NOT NULL, scroll_offset INTEGER NOT NULL, ' +
-  'completed INTEGER NOT NULL DEFAULT 0)';
-const ADD_COMPLETED_COLUMN: string =
-  'ALTER TABLE library_reading_history ADD COLUMN completed INTEGER NOT NULL DEFAULT 0';
-const CREATE_TIME_INDEX: string =
-  'CREATE INDEX IF NOT EXISTS idx_library_reading_history_time ' +
-  'ON library_reading_history(last_read_at DESC, content_key ASC)';
-const PRUNE_HISTORY: string =
-  'DELETE FROM library_reading_history WHERE content_key NOT IN (' +
-  'SELECT content_key FROM library_reading_history ' +
-  `ORDER BY last_read_at DESC, content_key ASC LIMIT ${READING_HISTORY_LIMIT})`;
+import {
+  ReadingHistoryMutation,
+  ReadingHistoryStorageAdapter,
+  ReadingHistoryStoreEngine
+} from './ReadingHistoryEngine';
+import {
+  ADD_HISTORY_COMPLETED_COLUMN,
+  BACKFILL_STATE_FROM_HISTORY,
+  CREATE_HISTORY_TABLE,
+  CREATE_HISTORY_TIME_INDEX,
+  CREATE_STATE_TABLE,
+  CREATE_STATE_UPDATED_INDEX,
+  HISTORY_TABLE_NAME,
+  STATE_TABLE_NAME,
+  buildPruneHistorySql
+} from './ReadingHistorySchema';
 
 /** 初始化迁移使用的数据库原始行；storedKey 可能仍是旧版 kind:id。 */
 class StoredHistoryMigrationRow {
@@ -43,143 +42,19 @@ class StoredHistoryMigrationRow {
   }
 }
 
-/**
- * 阅读历史持久化。
- *
- * 写操作由同一原生锁串行；再次打开内容时保留首次打开时间和已有滚动位置，
- * 只刷新内容元数据与最后阅读时间。
- */
-export class ReadingHistoryRepo implements ReadingHistoryRepository {
-  private readonly context: common.UIAbilityContext;
-  private store: relationalStore.RdbStore | undefined = undefined;
-  private initialization: Promise<void> | undefined = undefined;
-  private readonly operationLock: ArkTSUtils.locks.AsyncLock =
-    new ArkTSUtils.locks.AsyncLock();
+class RdbReadingHistoryStorage implements ReadingHistoryStorageAdapter {
+  private readonly storeProvider: () => Promise<relationalStore.RdbStore>;
 
-  constructor(context: common.UIAbilityContext) {
-    this.context = context;
+  constructor(storeProvider: () => Promise<relationalStore.RdbStore>) {
+    this.storeProvider = storeProvider;
   }
 
-  /** Opens the feature-owned store; repeated calls share one task. */
-  public initialize(): Promise<void> {
-    if (this.initialization !== undefined) {
-      return this.initialization;
-    }
-    this.initialization = this.open(this.context);
-    return this.initialization;
-  }
-
-  /** 按最后阅读时间倒序读取稳定快照。 */
-  async list(): Promise<ReadingHistoryEntry[]> {
-    return this.operationLock.lockAsync<ReadingHistoryEntry[]>(
-      (): Promise<ReadingHistoryEntry[]> => this.listNow(),
-      ArkTSUtils.locks.AsyncLockMode.SHARED
-    );
-  }
-
-  /**
-   * 记录一次进入文章：新内容从零进度开始，已有内容绝不覆盖其阅读进度。
-   */
-  async recordOpened(content: LibraryContentRef): Promise<ReadingHistoryEntry> {
-    let updated: ReadingHistoryEntry | undefined = undefined;
-    await this.enqueueMutation(async (): Promise<void> => {
-      const existing = await this.findNow(content.key);
-      const now = Date.now();
-      const openedAt = existing === undefined ? now : existing.openedAt;
-      const scrollOffset = existing === undefined ? 0 : existing.scrollOffset;
-      const resolvedContent = preferLibraryContentMetadata(content, existing?.content);
-      const entry = new ReadingHistoryEntry(
-        resolvedContent, openedAt, now, scrollOffset, existing?.completed ?? false
-      );
-      await this.putNow(entry);
-      if (existing === undefined) {
-        await this.pruneNow();
-      }
-      updated = entry;
-    });
-    return updated!;
-  }
-
-  /** 更新进度；尚无历史时同时创建记录。 */
-  async updateProgress(content: LibraryContentRef, offset: number): Promise<ReadingHistoryEntry> {
-    let updated: ReadingHistoryEntry | undefined = undefined;
-    await this.enqueueMutation(async (): Promise<void> => {
-      const existing = await this.findNow(content.key);
-      const now = Date.now();
-      const openedAt = existing === undefined ? now : existing.openedAt;
-      const resolvedContent = preferLibraryContentMetadata(content, existing?.content);
-      const entry = new ReadingHistoryEntry(
-        resolvedContent,
-        openedAt,
-        now,
-        normalizeReadingScrollOffset(offset),
-        existing?.completed ?? false
-      );
-      await this.putNow(entry);
-      if (existing === undefined) {
-        await this.pruneNow();
-      }
-      updated = entry;
-    });
-    return updated!;
-  }
-
-  async setCompleted(content: LibraryContentRef, completed: boolean): Promise<ReadingHistoryEntry> {
-    let updated: ReadingHistoryEntry | undefined = undefined;
-    await this.enqueueMutation(async (): Promise<void> => {
-      const existing = await this.findNow(content.key);
-      const now = Date.now();
-      const openedAt = existing === undefined ? now : existing.openedAt;
-      const resolvedContent = preferLibraryContentMetadata(content, existing?.content);
-      const entry = new ReadingHistoryEntry(
-        resolvedContent,
-        openedAt,
-        now,
-        existing?.scrollOffset ?? 0,
-        completed === true
-      );
-      await this.putNow(entry);
-      if (existing === undefined) {
-        await this.pruneNow();
-      }
-      updated = entry;
-    });
-    return updated!;
-  }
-
-  /** 旧记录名称补全不能伪造一次新的浏览，因此完整保留三个时间/进度字段。 */
-  async updateMetadata(content: LibraryContentRef): Promise<ReadingHistoryEntry | undefined> {
-    let updated: ReadingHistoryEntry | undefined = undefined;
-    await this.enqueueMutation(async (): Promise<void> => {
-      const existing = await this.findNow(content.key);
-      if (existing === undefined) {
-        return;
-      }
-      const resolvedContent = preferLibraryContentMetadata(content, existing.content);
-      if (resolvedContent.title === existing.content.title &&
-        resolvedContent.kind === existing.content.kind) {
-        updated = existing;
-        return;
-      }
-      const entry = new ReadingHistoryEntry(
-        resolvedContent,
-        existing.openedAt,
-        existing.lastReadAt,
-        existing.scrollOffset,
-        existing.completed
-      );
-      await this.putNow(entry);
-      updated = entry;
-    });
-    return updated;
-  }
-
-  private async listNow(): Promise<ReadingHistoryEntry[]> {
-    const store = await this.requireStore();
-    const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+  async listHistory(limit: number): Promise<ReadingHistoryEntry[]> {
+    const store = await this.storeProvider();
+    const predicates = new relationalStore.RdbPredicates(HISTORY_TABLE_NAME);
     predicates.orderByDesc('last_read_at');
     predicates.orderByAsc('content_key');
-    predicates.limitAs(READING_HISTORY_LIMIT);
+    predicates.limitAs(limit);
     let resultSet: relationalStore.ResultSet | undefined = undefined;
     const entries: ReadingHistoryEntry[] = [];
     try {
@@ -200,15 +75,15 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
       }
       return entries;
     } catch (error) {
-      throw this.historyError('读取', error);
+      throw historyError('读取', error);
     } finally {
-      this.closeResultSet(resultSet, 'list');
+      closeResultSet(resultSet, 'list');
     }
   }
 
-  private async findNow(contentKey: string): Promise<ReadingHistoryEntry | undefined> {
-    const store = await this.requireStore();
-    const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+  async findHistory(contentKey: string): Promise<ReadingHistoryEntry | undefined> {
+    const store = await this.storeProvider();
+    const predicates = new relationalStore.RdbPredicates(HISTORY_TABLE_NAME);
     predicates.equalTo('content_key', contentKey);
     predicates.limitAs(1);
     let resultSet: relationalStore.ResultSet | undefined = undefined;
@@ -227,9 +102,134 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
       }
       return this.entryFromResultSet(resultSet);
     } catch (error) {
-      throw this.historyError('查询', error);
+      throw historyError('查询', error);
     } finally {
-      this.closeResultSet(resultSet, 'lookup');
+      closeResultSet(resultSet, 'lookup');
+    }
+  }
+
+  async listStates(): Promise<ReadingStateEntry[]> {
+    const store = await this.storeProvider();
+    const predicates = new relationalStore.RdbPredicates(STATE_TABLE_NAME);
+    predicates.orderByDesc('updated_at');
+    predicates.orderByAsc('content_key');
+    let resultSet: relationalStore.ResultSet | undefined = undefined;
+    const states: ReadingStateEntry[] = [];
+    try {
+      resultSet = await store.query(predicates, [
+        'content_id',
+        'title',
+        'content_kind',
+        'scroll_offset',
+        'completed',
+        'completed_at',
+        'updated_at'
+      ]);
+      while (resultSet.goToNextRow()) {
+        const state = this.stateFromResultSet(resultSet);
+        if (state !== undefined) {
+          states.push(state);
+        }
+      }
+      return states;
+    } catch (error) {
+      throw historyError('读取状态', error);
+    } finally {
+      closeResultSet(resultSet, 'listStates');
+    }
+  }
+
+  async findState(contentKey: string): Promise<ReadingStateEntry | undefined> {
+    const store = await this.storeProvider();
+    const predicates = new relationalStore.RdbPredicates(STATE_TABLE_NAME);
+    predicates.equalTo('content_key', contentKey);
+    predicates.limitAs(1);
+    let resultSet: relationalStore.ResultSet | undefined = undefined;
+    try {
+      resultSet = await store.query(predicates, [
+        'content_id',
+        'title',
+        'content_kind',
+        'scroll_offset',
+        'completed',
+        'completed_at',
+        'updated_at'
+      ]);
+      if (!resultSet.goToFirstRow()) {
+        return undefined;
+      }
+      return this.stateFromResultSet(resultSet);
+    } catch (error) {
+      throw historyError('查询状态', error);
+    } finally {
+      closeResultSet(resultSet, 'findState');
+    }
+  }
+
+  async commitMutation(mutation: ReadingHistoryMutation): Promise<void> {
+    if (mutation.historyEntry === undefined &&
+      mutation.stateEntry === undefined &&
+      mutation.deleteStateKey === undefined) {
+      return;
+    }
+    const store = await this.storeProvider();
+    let transaction: relationalStore.Transaction;
+    try {
+      transaction = await store.createTransaction();
+    } catch (error) {
+      throw historyError('写入', error);
+    }
+    try {
+      if (mutation.historyEntry !== undefined) {
+        const rowId = await transaction.insert(
+          HISTORY_TABLE_NAME,
+          historyValuesFor(mutation.historyEntry),
+          relationalStore.ConflictResolution.ON_CONFLICT_REPLACE
+        );
+        if (rowId < 0) {
+          throw new Error(`写入阅读记录失败：${mutation.historyEntry.content.key}`);
+        }
+      }
+      if (mutation.stateEntry !== undefined) {
+        const rowId = await transaction.insert(
+          STATE_TABLE_NAME,
+          stateValuesFor(mutation.stateEntry),
+          relationalStore.ConflictResolution.ON_CONFLICT_REPLACE
+        );
+        if (rowId < 0) {
+          throw new Error(`写入阅读状态失败：${mutation.stateEntry.content.key}`);
+        }
+      } else if (mutation.deleteStateKey !== undefined) {
+        const predicates = new relationalStore.RdbPredicates(STATE_TABLE_NAME);
+        predicates.equalTo('content_key', mutation.deleteStateKey);
+        const deleted = await transaction.delete(predicates);
+        if (deleted < 0) {
+          throw new Error(`清除阅读状态失败：${mutation.deleteStateKey}`);
+        }
+      }
+      await transaction.commit();
+    } catch (error) {
+      try {
+        await transaction.rollback();
+      } catch (rollbackError) {
+        console.warn(
+          `Rollback reading history mutation failed: ` +
+          `${rollbackError instanceof Error ? rollbackError.message : 'unknown error'}`
+        );
+      }
+      throw historyError('写入', error);
+    }
+  }
+
+  async pruneHistory(limit: number): Promise<void> {
+    const store = await this.storeProvider();
+    try {
+      await store.executeSql(buildPruneHistorySql(limit));
+    } catch (error) {
+      // 核心阅读记录已经成功写入；清理失败只影响空间维护，不伪装成保存失败。
+      console.warn(
+        `Prune reading history failed: ${error instanceof Error ? error.message : 'unknown error'}`
+      );
     }
   }
 
@@ -252,49 +252,125 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         resultSet.getLong(resultSet.getColumnIndex('scroll_offset')),
         resultSet.getLong(resultSet.getColumnIndex('completed')) > 0
       );
-    } catch (error) {
+    } catch (_error) {
       // 单条历史脏数据不应阻断其他记录展示；再次打开时会重建该条记录。
       return undefined;
     }
   }
 
-  private async putNow(entry: ReadingHistoryEntry): Promise<void> {
-    const store = await this.requireStore();
-    const values: relationalStore.ValuesBucket = {
-      'content_key': entry.content.key,
-      'content_id': entry.content.id,
-      'title': entry.content.title,
-      'content_kind': entry.content.kind,
-      'opened_at': entry.openedAt,
-      'last_read_at': entry.lastReadAt,
-      'scroll_offset': entry.scrollOffset,
-      'completed': entry.completed ? 1 : 0
-    };
+  private stateFromResultSet(resultSet: relationalStore.ResultSet): ReadingStateEntry | undefined {
     try {
-      const rowId = await store.insert(
-        TABLE_NAME,
-        values,
-        relationalStore.ConflictResolution.ON_CONFLICT_REPLACE
-      );
-      if (rowId < 0) {
-        throw new Error(`写入阅读记录失败：${entry.content.key}`);
+      const kindValue = resultSet.getString(resultSet.getColumnIndex('content_kind'));
+      const kind = parseLibraryContentKind(kindValue);
+      if (kind === undefined) {
+        return undefined;
       }
-    } catch (error) {
-      throw this.historyError('写入', error);
+      const content = new LibraryContentRef(
+        kind,
+        resultSet.getString(resultSet.getColumnIndex('content_id')),
+        resultSet.getString(resultSet.getColumnIndex('title'))
+      );
+      return new ReadingStateEntry(
+        content,
+        resultSet.getLong(resultSet.getColumnIndex('scroll_offset')),
+        resultSet.getLong(resultSet.getColumnIndex('completed')) > 0,
+        resultSet.getLong(resultSet.getColumnIndex('completed_at')),
+        resultSet.getLong(resultSet.getColumnIndex('updated_at'))
+      );
+    } catch (_error) {
+      return undefined;
     }
   }
+}
 
-  /** 仅在新增记录时维护最近记录上限；已有记录的进度更新不会重复扫描历史表。 */
-  private async pruneNow(): Promise<void> {
-    const store = await this.requireStore();
-    try {
-      await store.executeSql(PRUNE_HISTORY);
-    } catch (error) {
-      // 核心阅读记录已经成功写入；清理失败只影响空间维护，不伪装成保存失败。
-      console.warn(
-        `Prune reading history failed: ${error instanceof Error ? error.message : 'unknown error'}`
-      );
+/**
+ * 阅读历史与永久阅读状态持久化。
+ *
+ * 最近浏览队列维持有界裁剪；已读标记与续读滚动位置独立保存于永久状态表，
+ * 同一内容写入由原生异步锁与数据库事务共同保证一致性。
+ */
+export class ReadingHistoryRepo implements ReadingHistoryRepository {
+  private readonly context: common.UIAbilityContext;
+  private store: relationalStore.RdbStore | undefined = undefined;
+  private initialization: Promise<void> | undefined = undefined;
+  private readonly operationLock: ArkTSUtils.locks.AsyncLock =
+    new ArkTSUtils.locks.AsyncLock();
+  private readonly engine: ReadingHistoryStoreEngine;
+
+  constructor(context: common.UIAbilityContext) {
+    this.context = context;
+    this.engine = new ReadingHistoryStoreEngine(
+      new RdbReadingHistoryStorage((): Promise<relationalStore.RdbStore> => this.requireStore()),
+      READING_HISTORY_LIMIT
+    );
+  }
+
+  /** Opens the feature-owned store; repeated calls share one task. */
+  public initialize(): Promise<void> {
+    if (this.initialization !== undefined) {
+      return this.initialization;
     }
+    this.initialization = this.open(this.context);
+    return this.initialization;
+  }
+
+  /** 按最后阅读时间倒序读取最近浏览快照。 */
+  async list(): Promise<ReadingHistoryEntry[]> {
+    return this.operationLock.lockAsync<ReadingHistoryEntry[]>(
+      (): Promise<ReadingHistoryEntry[]> => this.engine.list(),
+      ArkTSUtils.locks.AsyncLockMode.SHARED
+    );
+  }
+
+  /** 读取不受 500 条裁剪限制的永久阅读状态快照。 */
+  async listStates(): Promise<ReadingStateEntry[]> {
+    return this.operationLock.lockAsync<ReadingStateEntry[]>(
+      (): Promise<ReadingStateEntry[]> => this.engine.listStates(),
+      ArkTSUtils.locks.AsyncLockMode.SHARED
+    );
+  }
+
+  /** 查找条目的最新权威阅读记录（最近队列优先，已裁出则回退到永久状态）。 */
+  async find(contentKey: string): Promise<ReadingHistoryEntry | undefined> {
+    return this.operationLock.lockAsync<ReadingHistoryEntry | undefined>(
+      (): Promise<ReadingHistoryEntry | undefined> => this.engine.find(contentKey),
+      ArkTSUtils.locks.AsyncLockMode.SHARED
+    );
+  }
+
+  /** 记录一次进入文章：从永久状态恢复进度与已读标记，不覆盖已有位置。 */
+  async recordOpened(content: LibraryContentRef): Promise<ReadingHistoryEntry> {
+    let updated: ReadingHistoryEntry | undefined = undefined;
+    await this.enqueueMutation(async (): Promise<void> => {
+      updated = await this.engine.recordOpened(content);
+    });
+    return updated!;
+  }
+
+  /** 更新进度；尚无历史时同时创建记录。 */
+  async updateProgress(content: LibraryContentRef, offset: number): Promise<ReadingHistoryEntry> {
+    let updated: ReadingHistoryEntry | undefined = undefined;
+    await this.enqueueMutation(async (): Promise<void> => {
+      updated = await this.engine.updateProgress(content, offset);
+    });
+    return updated!;
+  }
+
+  async setCompleted(content: LibraryContentRef, completed: boolean): Promise<ReadingHistoryEntry> {
+    let updated: ReadingHistoryEntry | undefined = undefined;
+    await this.enqueueMutation(async (): Promise<void> => {
+      updated = await this.engine.setCompleted(content, completed);
+    });
+    return updated!;
+  }
+
+  /** 旧记录名称补全不能伪造一次新的浏览，因此完整保留三个时间/进度字段。 */
+  async updateMetadata(content: LibraryContentRef): Promise<ReadingHistoryEntry | undefined> {
+    let updated: ReadingHistoryEntry | undefined = undefined;
+    await this.enqueueMutation(async (): Promise<void> => {
+      updated = await this.engine.updateMetadata(content);
+    });
+    return updated;
   }
 
   private enqueueMutation(operation: () => Promise<void>): Promise<void> {
@@ -311,26 +387,28 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         securityLevel: relationalStore.SecurityLevel.S1,
         encrypt: false
       });
-      await store.executeSql(CREATE_TABLE);
+      await store.executeSql(CREATE_HISTORY_TABLE);
       // Existing installs predate the completion annotation.  Duplicate
       // column errors mean the migration already ran and are safe to ignore.
       try {
-        await store.executeSql(ADD_COMPLETED_COLUMN);
+        await store.executeSql(ADD_HISTORY_COMPLETED_COLUMN);
       } catch (error) {
         const message = error instanceof Error ? error.message.toLowerCase() : '';
         if (message.indexOf('duplicate') < 0 && message.indexOf('exists') < 0) {
           console.warn(`Reading history completion migration skipped: ${message}`);
         }
       }
-      await store.executeSql(CREATE_TIME_INDEX);
-      // Complete the canonical-key migration before the repository becomes
-      // visible to ViewModels.  Callers therefore never observe a mixed key
-      // format during the lifetime of this repository.
+      await store.executeSql(CREATE_HISTORY_TIME_INDEX);
+      await store.executeSql(CREATE_STATE_TABLE);
+      await store.executeSql(CREATE_STATE_UPDATED_INDEX);
+      // Canonicalize legacy keys before backfilling the permanent state table
+      // so every migrated row lands directly under `main:<slug>`.
       await this.migrateLegacyContentKeys(store);
+      await store.executeSql(BACKFILL_STATE_FROM_HISTORY);
       this.store = store;
     } catch (error) {
       this.initialization = undefined;
-      throw this.historyError('初始化', error);
+      throw historyError('初始化', error);
     }
   }
 
@@ -367,7 +445,7 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         await this.putMigrationRow(store, mergedRows[index].entry);
       }
       for (let index = 0; index < migrationRows.length; index++) {
-        const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+        const predicates = new relationalStore.RdbPredicates(HISTORY_TABLE_NAME);
         predicates.equalTo('content_key', migrationRows[index].storedKey);
         const deleted = await store.delete(predicates);
         if (deleted < 0) {
@@ -375,14 +453,14 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
         }
       }
     } catch (error) {
-      throw this.historyError('主键迁移', error);
+      throw historyError('主键迁移', error);
     }
   }
 
   private async readHistoryMigrationRows(
     store: relationalStore.RdbStore
   ): Promise<StoredHistoryMigrationRow[]> {
-    const predicates = new relationalStore.RdbPredicates(TABLE_NAME);
+    const predicates = new relationalStore.RdbPredicates(HISTORY_TABLE_NAME);
     let resultSet: relationalStore.ResultSet | undefined = undefined;
     const rows: StoredHistoryMigrationRow[] = [];
     try {
@@ -418,15 +496,15 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
               resultSet.getLong(resultSet.getColumnIndex('completed')) > 0
             )
           ));
-        } catch (error) {
+        } catch (_error) {
           // 无法规范化的脏行原样保留，避免迁移造成不可逆删除。
         }
       }
       return rows;
     } catch (error) {
-      throw this.historyError('迁移读取', error);
+      throw historyError('迁移读取', error);
     } finally {
-      this.closeResultSet(resultSet, 'Migration');
+      closeResultSet(resultSet, 'Migration');
     }
   }
 
@@ -471,27 +549,17 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
     store: relationalStore.RdbStore,
     entry: ReadingHistoryEntry
   ): Promise<void> {
-    const values: relationalStore.ValuesBucket = {
-      'content_key': entry.content.key,
-      'content_id': entry.content.id,
-      'title': entry.content.title,
-      'content_kind': entry.content.kind,
-      'opened_at': entry.openedAt,
-      'last_read_at': entry.lastReadAt,
-      'scroll_offset': entry.scrollOffset,
-      'completed': entry.completed ? 1 : 0
-    };
     try {
       const rowId = await store.insert(
-        TABLE_NAME,
-        values,
+        HISTORY_TABLE_NAME,
+        historyValuesFor(entry),
         relationalStore.ConflictResolution.ON_CONFLICT_REPLACE
       );
       if (rowId < 0) {
         throw new Error(`写入统一阅读主键失败：${entry.content.key}`);
       }
     } catch (error) {
-      throw this.historyError('迁移写入', error);
+      throw historyError('迁移写入', error);
     }
   }
 
@@ -502,20 +570,46 @@ export class ReadingHistoryRepo implements ReadingHistoryRepository {
     }
     return this.store;
   }
+}
 
-  private closeResultSet(resultSet: relationalStore.ResultSet | undefined, operation: string): void {
-    try {
-      resultSet?.close();
-    } catch (error) {
-      console.warn(
-        `Close reading history ${operation} result set failed: ` +
-        `${error instanceof Error ? error.message : 'unknown error'}`
-      );
-    }
-  }
+function historyValuesFor(entry: ReadingHistoryEntry): relationalStore.ValuesBucket {
+  return {
+    'content_key': entry.content.key,
+    'content_id': entry.content.id,
+    'title': entry.content.title,
+    'content_kind': entry.content.kind,
+    'opened_at': entry.openedAt,
+    'last_read_at': entry.lastReadAt,
+    'scroll_offset': entry.scrollOffset,
+    'completed': entry.completed ? 1 : 0
+  };
+}
 
-  private historyError(operation: string, error: Object): Error {
-    const message = error instanceof Error ? error.message : '未知数据库错误';
-    return new Error(`阅读历史${operation}失败：${message}`);
+function stateValuesFor(state: ReadingStateEntry): relationalStore.ValuesBucket {
+  return {
+    'content_key': state.content.key,
+    'content_id': state.content.id,
+    'title': state.content.title,
+    'content_kind': state.content.kind,
+    'scroll_offset': state.scrollOffset,
+    'completed': state.completed ? 1 : 0,
+    'completed_at': state.completedAt,
+    'updated_at': state.updatedAt
+  };
+}
+
+function closeResultSet(resultSet: relationalStore.ResultSet | undefined, operation: string): void {
+  try {
+    resultSet?.close();
+  } catch (error) {
+    console.warn(
+      `Close reading history ${operation} result set failed: ` +
+      `${error instanceof Error ? error.message : 'unknown error'}`
+    );
   }
+}
+
+function historyError(operation: string, error: Object): Error {
+  const message = error instanceof Error ? error.message : '未知数据库错误';
+  return new Error(`阅读历史${operation}失败：${message}`);
 }

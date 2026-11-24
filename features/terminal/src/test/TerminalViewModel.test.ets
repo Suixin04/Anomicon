@@ -71,14 +71,19 @@ class InMemoryFavorites implements TerminalFavoritesPort {
 
 class InMemoryReadingHistory implements TerminalReadingHistoryPort {
   items: ReadingHistoryEntry[];
+  resumableItems: ReadingHistoryEntry[] | undefined;
   loading: boolean = false;
   error: string = '';
   initialized: boolean = true;
   readonly metadataWrites: LibraryContentRef[] = [];
   private readonly listeners: TerminalViewModelListener[] = [];
 
-  constructor(items: ReadingHistoryEntry[]) {
+  constructor(
+    items: ReadingHistoryEntry[],
+    resumableItems: ReadingHistoryEntry[] | undefined = undefined
+  ) {
     this.items = items;
+    this.resumableItems = resumableItems;
   }
 
   subscribe(listener: TerminalViewModelListener): () => void {
@@ -110,10 +115,25 @@ class InMemoryReadingHistory implements TerminalReadingHistoryPort {
         content,
         entry.openedAt,
         entry.lastReadAt,
-        entry.scrollOffset
+        entry.scrollOffset,
+        entry.completed
       ) : entry);
     }
     this.items = updated;
+    if (this.resumableItems !== undefined) {
+      const updatedResumable: ReadingHistoryEntry[] = [];
+      for (let index = 0; index < this.resumableItems.length; index++) {
+        const entry = this.resumableItems[index];
+        updatedResumable.push(entry.content.key === content.key ? new ReadingHistoryEntry(
+          content,
+          entry.openedAt,
+          entry.lastReadAt,
+          entry.scrollOffset,
+          entry.completed
+        ) : entry);
+      }
+      this.resumableItems = updatedResumable;
+    }
     this.emit();
     return Promise.resolve();
   }
@@ -288,6 +308,47 @@ export default function terminalViewModelTest(): void {
       expect(fixture.favorites.subscriberCount()).assertEqual(0);
       expect(fixture.history.subscriberCount()).assertEqual(0);
       expect(fixture.research.subscriberCount()).assertEqual(0);
+    });
+
+    it('surfaces pruned permanent resumable entries and enriches their placeholder titles', 0, async () => {
+      const prunedResumeContent = createLibraryContentRef(
+        LibraryContentKind.SCP,
+        'SCP-173',
+        'scp-173'
+      );
+      const recentContent = createLibraryContentRef(
+        LibraryContentKind.SCP,
+        'SCP-049',
+        '疫医'
+      );
+      const history = new InMemoryReadingHistory(
+        [new ReadingHistoryEntry(recentContent, 200, 400, 0, false)],
+        [new ReadingHistoryEntry(prunedResumeContent, 100, 300, 420, true)]
+      );
+      const resolver = new ControlledTitleResolver();
+      const viewModel = new TerminalViewModel(
+        new InMemoryFavorites([]),
+        history,
+        new InMemoryResearchProfile(emptyResearchProgress()),
+        (ids: string[]): Promise<Map<string, string>> => resolver.resolve(ids)
+      );
+
+      viewModel.activate();
+      await drainMicrotasks();
+
+      expect(viewModel.resumeEntries.length).assertEqual(1);
+      expect(viewModel.resumeEntries[0].content.key).assertEqual('main:scp-173');
+      expect(viewModel.resumeEntries[0].scrollOffset).assertEqual(420);
+      expect(viewModel.resumeEntries[0].completed).assertTrue();
+      expect(viewModel.recentEntries.length).assertEqual(1);
+      expect(resolver.requests.length).assertEqual(1);
+      expect(resolver.requests[0][0]).assertEqual('scp-173');
+
+      resolver.succeed('scp-173', '雕像');
+      await drainMicrotasks();
+
+      expect(viewModel.resumeEntries[0].content.title).assertEqual('雕像');
+      viewModel.dispose();
     });
   });
 

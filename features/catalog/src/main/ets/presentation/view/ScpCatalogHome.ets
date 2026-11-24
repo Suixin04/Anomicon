@@ -373,7 +373,7 @@ export struct ScpCatalogHome {
                         resolveLocalPreviewSource: this.resolveLocalPreviewSource,
                         refreshToken: this.previewReloadToken,
                         show3DModel: this.has3DModel(row.item.itemId),
-                        readCompleted: this.isReadCompleted(row.item.itemId),
+                        readCompleted: this.completionRevision >= 0 && this.isReadCompleted(row.item.itemId),
                         onOpen: (itemId: string, name: string) => this.onOpenArticle(itemId, name),
                         onPreviewLoaded: (loaded: ScpCatalogEntry, info: CatalogPreview) =>
                           this.onPreviewLoaded(loaded, info)

@@ -215,7 +215,7 @@ export struct TaleList {
           .fontColor($r('sys.color.font_tertiary'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        if (this.isReadCompleted(row.item.id)) {
+        if (this.completionRevision >= 0 && this.isReadCompleted(row.item.id)) {
           Text('✓ 已读完')
             .fontSize(AppTypography.CAPTION_M)
             .fontColor('#3C7A57')

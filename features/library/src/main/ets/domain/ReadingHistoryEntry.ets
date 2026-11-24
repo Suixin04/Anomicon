@@ -39,3 +39,33 @@ export function normalizeReadingScrollOffset(offset: number): number {
   }
   return Math.floor(offset);
 }
+
+/**
+ * 永久阅读状态快照，独立于最近浏览队列长度上限保留。
+ */
+export class ReadingStateEntry {
+  readonly content: LibraryContentRef;
+  readonly scrollOffset: number;
+  readonly completed: boolean;
+  readonly completedAt: number;
+  readonly updatedAt: number;
+
+  constructor(
+    content: LibraryContentRef,
+    scrollOffset: number,
+    completed: boolean = false,
+    completedAt: number = 0,
+    updatedAt: number = 0
+  ) {
+    this.content = content;
+    this.scrollOffset = normalizeReadingScrollOffset(scrollOffset);
+    this.completed = completed === true;
+    this.completedAt = this.completed && Number.isFinite(completedAt) && completedAt > 0
+      ? Math.floor(completedAt) : 0;
+    this.updatedAt = Number.isFinite(updatedAt) && updatedAt > 0 ? Math.floor(updatedAt) : 0;
+  }
+}
+
+export function hasPermanentReadingState(scrollOffset: number, completed: boolean): boolean {
+  return normalizeReadingScrollOffset(scrollOffset) > 0 || completed === true;
+}

@@ -66,6 +66,10 @@ export class TerminalReadingHistoryAdapter implements TerminalReadingHistoryPort
     return this.state.items;
   }
 
+  get resumableItems(): ReadingHistoryEntry[] {
+    return this.state.resumableItems;
+  }
+
   get loading(): boolean {
     return this.state.loading;
   }

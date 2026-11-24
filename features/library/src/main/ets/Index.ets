@@ -11,7 +11,11 @@ export {
 export { FavoriteRepository, ReadingHistoryRepository } from './domain/LibraryRepositories';
 export { LibraryFeatureGraph } from './domain/LibraryFeaturePorts';
 export { createLibraryFeatureGraph } from './composition/LibraryFeatureFactory';
-export { ReadingHistoryEntry } from './domain/ReadingHistoryEntry';
+export {
+  READING_HISTORY_LIMIT,
+  ReadingHistoryEntry,
+  ReadingStateEntry
+} from './domain/ReadingHistoryEntry';
 export {
   RESEARCH_DAILY_CAP_MINUTES,
   ResearchDailyProgress,

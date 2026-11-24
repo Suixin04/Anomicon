@@ -1,5 +1,5 @@
 import { LibraryContentRef, LibraryFavorite } from './LibraryContentRef';
-import { ReadingHistoryEntry } from './ReadingHistoryEntry';
+import { ReadingHistoryEntry, ReadingStateEntry } from './ReadingHistoryEntry';
 
 /** 收藏数据端口。展示层只依赖这一组业务动作。 */
 export interface FavoriteRepository {
@@ -11,6 +11,8 @@ export interface FavoriteRepository {
 /** 阅读历史数据端口。数据库表、迁移与查询细节均位于 data 层。 */
 export interface ReadingHistoryRepository {
   list(): Promise<ReadingHistoryEntry[]>;
+  listStates?(): Promise<ReadingStateEntry[]>;
+  find?(contentKey: string): Promise<ReadingHistoryEntry | undefined>;
   recordOpened(content: LibraryContentRef): Promise<ReadingHistoryEntry>;
   updateProgress(content: LibraryContentRef, offset: number): Promise<ReadingHistoryEntry>;
   /** Toggle the reader's explicit completed annotation. */

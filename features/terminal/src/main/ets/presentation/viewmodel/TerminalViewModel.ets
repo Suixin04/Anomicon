@@ -35,6 +35,7 @@ export interface TerminalFavoritesPort {
 /** Terminal 只读取历史投影，并通过窄命令补全已有条目的标题。 */
 export interface TerminalReadingHistoryPort {
   readonly items: ReadingHistoryEntry[];
+  readonly resumableItems?: ReadingHistoryEntry[];
   readonly loading: boolean;
   readonly error: string;
   readonly initialized: boolean;
@@ -273,7 +274,9 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.historyLoading = this.history.loading;
     this.historyError = this.history.error;
     this.historyInitialized = this.history.initialized;
-    const resumable = this.history.items.filter((entry: ReadingHistoryEntry): boolean => entry.scrollOffset > 0);
+    const resumable = this.history.resumableItems !== undefined ?
+      this.history.resumableItems :
+      this.history.items.filter((entry: ReadingHistoryEntry): boolean => entry.scrollOffset > 0);
     this.resumeEntries = resumable.slice(0, 1);
     const resumeKey = this.resumeEntries.length > 0 ? this.resumeEntries[0].content.key : '';
     this.recentEntries = this.history.items
@@ -310,9 +313,23 @@ export class TerminalViewModel implements ViewModelLifecycle {
     }
     this.enrichmentGeneration = generation;
     try {
-      const candidates = this.history.items.filter((entry: ReadingHistoryEntry): boolean =>
-        entry.content.kind === LibraryContentKind.SCP &&
-        isLibraryContentTitlePlaceholder(entry.content.id, entry.content.title));
+      const candidates: ReadingHistoryEntry[] = [];
+      const seenKeys: Set<string> = new Set();
+      const collectCandidates = (entries: ReadingHistoryEntry[]): void => {
+        for (let index = 0; index < entries.length; index++) {
+          const entry = entries[index];
+          if (seenKeys.has(entry.content.key)) {
+            continue;
+          }
+          if (entry.content.kind === LibraryContentKind.SCP &&
+            isLibraryContentTitlePlaceholder(entry.content.id, entry.content.title)) {
+            seenKeys.add(entry.content.key);
+            candidates.push(entry);
+          }
+        }
+      };
+      collectCandidates(this.resumeEntries);
+      collectCandidates(this.history.items);
       const ids: string[] = [];
       const seenIds: Set<string> = new Set();
       for (let index = 0; index < candidates.length; index++) {
