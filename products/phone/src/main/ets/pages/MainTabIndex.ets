@@ -38,11 +38,13 @@ import {
   TaleListViewModel
 } from 'catalog';
 import {
+  FoundationHome,
   TerminalHome,
   TerminalViewModel
 } from 'terminal';
 import {
   ANTIMEMETICS_HUB_ID,
+  FoundationAssessmentViewModel,
   LibraryContentKind,
   LibraryContentRef,
   StorySeriesProgressSnapshot,
@@ -56,6 +58,7 @@ import {
   AppRoutes,
   ExploreCollectionMode,
   ExploreCollectionRouteParams,
+  FoundationAssessmentRouteParams,
   LibraryCollectionMode,
   LibraryCollectionRouteParams,
   ScpArticleRouteParams
@@ -101,6 +104,7 @@ export struct MainTabIndex {
   @Require @Param terminalViewModel: TerminalViewModel;
   @Require @Param readingHistory: ReadingHistoryViewModel;
   @Require @Param storySeries: StorySeriesViewModel;
+  @Require @Param foundationAssessments: FoundationAssessmentViewModel;
   @Require @Param exploreSkeletonAnimated: boolean;
   @Event onExploreHeroAnchorChange: (anchor: ExploreHeroAnchor) => void;
   @Param pageStack: NavPathStack = new NavPathStack();
@@ -127,6 +131,7 @@ export struct MainTabIndex {
 
   private tabsController: HdsTabsController = new HdsTabsController();
   private scrollers: Scroller[] = [
+    new Scroller(),
     new Scroller(),
     new Scroller(),
     new Scroller(),
@@ -519,6 +524,17 @@ export struct MainTabIndex {
     );
   }
 
+  private openAssessment(examId: string): void {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    const params: FoundationAssessmentRouteParams = { examId: examId };
+    AppNavigationCoordinator.openFromMaster(
+      this.pageStack,
+      AppRoutes.ASSESSMENT,
+      params,
+      this.shouldUseSplitMode()
+    );
+  }
+
   private createTabBarStyle(item: TabItem): BottomTabBarStyle {
     const icon: TabBarSymbol = {
       normal: new SymbolGlyphModifier(item.iconNormal),
@@ -631,6 +647,15 @@ export struct MainTabIndex {
                   isReadCompleted: (itemId: string): boolean => this.isReadCompleted(itemId),
                   completionRevision: this.completionRevision
                 })
+              } else if (item.id === HomeTabId.FOUNDATION) {
+                FoundationHome({
+                  scroller: this.scrollers[item.id],
+                  assessments: this.foundationAssessments,
+                  settings: this.settings,
+                  active: this.tabsViewModel.currentIndex === HomeTabId.FOUNDATION,
+                  onOpenContent: (content: LibraryContentRef) => this.openContent(content),
+                  onStartAssessment: (examId: string) => this.openAssessment(examId)
+                })
               } else if (item.id === HomeTabId.STORY) {
                 TaleList({
                   scroller: this.scrollers[item.id],
@@ -664,6 +689,7 @@ export struct MainTabIndex {
                   onOpenSeriesHub: (hubId: string, title: string) => this.openContent(
                     createLibraryContentRef(LibraryContentKind.TALE, hubId, title)
                   ),
+                  onOpenAssessment: (examId: string) => this.openAssessment(examId),
                   onOpenCollection: (mode: LibraryCollectionMode) => this.openLibraryCollection(mode),
                   onOpenArchive3DGallery: () => this.openArchive3DGallery(),
                   onOpenSettings: () => this.openSettings()
@@ -686,8 +712,8 @@ export struct MainTabIndex {
       .animationDuration(0)
       .barFloatingStyle({
         barWidth: this.isSplitNavBarVisible() ?
-          { smallWidth: 280, mediumWidth: 312, largeWidth: 320 } :
-          { smallWidth: 280, mediumWidth: 360, largeWidth: 420 },
+          { smallWidth: 300, mediumWidth: 320, largeWidth: 332 } :
+          { smallWidth: 316, mediumWidth: 396, largeWidth: 460 },
         barBottomMargin: 28,
         gradientMask: {
           maskColor: $r('sys.color.background_secondary'),

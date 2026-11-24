@@ -1,6 +1,8 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ViewModelLoadState } from 'anomiconbasic';
 import {
+  FoundationAssessmentIcon,
+  FoundationAssessmentSealSummary,
   LibraryContentKind,
   LibraryContentRef,
   LibraryFavorite,
@@ -17,6 +19,7 @@ import {
   FOUNDATION_KNOWLEDGE_SECTIONS,
   FOUNDATION_MANUAL_GRID_ITEMS,
   FoundationKnowledgeItem,
+  TerminalAssessmentsPort,
   TerminalEnrolledSeriesCard,
   TerminalFavoritesPort,
   TerminalReadingHistoryPort,
@@ -27,6 +30,41 @@ import {
   buildRecentSevenDayActivity,
   formatTodayQuotaLabel
 } from '../main/ets/Index';
+
+class InMemoryAssessmentsPort implements TerminalAssessmentsPort {
+  seals: FoundationAssessmentSealSummary[];
+  private readonly listeners: TerminalViewModelListener[];
+
+  constructor(
+    seals: FoundationAssessmentSealSummary[],
+    listeners: TerminalViewModelListener[]
+  ) {
+    this.seals = seals;
+    this.listeners = listeners;
+  }
+
+  sealSummaries(): FoundationAssessmentSealSummary[] {
+    return this.seals;
+  }
+
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  reload(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  subscribe(listener: TerminalViewModelListener): () => void {
+    this.listeners.push(listener);
+    return (): void => {
+      const idx = this.listeners.indexOf(listener);
+      if (idx >= 0) {
+        this.listeners.splice(idx, 1);
+      }
+    };
+  }
+}
 
 class InMemoryStorySeriesPort implements TerminalStorySeriesPort {
   cards: TerminalEnrolledSeriesCard[];
@@ -473,6 +511,67 @@ export default function terminalViewModelTest(): void {
       seriesListeners[0]();
       expect(viewModel.enrolledSeries[0].nextEntryLabel).assertEqual('下一篇：谈谈055');
       expect(viewModel.enrolledSeries[0].mainlineCompleted).assertEqual(1);
+      viewModel.dispose();
+    });
+
+    it('projects and reactively updates foundation assessment seals', 0, async () => {
+      const sealListeners: TerminalViewModelListener[] = [];
+      const initialSeals: FoundationAssessmentSealSummary[] = [
+        new FoundationAssessmentSealSummary(
+          'cert-01',
+          'CERT-01',
+          '锁盒定级',
+          FoundationAssessmentIcon.LOCKBOX,
+          false,
+          15,
+          0,
+          5
+        ),
+        new FoundationAssessmentSealSummary(
+          'cert-03',
+          'CERT-03',
+          'CRV 抗性',
+          FoundationAssessmentIcon.CRV,
+          false,
+          25,
+          0,
+          5
+        )
+      ];
+      const assessmentsPort = new InMemoryAssessmentsPort(initialSeals, sealListeners);
+      const viewModel = new TerminalViewModel(
+        new InMemoryFavorites([]),
+        new InMemoryReadingHistory([]),
+        new InMemoryResearchProfile(emptyResearchProgress()),
+        undefined,
+        undefined,
+        undefined,
+        assessmentsPort
+      );
+
+      viewModel.activate();
+      await drainMicrotasks();
+
+      expect(viewModel.assessmentSeals.length).assertEqual(2);
+      expect(viewModel.assessmentSeals[1].passed).assertFalse();
+      expect(sealListeners.length).assertEqual(1);
+
+      assessmentsPort.seals = [
+        initialSeals[0],
+        new FoundationAssessmentSealSummary(
+          'cert-03',
+          'CERT-03',
+          'CRV 抗性',
+          FoundationAssessmentIcon.CRV,
+          true,
+          25,
+          5,
+          5
+        )
+      ];
+      sealListeners[0]();
+      expect(viewModel.assessmentSeals[1].passed).assertTrue();
+      expect(viewModel.assessmentSeals[1].bestScore).assertEqual(5);
       viewModel.dispose();
     });
   });

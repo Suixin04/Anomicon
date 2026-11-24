@@ -249,6 +249,7 @@ export class ResearchProgress {
   readonly nextLevelThreshold: number;
   readonly levelExperience: number;
   readonly levelExperienceTarget: number;
+  readonly bonusExperience: number;
   readonly daily: ResearchDailyProgress[];
   readonly contents: ResearchContentProgress[];
 
@@ -259,7 +260,8 @@ export class ResearchProgress {
     researchedContentCount: number,
     experience: number,
     daily: ResearchDailyProgress[],
-    contents: ResearchContentProgress[]
+    contents: ResearchContentProgress[],
+    bonusExperience: number = 0
   ) {
     this.rawActiveMs = normalizeResearchDuration(rawActiveMs);
     this.creditedActiveMs = normalizeResearchDuration(creditedActiveMs);
@@ -274,6 +276,7 @@ export class ResearchProgress {
     this.levelExperience = this.experience - this.levelThreshold;
     this.levelExperienceTarget = this.level >= RESEARCH_MAX_LEVEL ?
       0 : this.nextLevelThreshold - this.levelThreshold;
+    this.bonusExperience = normalizeResearchDuration(bonusExperience);
     this.daily = daily;
     this.contents = contents;
   }
@@ -594,7 +597,8 @@ export function researchRankTitleForLevel(level: number): ResearchRankTitle {
 export function deriveResearchProgress(
   segments: ResearchActivitySegment[],
   now: number,
-  timeZoneOffsetMinutes: number
+  timeZoneOffsetMinutes: number,
+  bonusExperience: number = 0
 ): ResearchProgress {
   let rawActiveMs = 0;
   for (let index = 0; index < segments.length; index++) {
@@ -645,8 +649,10 @@ export function deriveResearchProgress(
       researchedContentCount++;
     }
   }
+  const normalizedBonus = normalizeResearchDuration(bonusExperience);
   const experience = Math.floor(creditedActiveMs / RESEARCH_MINUTE_MS) +
-    researchedContentCount * RESEARCHED_CONTENT_REWARD;
+    researchedContentCount * RESEARCHED_CONTENT_REWARD +
+    normalizedBonus;
   const todayKey = researchDayKeyAt(now, timeZoneOffsetMinutes);
   const todayActiveMs = dailyMap.get(todayKey) ?? 0;
   return new ResearchProgress(
@@ -656,7 +662,8 @@ export function deriveResearchProgress(
     researchedContentCount,
     experience,
     daily,
-    contents
+    contents,
+    normalizedBonus
   );
 }
 

@@ -1,6 +1,7 @@
 import { FavoriteRepository, ReadingHistoryRepository } from './LibraryRepositories';
 import { ResearchActivityRepo } from './ResearchActivityRepo';
 import { StorySeriesRepository } from './StorySeriesContracts';
+import { FoundationAssessmentRepository } from './FoundationAssessmentContracts';
 
 /**
  * Product-facing library dependency graph.
@@ -13,6 +14,7 @@ export interface LibraryFeatureGraph {
   readonly readingHistoryRepository: ReadingHistoryRepository;
   readonly researchActivityRepository: ResearchActivityRepo;
   readonly storySeriesRepository: StorySeriesRepository;
+  readonly foundationAssessmentRepository: FoundationAssessmentRepository;
   /** Opens/migrates library persistence once. Safe to call repeatedly. */
   initialize(): Promise<void>;
 }

@@ -4,11 +4,13 @@ import {
 import {
   LibraryCollectionMode,
   LibraryContentRef,
+  normalizeAssessmentExamId,
   normalizeSeriesPageId
 } from 'library';
 import { normalizeArticleAnchor } from 'article';
 import {
   ExploreCollectionRouteParams,
+  FoundationAssessmentRouteParams,
   LibraryCollectionRouteParams,
   ScpArticleRouteParams,
   Scp3DArchiveRouteParams,
@@ -108,4 +110,17 @@ export function parseScp3DArchiveRoute(
     return undefined;
   }
   return { content: content };
+}
+
+export function parseAssessmentRouteExamId(
+  param: Object | null | undefined
+): string {
+  if (param === undefined || param === null || typeof param !== 'object') {
+    return '';
+  }
+  const candidate = param as FoundationAssessmentRouteParams;
+  if (typeof candidate.examId !== 'string') {
+    return '';
+  }
+  return normalizeAssessmentExamId(candidate.examId);
 }

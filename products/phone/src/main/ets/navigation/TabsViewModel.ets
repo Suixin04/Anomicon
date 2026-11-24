@@ -35,6 +35,13 @@ export class TabsViewModel {
         $r('sys.symbol.list_book_fill')
       ),
       new TabItem(
+        HomeTabId.FOUNDATION,
+        '基金会',
+        undefined,
+        $r('sys.symbol.lock_shield'),
+        $r('sys.symbol.lock_shield_fill')
+      ),
+      new TabItem(
         HomeTabId.STORY,
         '故事',
         undefined,

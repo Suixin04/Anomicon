@@ -10,26 +10,21 @@ import {
   TerminalReadingHistoryList
 } from './TerminalLibraryComponents';
 import {
-  FOUNDATION_FEATURED_KNOWLEDGE,
-  FOUNDATION_MANUAL_GRID_ITEMS,
-  FoundationKnowledgeIcon,
-  FoundationKnowledgeItem
-} from '../model/FoundationKnowledge';
-import { LibraryContentRef, LibraryFavorite } from 'library';
+  FoundationAssessmentSealSummary,
+  LibraryContentRef,
+  LibraryFavorite
+} from 'library';
 import { ReadingHistoryEntry } from 'library';
 import { ResearchProgress } from 'library';
 import { LibraryCollectionMode } from 'library';
 import {
   adaptivePageMarginForWidth,
   AppTypography,
-  CARD_PRESS_MODIFIER,
   materialCardBorderColor,
   materialCardSurfaceColor,
   pageContentTop,
   PHONE_PAGE_MARGIN,
-  pressAnimation,
-  READING_CONTENT_MAX_WIDTH,
-  WIDE_CONTENT_MAX_WIDTH
+  READING_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 import {
   TerminalEnrolledSeriesCard,
@@ -39,105 +34,11 @@ import {
 import { SettingsViewModel } from 'settings';
 
 const SECTION_SPACE: number = 20;
-const TERMINAL_TWO_COLUMN_MIN_WIDTH: number = 680;
-const TERMINAL_WIDE_TWO_COLUMN_MIN_WIDTH: number = 840;
-
-function resolveKnowledgeSymbol(icon: FoundationKnowledgeIcon): Resource {
-  switch (icon) {
-    case FoundationKnowledgeIcon.CLASSIFICATION:
-      return $r('sys.symbol.square_fill_grid_2x2');
-    case FoundationKnowledgeIcon.ESOTERIC_CLASSIFICATION:
-      return $r('sys.symbol.exclamationmark_shield_fill');
-    case FoundationKnowledgeIcon.CLEARANCE:
-      return $r('sys.symbol.person_text_rectangle_fill');
-    case FoundationKnowledgeIcon.TASK_FORCE:
-      return $r('sys.symbol.bolt_shield_fill');
-    case FoundationKnowledgeIcon.DEPARTMENT:
-      return $r('sys.symbol.rectangle_4_group_fill');
-    case FoundationKnowledgeIcon.FACILITY:
-      return $r('sys.symbol.local_and_rectangle_fill');
-    case FoundationKnowledgeIcon.GROUP:
-      return $r('sys.symbol.person_3_fill');
-    case FoundationKnowledgeIcon.HISTORY:
-      return $r('sys.symbol.clock_arrow_2_circlepath_fill');
-    default:
-      return $r('sys.symbol.lock_shield_fill');
-  }
-}
-
-/** B3A 双列手册专题瓷砖。 */
-@ComponentV2
-struct FoundationKnowledgeTile {
-  @Require @Param item: FoundationKnowledgeItem;
-  @Require @Param materialEnabled: boolean;
-  @Event onOpenContent: (content: LibraryContentRef) => void;
-
-  build() {
-    Column({ space: 10 }) {
-      Row({ space: 6 }) {
-        Column() {
-          SymbolGlyph(resolveKnowledgeSymbol(this.item.icon))
-            .fontSize(17)
-            .fontColor([$r('sys.color.icon_emphasize')])
-        }
-        .width(34)
-        .height(34)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor($r('sys.color.comp_background_tertiary'))
-        .borderRadius(10)
-
-        Blank()
-
-        if (this.item.categoryLabel.length > 0) {
-          Text(this.item.categoryLabel)
-            .fontSize(AppTypography.CAPTION_M)
-            .fontColor($r('sys.color.font_tertiary'))
-            .maxLines(1)
-        }
-      }
-      .width('100%')
-      .alignItems(VerticalAlign.Center)
-
-      Column({ space: 3 }) {
-        Text(this.item.title)
-          .fontSize(AppTypography.BODY_M)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font'))
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-        Text(this.item.subtitle)
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_secondary'))
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-          .width('100%')
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-    }
-    .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation(pressAnimation())
-    .width('100%')
-    .constraintSize({ minHeight: 112 })
-    .padding(13)
-    .alignItems(HorizontalAlign.Start)
-    .justifyContent(FlexAlign.SpaceBetween)
-    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
-    .border(this.materialEnabled ?
-      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
-    .borderRadius(16)
-    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
-    .onClick(() => this.onOpenContent(this.item.content))
-    .accessibilityText(`打开基金会手册，${this.item.title}`)
-  }
-}
 
 /**
- * 终端首页：紧凑研究员档案工牌、优先级重排的个人资料库（B2）与导读+双列网格基金会手册（B3A）。
+ * 终端首页：紧凑研究员档案工牌（含资质印章）与专注本地阅读资产的个人资料库。
  *
- * 页面只消费应用级共享状态，不直接访问数据库；收藏与历史写入成功后，
- * ViewModel 会整体替换数组，此处以稳定的 content.key 更新有限预览。
+ * 基金会设定手册与资质考核已独立承接于「基金会」中心页签。
  */
 @ComponentV2
 export struct TerminalHome {
@@ -149,12 +50,11 @@ export struct TerminalHome {
     (_seriesId: string, _content: LibraryContentRef): void => {};
   @Event onOpenSeriesHub: (hubId: string, title: string) => void =
     (_hubId: string, _title: string): void => {};
+  @Event onOpenAssessment: (examId: string) => void = (_examId: string): void => {};
   @Event onOpenArchive3DGallery: () => void = () => {};
   @Event onOpenSettings: () => void = () => {};
   @Require @Param viewModel: TerminalViewModel;
   @Require @Param settings: SettingsViewModel;
-  @Local private sideBySide: boolean = false;
-  @Local private wideTwoColumn: boolean = false;
   @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
 
   private isImmersiveMaterialEnabled(): boolean {
@@ -197,6 +97,11 @@ export struct TerminalHome {
   @Computed
   get enrolledSeries(): TerminalEnrolledSeriesCard[] {
     return this.viewModel.enrolledSeries;
+  }
+
+  @Computed
+  get assessmentSeals(): FoundationAssessmentSealSummary[] {
+    return this.viewModel.assessmentSeals;
   }
 
   @Computed
@@ -384,12 +289,8 @@ export struct TerminalHome {
     .borderRadius(12)
   }
 
-  private columnHalfGutter(): number {
-    return this.wideTwoColumn ? 14 : 10;
-  }
-
   private leftPaneRightMargin(): number {
-    return this.sideBySide ? this.columnHalfGutter() : this.horizontalMargin;
+    return this.horizontalMargin;
   }
 
   @Builder
@@ -510,7 +411,7 @@ export struct TerminalHome {
           }
           .width('100%')
           .scrollable(ScrollDirection.Horizontal)
-          .scrollBar(this.sideBySide ? BarState.Auto : BarState.Off)
+          .scrollBar(BarState.Off)
           .edgeEffect(EdgeEffect.Spring)
           if (this.favoriteError.length > 0) {
             Column() {
@@ -613,94 +514,6 @@ export struct TerminalHome {
     .alignItems(HorizontalAlign.Start)
   }
 
-  @Builder
-  private featuredKnowledgeCard(item: FoundationKnowledgeItem) {
-    Row({ space: 14 }) {
-      Column() {
-        SymbolGlyph(resolveKnowledgeSymbol(item.icon))
-          .fontSize(22)
-          .fontColor([$r('sys.color.icon_emphasize')])
-      }
-      .width(46)
-      .height(46)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor($r('sys.color.comp_background_tertiary'))
-      .borderRadius(14)
-
-      Column({ space: 4 }) {
-        if (item.categoryLabel.length > 0) {
-          Text(item.categoryLabel)
-            .fontSize(AppTypography.CAPTION_M)
-            .fontWeight(FontWeight.Medium)
-            .fontColor($r('sys.color.font_emphasize'))
-            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-            .backgroundColor($r('sys.color.comp_background_tertiary'))
-            .borderRadius(9)
-        }
-        Text(item.title)
-          .fontSize(AppTypography.SUBTITLE_M)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(item.subtitle)
-          .fontSize(AppTypography.CAPTION_L)
-          .fontColor($r('sys.color.font_secondary'))
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-
-      Column() {
-        SymbolGlyph($r('sys.symbol.chevron_right'))
-          .fontSize(13)
-          .fontColor([$r('sys.color.icon_emphasize')])
-      }
-      .width(32)
-      .height(32)
-      .justifyContent(FlexAlign.Center)
-      .backgroundColor($r('sys.color.comp_background_tertiary'))
-      .borderRadius(16)
-    }
-    .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation(pressAnimation())
-    .width('100%')
-    .padding(15)
-    .alignItems(VerticalAlign.Center)
-    .backgroundColor(materialCardSurfaceColor(this.isImmersiveMaterialEnabled()))
-    .border(this.isImmersiveMaterialEnabled() ?
-      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
-    .borderRadius(18)
-    .backgroundBlurStyle(this.isImmersiveMaterialEnabled() ? BlurStyle.COMPONENT_REGULAR : undefined)
-    .onClick(() => this.onOpenContent(item.content))
-    .accessibilityText(`打开基金会手册导读，${item.title}`)
-  }
-
-  @Builder
-  private foundationManual() {
-    Column({ space: 14 }) {
-      this.sectionHeader('基金会手册', '核心设定、分级制度与组织档案')
-
-      this.featuredKnowledgeCard(FOUNDATION_FEATURED_KNOWLEDGE)
-
-      GridRow({ columns: 2, gutter: { x: 10, y: 10 } }) {
-        ForEach(FOUNDATION_MANUAL_GRID_ITEMS, (item: FoundationKnowledgeItem) => {
-          GridCol({ span: 1 }) {
-            FoundationKnowledgeTile({
-              item: item,
-              materialEnabled: this.isImmersiveMaterialEnabled(),
-              onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content)
-            })
-          }
-        }, (item: FoundationKnowledgeItem) => item.key)
-      }
-      .width('100%')
-    }
-    .width('100%')
-    .alignItems(HorizontalAlign.Start)
-  }
-
   build() {
     Scroll(this.scroller) {
       Column({ space: SECTION_SPACE }) {
@@ -720,6 +533,7 @@ export struct TerminalHome {
             historyReady: this.historyReady,
             todayActiveMs: this.researchSnapshot.todayActiveMs,
             dailyProgress: this.researchSnapshot.daily,
+            seals: this.assessmentSeals,
             loading: this.researchLoading ||
               (this.viewModel.loading && !this.researchReady && this.researchError.trim().length === 0),
             error: !this.researchReady && !this.researchLoading ? this.researchError : '',
@@ -727,43 +541,28 @@ export struct TerminalHome {
             materialEnabled: this.isImmersiveMaterialEnabled(),
             onRetry: () => this.retryResearch(),
             onOpenFavorites: () => this.onOpenCollection(LibraryCollectionMode.FAVORITES),
-            onOpenHistory: () => this.onOpenCollection(LibraryCollectionMode.RECENT)
+            onOpenHistory: () => this.onOpenCollection(LibraryCollectionMode.RECENT),
+            onOpenSeal: (examId: string) => this.onOpenAssessment(examId)
           })
         }
         .width('100%')
         .padding({ left: this.horizontalMargin, right: this.horizontalMargin })
 
-        Flex({ direction: this.sideBySide ? FlexDirection.Row : FlexDirection.Column, alignItems: ItemAlign.Start }) {
-          Column() {
-            this.personalLibrary()
-          }
-          .width(this.sideBySide ? (this.wideTwoColumn ? '56%' : '50%') : '100%')
-          .margin({ bottom: this.sideBySide ? 0 : SECTION_SPACE })
-
-          Column() {
-            this.foundationManual()
-          }
-          .width(this.sideBySide ? (this.wideTwoColumn ? '44%' : '50%') : '100%')
-          .padding({
-            left: this.sideBySide ? this.columnHalfGutter() : this.horizontalMargin,
-            right: this.horizontalMargin
-          })
-        }
-        .width('100%')
+        this.personalLibrary()
 
         Blank()
           .width('100%')
           .height(120)
       }
       .width('100%')
-      .constraintSize({ maxWidth: this.sideBySide ? WIDE_CONTENT_MAX_WIDTH : READING_CONTENT_MAX_WIDTH })
+      .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
       .padding({
         top: pageContentTop() + 12,
         bottom: 24
       })
     }
     .scrollable(ScrollDirection.Vertical)
-    .scrollBar(this.sideBySide ? BarState.Auto : BarState.Off)
+    .scrollBar(BarState.Off)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .height('100%')
@@ -771,8 +570,6 @@ export struct TerminalHome {
       const viewportWidth = Number(newArea.width);
       if (Number.isFinite(viewportWidth) && viewportWidth > 0) {
         this.horizontalMargin = adaptivePageMarginForWidth(viewportWidth);
-        this.sideBySide = viewportWidth >= TERMINAL_TWO_COLUMN_MIN_WIDTH;
-        this.wideTwoColumn = viewportWidth >= TERMINAL_WIDE_TWO_COLUMN_MIN_WIDTH;
       }
     })
     .backgroundColor($r('sys.color.background_secondary'))

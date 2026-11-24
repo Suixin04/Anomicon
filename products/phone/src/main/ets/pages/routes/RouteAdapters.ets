@@ -14,6 +14,7 @@ import {
   Scp3DArchiveInstallActions,
   Scp3DArchiveInstallState
 } from '../Scp3DArchiveGalleryPage';
+import { FoundationAssessmentPageBuilder } from '../FoundationAssessmentPage';
 import { AppContainer } from '../../composition/AppContainer';
 import {
   ArchiveModelInstallSnapshot,
@@ -175,5 +176,14 @@ export function Scp3DArchiveGalleryRouteAdapter() {
     undefined,
     new Archive3DInstallActionsAdapter(),
     AppContainer.getInstance().settings()
+  );
+}
+
+@Builder
+export function FoundationAssessmentRouteAdapter() {
+  FoundationAssessmentPageBuilder(
+    AppContainer.getInstance().foundationAssessments(),
+    AppContainer.getInstance().settings(),
+    AppContainer.getInstance().createHapticFeedback()
   );
 }

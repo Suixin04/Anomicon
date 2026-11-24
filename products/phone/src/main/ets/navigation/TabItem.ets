@@ -4,8 +4,9 @@ import { HdsNavigationMenuContentOptions } from '@kit.UIDesignKit';
 export enum HomeTabId {
   EXPLORE = 0,
   CATALOG = 1,
-  STORY = 2,
-  TERMINAL = 3
+  FOUNDATION = 2,
+  STORY = 3,
+  TERMINAL = 4
 }
 
 export class TabItem {

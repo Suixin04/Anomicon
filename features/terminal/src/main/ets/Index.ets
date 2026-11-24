@@ -1,5 +1,7 @@
 /** Public terminal feature surface; persistence remains in the library HAR. */
 export { TerminalHome } from './presentation/view/TerminalHome';
+export { FoundationHome } from './presentation/view/FoundationHome';
+export { FoundationAssessmentView } from './presentation/view/FoundationAssessmentView';
 export {
   TerminalViewModel,
   TerminalTitleResolver,
@@ -10,7 +12,8 @@ export {
   TerminalOfflineArticleSummary,
   TerminalOfflineArticlesPort,
   TerminalEnrolledSeriesCard,
-  TerminalStorySeriesPort
+  TerminalStorySeriesPort,
+  TerminalAssessmentsPort
 } from './presentation/viewmodel/TerminalViewModel';
 export {
   TerminalErrorState,

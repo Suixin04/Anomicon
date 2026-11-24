@@ -37,8 +37,27 @@ export {
   ResearchProfileViewModel,
   ResearchProfileViewModelListener,
   StorySeriesViewModel,
-  StorySeriesViewModelListener
+  StorySeriesViewModelListener,
+  AssessmentBonusXpCallback,
+  AssessmentNowProvider,
+  FoundationAssessmentViewModel,
+  FoundationAssessmentViewModelListener
 } from './presentation/viewmodel/Index';
+export {
+  FoundationAssessmentExam,
+  FoundationAssessmentIcon,
+  FoundationAssessmentQuestion,
+  FoundationAssessmentRecord,
+  FoundationAssessmentRepository,
+  FoundationAssessmentSealSummary,
+  FoundationAssessmentSubmissionResult,
+  normalizeAssessmentExamId
+} from './domain/FoundationAssessmentContracts';
+export {
+  findFoundationAssessmentExam,
+  listFoundationAssessmentExams,
+  totalFoundationAssessmentXp
+} from './domain/FoundationAssessmentCatalog';
 export {
   ANTIMEMETICS_DIVISION_SERIES,
   ANTIMEMETICS_HUB_ID,

@@ -1,4 +1,6 @@
 import {
+  FoundationAssessmentSealSummary,
+  FoundationAssessmentViewModel,
   LibraryContentRef,
   LibraryFavorite,
   ReadingHistoryEntry,
@@ -19,6 +21,7 @@ import {
   ResearchProfileViewModel
 } from 'library';
 import {
+  TerminalAssessmentsPort,
   TerminalEnrolledSeriesCard,
   TerminalFavoritesPort,
   TerminalOfflineArticleSummary,
@@ -196,6 +199,31 @@ export class TerminalStorySeriesAdapter implements TerminalStorySeriesPort {
       mainlineTotal: snapshot.mainlineTotal,
       updatedAt: snapshot.updatedAt
     }));
+  }
+
+  initialize(): Promise<void> {
+    return this.state.initialize();
+  }
+
+  reload(): Promise<void> {
+    return this.state.reload();
+  }
+
+  subscribe(listener: TerminalViewModelListener): () => void {
+    return this.state.subscribe((): void => listener());
+  }
+}
+
+/** Product composition bridge exposing RAISA assessment seals to Terminal. */
+export class TerminalAssessmentsAdapter implements TerminalAssessmentsPort {
+  private readonly state: FoundationAssessmentViewModel;
+
+  constructor(state: FoundationAssessmentViewModel) {
+    this.state = state;
+  }
+
+  sealSummaries(): FoundationAssessmentSealSummary[] {
+    return this.state.sealSummaries();
   }
 
   initialize(): Promise<void> {

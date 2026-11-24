@@ -27,6 +27,7 @@ import {
 } from 'library';
 import { LibraryCollectionVM } from 'library';
 import {
+  FoundationAssessmentViewModel,
   ResearchProfileViewModel,
   StorySeriesViewModel
 } from 'library';
@@ -91,6 +92,7 @@ import {
 } from 'archive3d';
 import { AbilityScopeOwner } from './AbilityScopeOwner';
 import {
+  TerminalAssessmentsAdapter,
   TerminalFavoritesAdapter,
   TerminalOfflineArticlesAdapter,
   TerminalReadingHistoryAdapter,
@@ -114,6 +116,7 @@ const FAVORITES_STORAGE_KEY: string = 'anomicon.library.favorites';
 const READING_HISTORY_STORAGE_KEY: string = 'anomicon.library.readingHistory';
 const RESEARCH_PROFILE_STORAGE_KEY: string = 'anomicon.research.profile';
 const STORY_SERIES_STORAGE_KEY: string = 'anomicon.library.storySeries';
+const FOUNDATION_ASSESSMENT_STORAGE_KEY: string = 'anomicon.library.foundationAssessments';
 
 /**
  * 应用级组合根。具体 Harmony 实现只在这里被组装，页面只取得已装配的展示状态。
@@ -128,6 +131,7 @@ export class AppContainer {
   private readingHistoryState: ReadingHistoryViewModel | undefined = undefined;
   private researchState: ResearchProfileViewModel | undefined = undefined;
   private storySeriesState: StorySeriesViewModel | undefined = undefined;
+  private foundationAssessmentsState: FoundationAssessmentViewModel | undefined = undefined;
   private readingActivityState: ReadingActivityCoord | undefined = undefined;
   private articleGraph: ArticleFeatureGraph | undefined = undefined;
   /** Feature graphs are shared at the adapter/use-case level; screen VMs are factory-owned. */
@@ -275,6 +279,22 @@ export class AppContainer {
         )
       )!;
     }
+
+    if (this.foundationAssessmentsState === undefined) {
+      if (this.libraryGraph === undefined) {
+        throw new Error('Library feature graph is not initialized');
+      }
+      this.foundationAssessmentsState = AppStorageV2.connect(
+        FoundationAssessmentViewModel,
+        FOUNDATION_ASSESSMENT_STORAGE_KEY,
+        () => new FoundationAssessmentViewModel(
+          this.libraryGraph!.foundationAssessmentRepository,
+          async (): Promise<void> => {
+            await this.researchProfile().reload();
+          }
+        )
+      )!;
+    }
     // AppStorageV2 may return an existing shared profile when an ability is
     // recreated in the same process.  The activity coordinator is a separate
     // application service, so ensure it is rebuilt whenever its VM exists but
@@ -378,6 +398,13 @@ export class AppContainer {
       throw new Error('AppContainer must be initialized before loading story series');
     }
     return this.storySeriesState;
+  }
+
+  foundationAssessments(): FoundationAssessmentViewModel {
+    if (this.foundationAssessmentsState === undefined) {
+      throw new Error('AppContainer must be initialized before loading foundation assessments');
+    }
+    return this.foundationAssessmentsState;
   }
 
   readingActivity(): ReadingActivityCoord {
@@ -527,7 +554,8 @@ export class AppContainer {
       new TerminalResearchProfileAdapter(this.researchProfile()),
       (ids: string[]): Promise<Map<string, string>> => titleResolver.resolveMany(ids),
       new TerminalOfflineArticlesAdapter(this.articleGraph),
-      new TerminalStorySeriesAdapter(this.storySeries())
+      new TerminalStorySeriesAdapter(this.storySeries()),
+      new TerminalAssessmentsAdapter(this.foundationAssessments())
     );
   }
 
@@ -547,6 +575,10 @@ export class AppContainer {
     return this.storySeries().initialize();
   }
 
+  whenFoundationAssessmentsReady(): Promise<void> {
+    return this.foundationAssessments().initialize();
+  }
+
   /**
    * Start non-first-screen persistence after the launch transition has drawn.
    * Catalog and Explore remain initialized in initialize() because Explore is
@@ -564,6 +596,7 @@ export class AppContainer {
     tasks.push(this.whenReadingHistoryReady());
     tasks.push(this.whenResearchProfileReady());
     tasks.push(this.whenStorySeriesReady());
+    tasks.push(this.whenFoundationAssessmentsReady());
     await Promise.all(tasks);
   }
 
@@ -652,6 +685,7 @@ export class AppContainer {
   private clearAbilityScopedGraph(): void {
     this.settingsState?.dispose();
     this.storySeriesState?.dispose();
+    this.foundationAssessmentsState?.dispose();
     this.catalogGraph?.dispose();
     this.networkBoostCapability.stop();
 
@@ -662,6 +696,7 @@ export class AppContainer {
     this.readingHistoryState = undefined;
     this.researchState = undefined;
     this.storySeriesState = undefined;
+    this.foundationAssessmentsState = undefined;
     this.readingActivityState = undefined;
     this.articleGraph = undefined;
     this.exploreGraph = undefined;
@@ -688,6 +723,7 @@ export class AppContainer {
     this.removeSharedStateIfPresent(sharedKeys, READING_HISTORY_STORAGE_KEY);
     this.removeSharedStateIfPresent(sharedKeys, RESEARCH_PROFILE_STORAGE_KEY);
     this.removeSharedStateIfPresent(sharedKeys, STORY_SERIES_STORAGE_KEY);
+    this.removeSharedStateIfPresent(sharedKeys, FOUNDATION_ASSESSMENT_STORAGE_KEY);
   }
 
   private removeSharedStateIfPresent(keys: string[], key: string): void {

@@ -5,7 +5,11 @@ import { HapticFeedbackPort, popNavigationDestination } from 'anomiconbasic';
 import { ExploreHeroAnchor, ExploreHomeViewModel } from 'explore';
 import { CatalogViewModel, TaleListViewModel } from 'catalog';
 import { TerminalViewModel } from 'terminal';
-import { ReadingHistoryViewModel, StorySeriesViewModel } from 'library';
+import {
+  FoundationAssessmentViewModel,
+  ReadingHistoryViewModel,
+  StorySeriesViewModel
+} from 'library';
 import { SettingsViewModel } from 'settings';
 import { StartupCoordinator } from '../startup/StartupCoordinator';
 import { StartupOverlay } from '../startup/StartupOverlay';
@@ -30,6 +34,8 @@ struct PhoneIndex {
     AppContainer.getInstance().readingHistory();
   @Local private storySeries: StorySeriesViewModel =
     AppContainer.getInstance().storySeries();
+  @Local private foundationAssessments: FoundationAssessmentViewModel =
+    AppContainer.getInstance().foundationAssessments();
   @Local private startupCoordinator: StartupCoordinator = new StartupCoordinator();
   private readonly pageStack: NavPathStack = new NavPathStack();
 
@@ -56,6 +62,7 @@ struct PhoneIndex {
         terminalViewModel: this.terminalViewModel,
         readingHistory: this.readingHistory,
         storySeries: this.storySeries,
+        foundationAssessments: this.foundationAssessments,
         exploreSkeletonAnimated: this.startupCoordinator.homeSkeletonAnimated,
         onExploreHeroAnchorChange: (anchor: ExploreHeroAnchor): void =>
           this.startupCoordinator.updateHeroAnchor(anchor)

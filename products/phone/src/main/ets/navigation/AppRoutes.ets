@@ -21,6 +21,11 @@ export class AppRoutes {
   static readonly ARCHIVE_3D: string = 'archive3d';
   /** Manifest-only index for browsing available three-dimensional archives. */
   static readonly ARCHIVE_3D_GALLERY: string = 'archive3dGallery';
+  static readonly ASSESSMENT: string = 'assessment';
+}
+
+export interface FoundationAssessmentRouteParams {
+  readonly examId: string;
 }
 
 export interface ExploreCollectionRouteParams {

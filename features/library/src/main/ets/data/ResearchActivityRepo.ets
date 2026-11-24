@@ -18,6 +18,7 @@ import {
   deriveResearchProgress,
   finalizeResearchSegment,
   interruptResearchSegment,
+  normalizeResearchDuration,
   normalizeResearchTimeZoneOffset,
   parseResearchSessionState
 } from '../domain/ResearchProgress';
@@ -57,6 +58,8 @@ const INTERRUPT_REPLACED_SESSIONS: string =
   'ended_at = CASE WHEN updated_at >= started_at THEN updated_at ELSE started_at END, ' +
   "end_reason = 'session_replaced' WHERE state = 'open'";
 
+export type ResearchBonusExperienceReader = () => Promise<number>;
+
 /**
  * 阅读活动账本。
  *
@@ -65,15 +68,21 @@ const INTERRUPT_REPLACED_SESSIONS: string =
  */
 export class ResearchActivityRepo implements ResearchActivityRepoPort {
   private readonly context: common.UIAbilityContext;
+  private readonly bonusExperienceReader: ResearchBonusExperienceReader | undefined;
   private store: relationalStore.RdbStore | undefined = undefined;
   private initialization: Promise<void> | undefined = undefined;
   private readonly mutationLock: ArkTSUtils.locks.AsyncLock =
     new ArkTSUtils.locks.AsyncLock();
   /** 从 RDB 首次读取、且只在写成功后替换的运行时快照，不是第二份持久化。 */
   private cachedSessions: ResearchActivitySegment[] | undefined = undefined;
+  private cachedBonusExperience: number = 0;
 
-  constructor(context: common.UIAbilityContext) {
+  constructor(
+    context: common.UIAbilityContext,
+    bonusExperienceReader?: ResearchBonusExperienceReader
+  ) {
     this.context = context;
+    this.bonusExperienceReader = bonusExperienceReader;
   }
 
   /** Opens the feature-owned store; repeated calls share one task. */
@@ -89,6 +98,7 @@ export class ResearchActivityRepo implements ResearchActivityRepoPort {
     await this.awaitPendingMutations();
     const sessions = await this.listNow();
     this.cachedSessions = sessions;
+    await this.refreshBonusExperience();
     return this.snapshotFromSessions(sessions);
   }
 
@@ -333,7 +343,12 @@ export class ResearchActivityRepo implements ResearchActivityRepoPort {
   private snapshotFromSessions(sessions: ResearchActivitySegment[]): ResearchActivitySnapshot {
     const now = this.currentWallTime();
     const timeZoneOffset = this.currentTimeZoneOffset(now);
-    const profile = deriveResearchProgress(sessions, now, timeZoneOffset);
+    const profile = deriveResearchProgress(
+      sessions,
+      now,
+      timeZoneOffset,
+      this.cachedBonusExperience
+    );
     let activeSession: ResearchActivitySegment | undefined = undefined;
     for (let index = sessions.length - 1; index >= 0; index--) {
       if (sessions[index].state === ResearchSessionState.OPEN) {
@@ -342,6 +357,18 @@ export class ResearchActivityRepo implements ResearchActivityRepoPort {
       }
     }
     return new ResearchActivitySnapshot(profile, activeSession);
+  }
+
+  private async refreshBonusExperience(): Promise<void> {
+    if (this.bonusExperienceReader === undefined) {
+      return;
+    }
+    try {
+      const value = await this.bonusExperienceReader();
+      this.cachedBonusExperience = normalizeResearchDuration(value);
+    } catch (_error) {
+      // Keep the latest cached bonus XP if the secondary store temporarily fails.
+    }
   }
 
   private async ensureCachedSessionsNow(): Promise<ResearchActivitySegment[]> {

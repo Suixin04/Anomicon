@@ -3,13 +3,17 @@ import {
   accentPillForegroundColor,
   AppMotion,
   AppTypography,
+  isDarkModeActive,
   materialCardBorderColor,
   materialCardSurfaceColor,
   pressAnimation,
   ROW_PRESS_MODIFIER,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
-import { ResearchDailyProgress } from 'library';
+import {
+  FoundationAssessmentSealSummary,
+  ResearchDailyProgress
+} from 'library';
 import {
   DailyActivityBar,
   buildRecentSevenDayActivity,
@@ -108,10 +112,12 @@ export struct ResearchProfileCard {
   @Require @Param materialEnabled: boolean;
   @Param todayActiveMs: number = 0;
   @Param dailyProgress: ResearchDailyProgress[] = [];
+  @Param seals: FoundationAssessmentSealSummary[] = [];
   @Param maxWidth: number = WIDE_CONTENT_MAX_WIDTH;
   @Event onRetry: () => void;
   @Event onOpenFavorites: () => void = () => {};
   @Event onOpenHistory: () => void = () => {};
+  @Event onOpenSeal: (examId: string) => void = (_examId: string): void => {};
   @Local private wideBanner: boolean = false;
   @Local private rulesExpanded: boolean = false;
 
@@ -420,6 +426,54 @@ export struct ResearchProfileCard {
     .padding({ left: 16, right: 16, top: 8, bottom: 4 })
   }
 
+  private sealPillBackground(passed: boolean): ResourceColor {
+    if (!passed) {
+      return $r('sys.color.comp_background_tertiary');
+    }
+    return isDarkModeActive() ? '#2816A34A' : '#1816A34A';
+  }
+
+  private sealPillTextColor(passed: boolean): ResourceColor {
+    if (!passed) {
+      return $r('sys.color.font_tertiary');
+    }
+    return isDarkModeActive() ? '#4ADE80' : '#15803D';
+  }
+
+  @Builder
+  private sealsStrip() {
+    if (this.seals.length > 0) {
+      Row({ space: 8 }) {
+        ForEach(this.seals, (seal: FoundationAssessmentSealSummary) => {
+          Row({ space: 4 }) {
+            SymbolGlyph(seal.passed ?
+              $r('sys.symbol.checkmark_circle_fill') : $r('sys.symbol.seal'))
+              .fontSize(12)
+              .fontColor([seal.passed ? '#16A34A' : $r('sys.color.icon_tertiary')])
+            Text(seal.sealTitle)
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(seal.passed ? FontWeight.Medium : FontWeight.Regular)
+              .fontColor(this.sealPillTextColor(seal.passed))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
+          .id(`profileSeal_${seal.examId}`)
+          .layoutWeight(1)
+          .height(28)
+          .justifyContent(FlexAlign.Center)
+          .padding({ left: 6, right: 6 })
+          .backgroundColor(this.sealPillBackground(seal.passed))
+          .borderRadius(10)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => this.onOpenSeal(seal.examId))
+          .accessibilityText(`${seal.sealTitle}资质印章，${seal.passed ? '已签发' : '未签发'}，点击进入考核`)
+        }, (seal: FoundationAssessmentSealSummary) => `${seal.examId}:${seal.passed}`)
+      }
+      .id('profileSealsStrip')
+      .width('100%')
+    }
+  }
+
   @Builder
   private profileContent() {
     if (this.wideBanner) {
@@ -427,6 +481,7 @@ export struct ResearchProfileCard {
         Column({ space: 12 }) {
           this.cardHeader()
           this.progressSection()
+          this.sealsStrip()
           this.activityStrip()
         }
         .width('48%')
@@ -443,6 +498,7 @@ export struct ResearchProfileCard {
       Column({ space: 12 }) {
         this.cardHeader()
         this.progressSection()
+        this.sealsStrip()
         this.activityStrip()
         this.statistics()
       }
@@ -492,10 +548,23 @@ export struct ResearchProfileCard {
       .alignItems(VerticalAlign.Center)
 
       Row({ space: 8 }) {
+        SymbolGlyph($r('sys.symbol.seal_shield_fill'))
+          .fontSize(14)
+          .fontColor([$r('sys.color.icon_secondary')])
+        Text('通过「基金会」资质考核每科首次可获 +15~25 XP 并签发工牌印章')
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row({ space: 8 }) {
         SymbolGlyph($r('sys.symbol.lock_fill'))
           .fontSize(14)
           .fontColor([$r('sys.color.icon_secondary')])
-        Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
+        Text('仅记录本地阅读与考核阅历，并非基金会世界观内的安保许可')
           .fontSize(AppTypography.CAPTION_M)
           .fontColor($r('sys.color.font_secondary'))
           .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)

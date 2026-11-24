@@ -6,3 +6,9 @@ export { FavoritesViewModel, FavoritesViewModelListener } from './FavoritesViewM
 export { ReadingHistoryViewModel, ReadingHistoryViewModelListener } from './ReadingHistoryViewModel';
 export { ResearchProfileViewModel, ResearchProfileViewModelListener } from './ResearchProfileViewModel';
 export { StorySeriesViewModel, StorySeriesViewModelListener } from './StorySeriesViewModel';
+export {
+  AssessmentBonusXpCallback,
+  AssessmentNowProvider,
+  FoundationAssessmentViewModel,
+  FoundationAssessmentViewModelListener
+} from './FoundationAssessmentViewModel';

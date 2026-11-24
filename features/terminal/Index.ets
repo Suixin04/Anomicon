@@ -1,6 +1,8 @@
 // Explicit public entry point for the terminal HAR.
 export {
   TerminalHome,
+  FoundationHome,
+  FoundationAssessmentView,
   TerminalViewModel,
   TerminalTitleResolver,
   TerminalViewModelListener,
@@ -11,6 +13,7 @@ export {
   TerminalOfflineArticlesPort,
   TerminalEnrolledSeriesCard,
   TerminalStorySeriesPort,
+  TerminalAssessmentsPort,
   TerminalErrorState,
   TerminalLibrarySectionTitle,
   TerminalReadingHistoryList,

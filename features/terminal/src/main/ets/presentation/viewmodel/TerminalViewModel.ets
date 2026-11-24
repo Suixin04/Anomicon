@@ -4,6 +4,7 @@ import {
   ViewModelLoadState
 } from 'anomiconbasic';
 import {
+  FoundationAssessmentSealSummary,
   LibraryContentKind,
   LibraryContentRef,
   LibraryFavorite,
@@ -94,12 +95,21 @@ export interface TerminalStorySeriesPort {
   subscribe(listener: TerminalViewModelListener): () => void;
 }
 
+/** Terminal 只读取基金会资质考核印章摘要；考试记录与 XP 发放归 Library 所有。 */
+export interface TerminalAssessmentsPort {
+  sealSummaries(): FoundationAssessmentSealSummary[];
+  initialize(): Promise<void>;
+  reload(): Promise<void>;
+  subscribe(listener: TerminalViewModelListener): () => void;
+}
+
 /** 终端首页页面级投影 VM；不依赖 UI、导航或具体标题 service。 */
 @ObservedV2
 export class TerminalViewModel implements ViewModelLifecycle {
   @Trace favoriteEntries: LibraryFavorite[] = [];
   @Trace resumeEntries: ReadingHistoryEntry[] = [];
   @Trace enrolledSeries: TerminalEnrolledSeriesCard[] = [];
+  @Trace assessmentSeals: FoundationAssessmentSealSummary[] = [];
   @Trace recentEntries: ReadingHistoryEntry[] = [];
   @Trace offlineEntries: TerminalOfflineArticleSummary[] = [];
   @Trace offlineCount: number = 0;
@@ -127,6 +137,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
   private readonly titleResolver: TerminalTitleResolver | undefined;
   private readonly offlineArticles: TerminalOfflineArticlesPort | undefined;
   private readonly storySeries: TerminalStorySeriesPort | undefined;
+  private readonly assessments: TerminalAssessmentsPort | undefined;
   private active: boolean = false;
   private disposed: boolean = false;
   private generation: number = 0;
@@ -139,6 +150,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
   private researchUnsubscribe: (() => void) | undefined = undefined;
   private offlineArticlesUnsubscribe: (() => void) | undefined = undefined;
   private storySeriesUnsubscribe: (() => void) | undefined = undefined;
+  private assessmentsUnsubscribe: (() => void) | undefined = undefined;
   /** Source retry owners; the generation prevents an old request from
    * clearing a marker belonging to the same source after re-entry. */
   private readonly sourceRefreshes: Map<string, number> = new Map<string, number>();
@@ -148,7 +160,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
     research: TerminalResearchProfilePort,
     titleResolver?: TerminalTitleResolver,
     offlineArticles?: TerminalOfflineArticlesPort,
-    storySeries?: TerminalStorySeriesPort
+    storySeries?: TerminalStorySeriesPort,
+    assessments?: TerminalAssessmentsPort
   ) {
     this.favorites = favorites;
     this.history = history;
@@ -156,6 +169,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.titleResolver = titleResolver;
     this.offlineArticles = offlineArticles;
     this.storySeries = storySeries;
+    this.assessments = assessments;
   }
 
   activate(): void {
@@ -175,7 +189,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
       this.favorites.initialize(),
       this.history.initialize(),
       this.research.initialize(),
-      this.storySeries !== undefined ? this.storySeries.initialize() : Promise.resolve()
+      this.storySeries !== undefined ? this.storySeries.initialize() : Promise.resolve(),
+      this.assessments !== undefined ? this.assessments.initialize() : Promise.resolve()
     ]).then((): void => {
       if (!this.isCurrent(generation)) {
         return;
@@ -237,7 +252,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
       this.favorites.reload(),
       this.history.reload(),
       this.research.reload(),
-      this.storySeries !== undefined ? this.storySeries.reload() : Promise.resolve()
+      this.storySeries !== undefined ? this.storySeries.reload() : Promise.resolve(),
+      this.assessments !== undefined ? this.assessments.reload() : Promise.resolve()
     ]).then((): void => {
       if (!this.isCurrent(generation)) {
         return;
@@ -334,6 +350,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.resumeEntries = resumable.slice(0, 1);
     this.enrolledSeries = this.storySeries !== undefined ?
       this.storySeries.listEnrolled().slice() : [];
+    this.assessmentSeals = this.assessments !== undefined ?
+      this.assessments.sealSummaries().slice() : [];
     const resumeKey = this.resumeEntries.length > 0 ? this.resumeEntries[0].content.key : '';
     this.recentEntries = this.history.items
       .filter((entry: ReadingHistoryEntry): boolean => entry.content.key !== resumeKey)
@@ -472,6 +490,13 @@ export class TerminalViewModel implements ViewModelLifecycle {
         }
       });
     }
+    if (this.assessmentsUnsubscribe === undefined && this.assessments !== undefined) {
+      this.assessmentsUnsubscribe = this.assessments.subscribe((): void => {
+        if (this.active && !this.disposed) {
+          this.publishProjection();
+        }
+      });
+    }
   }
 
   private reloadOfflineArticles(generation: number): void {
@@ -503,6 +528,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.offlineArticlesUnsubscribe = undefined;
     this.storySeriesUnsubscribe?.();
     this.storySeriesUnsubscribe = undefined;
+    this.assessmentsUnsubscribe?.();
+    this.assessmentsUnsubscribe = undefined;
   }
 
   private isCurrent(generation: number): boolean {
