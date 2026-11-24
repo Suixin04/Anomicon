@@ -481,7 +481,7 @@ export struct SettingsPage {
       formatStorageBytes(this.storageUsage.tempCacheBytes) : '临时';
     this.getUIContext().showAlertDialog({
       title: '清理临时缓存',
-      message: `将清理已缓存的文章解析、原始网页快照与配图（约 ${sizeText}），收藏、阅读进度、研究员档案及已下载三维模型均会完整保留。`,
+      message: `将清理已缓存的文章解析、原始网页快照与配图（约 ${sizeText}），收藏、阅读进度、已保存离线文章、研究员档案及已下载三维模型均会完整保留。`,
       autoCancel: true,
       primaryButton: {
         value: '取消',
@@ -581,6 +581,23 @@ export struct SettingsPage {
       return '尚未下载三维模型包，前往查看';
     }
     return `已下载模型占用 ${formatStorageBytes(this.storageUsage.archive3DBytes)}，前往管理`;
+  }
+
+  private offlineArticlesSubtitle(): string {
+    if (this.storageUsage === undefined) {
+      return '正在统计永久离线档案…';
+    }
+    if (this.storageUsage.offlineArticlesCount <= 0) {
+      return '可在任意条目内点击“保存供离线阅读”，不受临时缓存清理影响';
+    }
+    return `已永久保存 ${this.storageUsage.offlineArticlesCount} 篇，清理临时缓存不会删除`;
+  }
+
+  private offlineArticlesBadgeText(): string {
+    if (this.storageUsage === undefined) {
+      return '计算中…';
+    }
+    return formatStorageBytes(this.storageUsage.offlineArticlesBytes);
   }
 
   @Builder
@@ -896,12 +913,23 @@ export struct SettingsPage {
       SettingsActionRow({
         icon: $r('sys.symbol.clean'),
         title: '清理临时缓存',
-        subtitle: '文章解析、网页快照与配图缓存（保留收藏与进度）',
+        subtitle: '文章解析、网页快照与配图缓存（保留收藏、进度与离线文章）',
         trailingBadge: this.tempCacheBadgeText(),
         showChevron: false,
         rowEnabled: !this.storageBusy,
         componentId: 'clearTempCacheSettingsRow',
         onAction: (): void => this.confirmClearTempCaches()
+      })
+      this.cardDivider(56)
+      SettingsActionRow({
+        icon: $r('sys.symbol.archivebox_fill'),
+        title: '离线保存文章',
+        subtitle: this.offlineArticlesSubtitle(),
+        trailingBadge: this.offlineArticlesBadgeText(),
+        showChevron: false,
+        rowEnabled: true,
+        componentId: 'offlineArticlesStorageSettingsRow',
+        onAction: (): void => this.showToast('可在对应条目正文内更新或移除离线保存')
       })
       this.cardDivider(56)
       SettingsActionRow({

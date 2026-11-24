@@ -18,6 +18,23 @@ export {
   ArticleRelatedTaleSource
 } from './domain/ArticleContracts';
 export {
+  ArticleOfflineStatus,
+  ArticleOfflineImageEntry,
+  ArticleOfflineReadiness,
+  ArticleOfflineSnapshot,
+  ArticleOfflineSummary,
+  ArticleOfflineSaveProgress,
+  ArticleOfflineDocumentRecord,
+  ArticleOfflineImageFetcher,
+  ArticleOfflineStoreListener,
+  ArticleOfflineStoragePort,
+  normalizeOfflineImageUrl,
+  collectArticleImageUrls,
+  requiresNetworkForInteractiveDocument,
+  evaluateOfflineReadiness,
+  formatOfflineBytes
+} from './domain/ArticleOfflineContracts';
+export {
   ScpAcsMetadata,
   ScpArticleDocument,
   ScpBlockType,

@@ -1,6 +1,7 @@
 import articleDocumentCachePolicyTest from './ArticleCachePolicy.test';
 import articleDocumentMapperTest from './ArticleDocumentMapper.test';
 import articleNavigationTest from './ArticleNavigation.test';
+import articleOfflineTest from './ArticleOffline.test';
 import articlePayloadCompatibilityTest from './ArticlePayloadCompatibility.test';
 import articleRendererTest from './ArticleRenderer.test';
 import articleReadingRestoreTest from './ArticleReadingRestore.test';
@@ -12,6 +13,7 @@ export default function testsuite(): void {
   articleDocumentCachePolicyTest();
   articleDocumentMapperTest();
   articleNavigationTest();
+  articleOfflineTest();
   articlePayloadCompatibilityTest();
   articleRendererTest();
   articleReadingRestoreTest();

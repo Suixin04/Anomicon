@@ -24,6 +24,8 @@ export interface CatalogFeatureGraph {
   readonly titleResolver: CatalogTitleResolver;
   /** Image save/open capability; the implementation stays in catalog data. */
   readonly imagePreviewActions: ImagePreviewActions;
+  /** Downloads a validated HTTPS image into cacheDir and returns its local file path. */
+  downloadImageToCache(url: string): Promise<string>;
   /** Initializes all catalog-owned persistence adapters idempotently. */
   initialize(): Promise<void>;
   /** Clears disposable page, image and preview caches while keeping catalog series index intact. */

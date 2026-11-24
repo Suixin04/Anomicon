@@ -42,9 +42,19 @@ export class SettingsStorageAdapter implements SettingsStorageActions {
     }
     const archive3DBytes = this.filesDir.length > 0 ?
       await this.measureDirectoryBytes(`${this.filesDir}/archive3d/v1/objects`, 0) : 0;
+    const offlineArticlesBytes = this.filesDir.length > 0 ?
+      await this.measureDirectoryBytes(`${this.filesDir}/offline_articles/v1`, 0) : 0;
+    let offlineArticlesCount: number = 0;
+    try {
+      offlineArticlesCount = (await this.articleGraph.listOfflineArticles()).length;
+    } catch (_offlineListError) {
+      offlineArticlesCount = 0;
+    }
     return {
       tempCacheBytes,
       archive3DBytes,
+      offlineArticlesBytes,
+      offlineArticlesCount,
       searchHistoryCount: this.searchHistory.list().length
     };
   }

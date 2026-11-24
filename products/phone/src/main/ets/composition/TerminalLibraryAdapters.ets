@@ -3,8 +3,14 @@ import {
   LibraryFavorite,
   ReadingHistoryEntry,
   ResearchActivitySnapshot,
-  ResearchProgress
+  ResearchProgress,
+  createLibraryContentRef
 } from 'library';
+import {
+  ArticleFeatureGraph,
+  ArticleOfflineStatus,
+  ArticleOfflineSummary
+} from 'article';
 import {
   FavoritesViewModel,
   ReadingHistoryViewModel,
@@ -12,6 +18,8 @@ import {
 } from 'library';
 import {
   TerminalFavoritesPort,
+  TerminalOfflineArticleSummary,
+  TerminalOfflineArticlesPort,
   TerminalReadingHistoryPort,
   TerminalResearchProfilePort,
   TerminalViewModelListener
@@ -133,5 +141,30 @@ export class TerminalResearchProfileAdapter implements TerminalResearchProfilePo
 
   reload(): Promise<ResearchActivitySnapshot> {
     return this.state.reload();
+  }
+}
+
+/** Product composition bridge exposing permanent offline article summaries to Terminal. */
+export class TerminalOfflineArticlesAdapter implements TerminalOfflineArticlesPort {
+  private readonly articleGraph: ArticleFeatureGraph;
+
+  constructor(articleGraph: ArticleFeatureGraph) {
+    this.articleGraph = articleGraph;
+  }
+
+  async list(): Promise<TerminalOfflineArticleSummary[]> {
+    const items: ArticleOfflineSummary[] = await this.articleGraph.listOfflineArticles();
+    return items.map((item: ArticleOfflineSummary): TerminalOfflineArticleSummary => ({
+      content: createLibraryContentRef(item.contentKind, item.itemId, item.title),
+      badgeText: item.badgeText,
+      detailText: item.detailText,
+      totalBytes: item.totalBytes,
+      savedAt: item.savedAt,
+      ready: item.status === ArticleOfflineStatus.READY
+    }));
+  }
+
+  subscribe(listener: TerminalViewModelListener): () => void {
+    return this.articleGraph.subscribeOfflineArticles((): void => listener());
   }
 }

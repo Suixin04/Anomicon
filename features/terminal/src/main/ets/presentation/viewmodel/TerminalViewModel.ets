@@ -56,12 +56,30 @@ export interface TerminalResearchProfilePort {
   reload(): Promise<ResearchActivitySnapshot>;
 }
 
+/** 终端“离线保存”专区摘要；不直接依赖 Article feature。 */
+export interface TerminalOfflineArticleSummary {
+  readonly content: LibraryContentRef;
+  readonly badgeText: string;
+  readonly detailText: string;
+  readonly totalBytes: number;
+  readonly savedAt: number;
+  readonly ready: boolean;
+}
+
+/** Terminal 只读取永久离线文章摘要，写操作仍归 Article feature 所有。 */
+export interface TerminalOfflineArticlesPort {
+  list(): Promise<TerminalOfflineArticleSummary[]>;
+  subscribe(listener: TerminalViewModelListener): () => void;
+}
+
 /** 终端首页页面级投影 VM；不依赖 UI、导航或具体标题 service。 */
 @ObservedV2
 export class TerminalViewModel implements ViewModelLifecycle {
   @Trace favoriteEntries: LibraryFavorite[] = [];
   @Trace resumeEntries: ReadingHistoryEntry[] = [];
   @Trace recentEntries: ReadingHistoryEntry[] = [];
+  @Trace offlineEntries: TerminalOfflineArticleSummary[] = [];
+  @Trace offlineCount: number = 0;
   @Trace recentCount: number = 0;
   @Trace favoriteCount: number = 0;
   /** Source-level readiness projected for the terminal View. */
@@ -84,6 +102,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
   private readonly history: TerminalReadingHistoryPort;
   private readonly research: TerminalResearchProfilePort;
   private readonly titleResolver: TerminalTitleResolver | undefined;
+  private readonly offlineArticles: TerminalOfflineArticlesPort | undefined;
   private active: boolean = false;
   private disposed: boolean = false;
   private generation: number = 0;
@@ -94,6 +113,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
   private favoritesUnsubscribe: (() => void) | undefined = undefined;
   private historyUnsubscribe: (() => void) | undefined = undefined;
   private researchUnsubscribe: (() => void) | undefined = undefined;
+  private offlineArticlesUnsubscribe: (() => void) | undefined = undefined;
   /** Source retry owners; the generation prevents an old request from
    * clearing a marker belonging to the same source after re-entry. */
   private readonly sourceRefreshes: Map<string, number> = new Map<string, number>();
@@ -101,12 +121,14 @@ export class TerminalViewModel implements ViewModelLifecycle {
     favorites: TerminalFavoritesPort,
     history: TerminalReadingHistoryPort,
     research: TerminalResearchProfilePort,
-    titleResolver?: TerminalTitleResolver
+    titleResolver?: TerminalTitleResolver,
+    offlineArticles?: TerminalOfflineArticlesPort
   ) {
     this.favorites = favorites;
     this.history = history;
     this.research = research;
     this.titleResolver = titleResolver;
+    this.offlineArticles = offlineArticles;
   }
 
   activate(): void {
@@ -121,6 +143,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
     // Publish source state before the asynchronous initializers settle so the
     // page can render a deterministic loading projection immediately.
     this.publishProjection();
+    this.reloadOfflineArticles(generation);
     Promise.all([
       this.favorites.initialize(),
       this.history.initialize(),
@@ -181,6 +204,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.state = ViewModelLoadState.REFRESHING;
     this.error = undefined;
     this.publishProjection();
+    this.reloadOfflineArticles(generation);
     Promise.all([
       this.favorites.reload(),
       this.history.reload(),
@@ -402,6 +426,31 @@ export class TerminalViewModel implements ViewModelLifecycle {
         }
       });
     }
+    if (this.offlineArticlesUnsubscribe === undefined && this.offlineArticles !== undefined) {
+      this.offlineArticlesUnsubscribe = this.offlineArticles.subscribe((): void => {
+        if (this.active && !this.disposed) {
+          this.reloadOfflineArticles(this.generation);
+        }
+      });
+    }
+  }
+
+  private reloadOfflineArticles(generation: number): void {
+    if (this.offlineArticles === undefined) {
+      this.offlineEntries = [];
+      this.offlineCount = 0;
+      return;
+    }
+    Promise.resolve().then(() => this.offlineArticles!.list())
+      .then((entries: TerminalOfflineArticleSummary[]): void => {
+        if (!this.isCurrent(generation)) {
+          return;
+        }
+        this.offlineEntries = entries.slice();
+        this.offlineCount = entries.length;
+      })
+      .catch((): void => {
+      });
   }
 
   private stopObservingSharedState(): void {
@@ -411,6 +460,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.historyUnsubscribe = undefined;
     this.researchUnsubscribe?.();
     this.researchUnsubscribe = undefined;
+    this.offlineArticlesUnsubscribe?.();
+    this.offlineArticlesUnsubscribe = undefined;
   }
 
   private isCurrent(generation: number): boolean {

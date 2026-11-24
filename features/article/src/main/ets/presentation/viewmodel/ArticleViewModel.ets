@@ -22,6 +22,11 @@ import {
   ReadingSessionPort,
   ArticleExtractionRequest
 } from '../../domain/ArticleContracts';
+import {
+  ArticleOfflineSaveProgress,
+  ArticleOfflineSnapshot,
+  normalizeOfflineImageUrl
+} from '../../domain/ArticleOfflineContracts';
 
 /** View subscription used by the staged page.  The callback
  * carries no platform object and is safe to invoke after an async boundary. */
@@ -57,6 +62,12 @@ export class ArticleViewModel implements ViewModelLifecycle {
   @Trace favoriteError: ViewModelErrorInfo | undefined = undefined;
   /** Bounded related-tale projection for the reader's navigation footer. */
   @Trace relatedTales: ArticleRelatedTale[] = [];
+  @Trace offlineSnapshot: ArticleOfflineSnapshot | undefined = undefined;
+  @Trace offlineSaving: boolean = false;
+  @Trace offlineProgressCompleted: number = 0;
+  @Trace offlineProgressTotal: number = 0;
+  @Trace offlineError: string = '';
+  @Trace offlineRevision: number = 0;
 
   private readonly useCase: ArticleContentUseCase;
   private readonly viewState: ArticleViewStatePort | undefined;
@@ -104,6 +115,8 @@ export class ArticleViewModel implements ViewModelLifecycle {
   private historyRestoreIdentity: string = '';
   private historyRestoreTask: Promise<number> | undefined = undefined;
   private historyOperationTail: Promise<void> = Promise.resolve();
+  private documentPayloadJson: string = '';
+  private offlineEpoch: number = 0;
   private readonly listeners: ArticleViewModelListener[] = [];
 
   constructor(
@@ -146,6 +159,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
     if (this.content !== undefined) {
       this.recordOpened(this.content).catch((): void => {
       });
+      this.refreshOfflineSnapshot(this.content);
       if (this.document !== undefined) {
         // A restore interrupted by deactivate() is retried when the screen
         // becomes visible again; the epoch guard rejects the old callback.
@@ -222,6 +236,8 @@ export class ArticleViewModel implements ViewModelLifecycle {
     this.historyEpoch += 1;
     this.historyRestoreIdentity = '';
     this.historyRestoreTask = undefined;
+    this.offlineEpoch += 1;
+    this.offlineSaving = false;
     this.generation += 1;
     this.loadInFlight = false;
     this.activeLoadRequestId = 0;
@@ -318,6 +334,14 @@ export class ArticleViewModel implements ViewModelLifecycle {
     this.stale = false;
     this.parsing = false;
     this.state = ViewModelLoadState.IDLE;
+    this.offlineEpoch += 1;
+    this.documentPayloadJson = '';
+    this.offlineSnapshot = undefined;
+    this.offlineSaving = false;
+    this.offlineProgressCompleted = 0;
+    this.offlineProgressTotal = 0;
+    this.offlineError = '';
+    this.offlineRevision += 1;
     this.notifyListeners();
     // Route setup owns only the normalized content identity.  Opening the
     // history record is a VM concern and is safe before activate(); the epoch
@@ -540,6 +564,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
         }
         this.stale = result.stale;
         if (result.document !== undefined) {
+          this.documentPayloadJson = result.rawPayloadJson;
           this.publishDocument(result.document, result.stale);
           this.state = result.stale ? ViewModelLoadState.PARTIAL : ViewModelLoadState.READY;
           this.notifyListeners();
@@ -618,6 +643,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
         if (!this.isCurrent(content, generation) || this.pending?.requestId !== requestId) {
           return;
         }
+        this.documentPayloadJson = payload;
         this.publishDocument(document, pending.stale);
         this.pending = undefined;
         this.pendingExtraction = undefined;
@@ -907,6 +933,101 @@ export class ArticleViewModel implements ViewModelLifecycle {
     }
   }
 
+  async saveForOffline(): Promise<ArticleOfflineSnapshot | undefined> {
+    const content = this.content;
+    const document = this.document;
+    if (content === undefined || document === undefined || this.disposed || this.offlineSaving) {
+      return undefined;
+    }
+    const epoch = this.offlineEpoch;
+    this.offlineSaving = true;
+    this.offlineProgressCompleted = 0;
+    this.offlineProgressTotal = 0;
+    this.offlineError = '';
+    this.notifyListeners();
+    try {
+      const snapshot = await this.useCase.saveOffline(
+        content,
+        document,
+        this.documentPayloadJson,
+        (progress: ArticleOfflineSaveProgress): void => {
+          if (!this.isOfflineCurrent(epoch, content)) {
+            return;
+          }
+          this.offlineProgressCompleted = progress.completedImages;
+          this.offlineProgressTotal = progress.totalImages;
+          this.notifyListeners();
+        }
+      );
+      if (!this.isOfflineCurrent(epoch, content)) {
+        return undefined;
+      }
+      if (snapshot !== undefined) {
+        this.offlineSnapshot = snapshot;
+        this.offlineRevision += 1;
+      }
+      return snapshot;
+    } catch (error) {
+      if (this.isOfflineCurrent(epoch, content)) {
+        this.offlineError = error instanceof Error ? error.message : '离线保存失败';
+      }
+      throw new Error(error instanceof Error ? error.message : '离线保存失败');
+    } finally {
+      if (this.isOfflineCurrent(epoch, content)) {
+        this.offlineSaving = false;
+        this.notifyListeners();
+      }
+    }
+  }
+
+  async removeOffline(): Promise<void> {
+    const content = this.content;
+    if (content === undefined || this.disposed || this.offlineSaving) {
+      return;
+    }
+    const epoch = this.offlineEpoch;
+    await this.useCase.removeOffline(content.key);
+    if (this.isOfflineCurrent(epoch, content)) {
+      this.offlineSnapshot = undefined;
+      this.offlineError = '';
+      this.offlineProgressCompleted = 0;
+      this.offlineProgressTotal = 0;
+      this.offlineRevision += 1;
+      this.notifyListeners();
+    }
+  }
+
+  resolveLocalImageUri(rawUrl: string): string {
+    const snapshot = this.offlineSnapshot;
+    if (snapshot === undefined) {
+      return '';
+    }
+    const normalized = normalizeOfflineImageUrl(rawUrl, this.document?.sourceUrl ?? snapshot.sourceUrl);
+    if (normalized.length === 0) {
+      return '';
+    }
+    return snapshot.localImageUris.get(normalized) ?? '';
+  }
+
+  private refreshOfflineSnapshot(content: LibraryContentRef): void {
+    const epoch = this.offlineEpoch;
+    Promise.resolve().then(() => this.useCase.inspectOffline(content))
+      .then((snapshot: ArticleOfflineSnapshot | undefined): void => {
+        if (!this.isOfflineCurrent(epoch, content)) {
+          return;
+        }
+        this.offlineSnapshot = snapshot;
+        this.offlineRevision += 1;
+        this.notifyListeners();
+      })
+      .catch((): void => {
+      });
+  }
+
+  private isOfflineCurrent(epoch: number, content: LibraryContentRef): boolean {
+    return !this.disposed && epoch === this.offlineEpoch && this.isContentCurrent(content);
+  }
+
   private publishDocument(document: ScpArticleDocument, stale: boolean): void {
     this.document = document;
     this.stale = stale;
@@ -915,6 +1036,9 @@ export class ArticleViewModel implements ViewModelLifecycle {
     // Always load fold state through the route identity so a freshly parsed
     // document cannot miss the row just written by toggleExpanded().
     this.loadExpanded(this.content?.id ?? document.itemId.toLowerCase());
+    if (this.content !== undefined) {
+      this.refreshOfflineSnapshot(this.content);
+    }
     this.restoreReadingState().catch((): void => {
     });
     this.updateMetadata().catch((): void => {

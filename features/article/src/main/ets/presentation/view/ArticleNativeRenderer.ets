@@ -29,6 +29,13 @@ import {
   ArticleRelatedTaleSource
 } from '../../domain/ArticleContracts';
 import {
+  ArticleOfflineSnapshot,
+  ArticleOfflineStatus,
+  formatOfflineBytes,
+  normalizeOfflineImageUrl,
+  requiresNetworkForInteractiveDocument
+} from '../../domain/ArticleOfflineContracts';
+import {
   ScpArticleDocument,
   ScpBlockType,
   ScpCalloutTone,
@@ -530,8 +537,16 @@ export struct ArticleNativeRenderer {
   @Param targetAnchorEpoch: number = 0;
   @Param tocOpenEpoch: number = 0;
   @Param searchBarOpen: boolean = false;
+  @Param offlineEnabled: boolean = false;
+  @Param offlineSnapshot: ArticleOfflineSnapshot | undefined = undefined;
+  @Param offlineSaving: boolean = false;
+  @Param offlineProgressCompleted: number = 0;
+  @Param offlineProgressTotal: number = 0;
+  @Param offlineRevision: number = 0;
 
   @Event onRetryPartial: () => void = () => {};
+  @Event onSaveOffline: () => void = () => {};
+  @Event onRemoveOffline: () => void = () => {};
   @Event onHiddenRevealInteraction: () => void = () => {};
   @Event onSwitchToWebMode: () => void = () => {};
   @Event onReadingProgressChange: (percent: number) => void = (_percent: number) => {};
@@ -686,7 +701,7 @@ export struct ArticleNativeRenderer {
     this.tryFlushPendingRouteAnchor();
   }
 
-  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint')
+  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint', 'offlineEnabled')
   onLayoutInputsChange(): void {
     this.syncDocumentAndSections();
     this.syncWorkbenchTabDefault();
@@ -2767,6 +2782,7 @@ export struct ArticleNativeRenderer {
     Column({ space: 6 }) {
       ScpArticleImage({
         url: row.block.source,
+        localSource: this.resolveLocalImageUri(row.block.source),
         preferredWidth: row.block.preferredWidth,
         inlineMode: true,
         onOpen: () => {
@@ -2857,9 +2873,58 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
+  private offlineStatusRow() {
+    Row({ space: 10 }) {
+      if (this.offlineSaving) {
+        LoadingProgress()
+          .width(18)
+          .height(18)
+          .color($r('sys.color.icon_emphasize'))
+      } else {
+        SymbolGlyph(this.offlineStatusIcon())
+          .fontSize(18)
+          .fontColor([this.offlineStatusIconColor()])
+      }
+
+      Column({ space: 2 }) {
+        Text(this.offlinePrimaryTitle())
+          .fontSize(AppTypography.BODY_S)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.offlineSecondaryText())
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      if (!this.offlineSaving && this.offlinePrimaryActionLabel().length > 0) {
+        Button(this.offlinePrimaryActionLabel(), { stateEffect: false })
+          .id('articleOfflineActionButton')
+          .fontSize(AppTypography.CAPTION_L)
+          .fontWeight(FontWeight.Medium)
+          .height(30)
+          .padding({ left: 10, right: 10 })
+          .backgroundColor(this.offlinePrimaryActionIsAccent() ?
+            accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+          .fontColor(this.offlinePrimaryActionIsAccent() ?
+            accentPillForegroundColor() : $r('sys.color.font'))
+          .borderRadius(15)
+          .onClick(() => this.handleOfflinePrimaryAction())
+      }
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({ top: 2, bottom: 2 })
+  }
+
+  @Builder
   private headerCard() {
-    if (this.document.objectClass.length > 0 || this.document.rating.length > 0 ||
-      this.document.tags.length > 0) {
+    if (this.hasHeaderCardContent()) {
       Column({ space: 10 }) {
         if (this.document.objectClass.length > 0 || this.document.rating.length > 0) {
           Row({ space: 10 }) {
@@ -2896,6 +2961,16 @@ export struct ArticleNativeRenderer {
           }
           .width('100%')
         }
+
+        if (this.offlineEnabled && this.hasArticleMetadataChips()) {
+          Divider()
+            .strokeWidth(0.5)
+            .color($r('sys.color.comp_divider'))
+        }
+
+        if (this.offlineEnabled) {
+          this.offlineStatusRow()
+        }
       }
       .width('100%')
       .padding(14)
@@ -2913,6 +2988,7 @@ export struct ArticleNativeRenderer {
             Column({ space: 6 }) {
               ScpArticleImage({
                 url: row.block.source,
+                localSource: this.resolveLocalImageUri(row.block.source),
                 onOpen: () => this.onOpenImage(row.index),
                 onOpenInBrowser: (url: string) => this.onOpenUrl(url)
               })
@@ -3110,10 +3186,121 @@ export struct ArticleNativeRenderer {
     .padding({ top: 16, bottom: 12 })
   }
 
-  private hasHeaderCardContent(): boolean {
+  private hasArticleMetadataChips(): boolean {
     return this.document.objectClass.length > 0 ||
       this.document.rating.length > 0 ||
       this.document.tags.length > 0;
+  }
+
+  private hasHeaderCardContent(): boolean {
+    return this.offlineEnabled || this.hasArticleMetadataChips();
+  }
+
+  private currentOfflineSnapshot(): ArticleOfflineSnapshot | undefined {
+    if (this.offlineRevision < 0) {
+      return undefined;
+    }
+    return this.offlineSnapshot;
+  }
+
+  private resolveLocalImageUri(rawUrl: string): string {
+    const snapshot = this.currentOfflineSnapshot();
+    if (snapshot === undefined) {
+      return '';
+    }
+    const baseUrl = this.document.sourceUrl.length > 0 ? this.document.sourceUrl : snapshot.sourceUrl;
+    const normalized = normalizeOfflineImageUrl(rawUrl, baseUrl);
+    if (normalized.length === 0) {
+      return '';
+    }
+    return snapshot.localImageUris.get(normalized) ?? '';
+  }
+
+  private offlineStatusIcon(): Resource {
+    if (this.offlineSaving) {
+      return $r('sys.symbol.archivebox_fill');
+    }
+    const snapshot = this.currentOfflineSnapshot();
+    if (snapshot === undefined) {
+      return $r('sys.symbol.archivebox_fill');
+    }
+    if (snapshot.status === ArticleOfflineStatus.READY) {
+      return $r('sys.symbol.checkmark_circle_fill');
+    }
+    return $r('sys.symbol.exclamationmark_circle');
+  }
+
+  private offlineStatusIconColor(): Resource | string {
+    if (this.offlineSaving) {
+      return $r('sys.color.icon_emphasize');
+    }
+    const snapshot = this.currentOfflineSnapshot();
+    if (snapshot === undefined) {
+      return $r('sys.color.icon_secondary');
+    }
+    if (snapshot.status === ArticleOfflineStatus.READY) {
+      return '#16A34A';
+    }
+    return $r('sys.color.warning');
+  }
+
+  private offlinePrimaryTitle(): string {
+    if (this.offlineSaving) {
+      return this.offlineProgressTotal > 0 ?
+        `正在保存离线副本（${this.offlineProgressCompleted}/${this.offlineProgressTotal} 张图）…` :
+        '正在保存离线正文…';
+    }
+    const snapshot = this.currentOfflineSnapshot();
+    if (snapshot !== undefined) {
+      return snapshot.badgeText;
+    }
+    return '离线阅读';
+  }
+
+  private offlineSecondaryText(): string {
+    if (this.offlineSaving) {
+      return '正在将正文与配图存入永久离线存储…';
+    }
+    const snapshot = this.currentOfflineSnapshot();
+    if (snapshot !== undefined) {
+      return `${snapshot.detailText} · ${formatOfflineBytes(snapshot.totalBytes)}`;
+    }
+    return requiresNetworkForInteractiveDocument(this.document) ?
+      '保存正文后可离线阅读（互动部分需联网）' :
+      '保存正文与配图，清理临时缓存不受影响';
+  }
+
+  private offlinePrimaryActionLabel(): string {
+    if (this.offlineSaving) {
+      return '';
+    }
+    const snapshot = this.currentOfflineSnapshot();
+    if (snapshot === undefined) {
+      return '保存供离线阅读';
+    }
+    if (snapshot.missingImages > 0) {
+      return '补齐图片';
+    }
+    if (snapshot.requiresNetworkInteractive) {
+      return '原版网页';
+    }
+    return '';
+  }
+
+  private offlinePrimaryActionIsAccent(): boolean {
+    const snapshot = this.currentOfflineSnapshot();
+    return snapshot === undefined || snapshot.missingImages > 0;
+  }
+
+  private handleOfflinePrimaryAction(): void {
+    const snapshot = this.currentOfflineSnapshot();
+    if (snapshot === undefined || snapshot.missingImages > 0) {
+      this.onSaveOffline();
+      return;
+    }
+    if (snapshot.requiresNetworkInteractive) {
+      this.onSwitchToWebMode();
+    }
   }
 
   @Builder

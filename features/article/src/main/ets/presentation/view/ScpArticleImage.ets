@@ -8,6 +8,7 @@ import { AppMotion, ExternalUrlPolicy, SkeletonBlock } from 'anomiconbasic';
 @ComponentV2
 export struct ScpArticleImage {
   @Require @Param url: string;
+  @Param localSource: string = '';
   @Param preferredWidth: number = 0;
   @Param inlineMode: boolean = false;
   @Event onOpen: () => void;
@@ -27,15 +28,35 @@ export struct ScpArticleImage {
     this.loadImage();
   }
 
-  @Monitor('url')
+  @Monitor('url', 'localSource')
   onUrlChange(): void {
     this.loadImage();
   }
 
   private loadImage(): void {
     this.loadEpoch += 1;
-    const requestedUrl = this.url.trim();
+    const requestedUrl = this.url.replace(/[\r\n\t]/g, '').trim();
+    const localUri = this.localSource.trim();
     this.browserUrl = requestedUrl;
+    if (localUri.startsWith('file://')) {
+      try {
+        this.browserUrl = ExternalUrlPolicy.resolveImageHttps(requestedUrl);
+      } catch (_error) {
+        this.browserUrl = requestedUrl;
+      }
+      if (this.resolvedUrl === localUri && !this.failed) {
+        return;
+      }
+      const alreadyVisible = !this.failed && !this.loading && this.resolvedUrl.length > 0;
+      this.resolvedUrl = localUri;
+      this.failed = false;
+      if (!alreadyVisible) {
+        this.intrinsicWidth = 0;
+        this.intrinsicHeight = 0;
+        this.loading = true;
+      }
+      return;
+    }
     this.intrinsicWidth = 0;
     this.intrinsicHeight = 0;
     try {

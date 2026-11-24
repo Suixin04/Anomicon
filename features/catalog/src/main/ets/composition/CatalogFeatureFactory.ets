@@ -112,6 +112,7 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
   readonly articleHtmlRepository: ArticleHtmlRepository;
   readonly titleResolver: CatalogTitleResolver;
   readonly imagePreviewActions: ImagePreviewActions;
+  private readonly imageCacheDownloader: (url: string) => Promise<string>;
   private readonly initializer: () => Promise<void>;
   private readonly temporaryCacheClearer: () => Promise<void>;
   private readonly disposer: () => void;
@@ -125,6 +126,7 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
     articleHtmlRepository: ArticleHtmlRepository,
     titleResolver: CatalogTitleResolver,
     imagePreviewActions: ImagePreviewActions,
+    imageCacheDownloader: (url: string) => Promise<string>,
     initializer: () => Promise<void>,
     temporaryCacheClearer: () => Promise<void>,
     disposer: () => void
@@ -137,9 +139,14 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
     this.articleHtmlRepository = articleHtmlRepository;
     this.titleResolver = titleResolver;
     this.imagePreviewActions = imagePreviewActions;
+    this.imageCacheDownloader = imageCacheDownloader;
     this.initializer = initializer;
     this.temporaryCacheClearer = temporaryCacheClearer;
     this.disposer = disposer;
+  }
+
+  downloadImageToCache(url: string): Promise<string> {
+    return this.imageCacheDownloader(url);
   }
 
   initialize(): Promise<void> {
@@ -321,6 +328,10 @@ export function createCatalogFeatureGraph(
     articleHtmlRepository,
     titleResolver,
     imagePreviewActions,
+    async (imageUrl: string): Promise<string> => {
+      await initialize();
+      return imageCacheService.load(imageUrl);
+    },
     initialize,
     clearTemporaryCaches,
     (): void => {

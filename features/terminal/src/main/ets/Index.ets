@@ -6,12 +6,15 @@ export {
   TerminalViewModelListener,
   TerminalFavoritesPort,
   TerminalReadingHistoryPort,
-  TerminalResearchProfilePort
+  TerminalResearchProfilePort,
+  TerminalOfflineArticleSummary,
+  TerminalOfflineArticlesPort
 } from './presentation/viewmodel/TerminalViewModel';
 export {
   TerminalErrorState,
   TerminalLibrarySectionTitle,
   TerminalReadingHistoryList,
+  TerminalOfflineArticleList,
   TerminalCompactEmptyBanner,
   TerminalQuickWorkbenchBar
 } from './presentation/view/TerminalLibraryComponents';

@@ -31,6 +31,7 @@ export interface ArticleHtmlPort {
 
 /** Source semantics are kept explicit so parsing time cannot fake freshness. */
 export enum ArticleContentSource {
+  OFFLINE_ARCHIVE = 'offline_archive',
   DOCUMENT_CACHE = 'document_cache',
   FRESH_HTML_CACHE = 'fresh_html_cache',
   NETWORK = 'network',
@@ -81,6 +82,7 @@ export class ArticleLoadResult {
   readonly fetchedAt: number;
   readonly stale: boolean;
   readonly error: string;
+  readonly rawPayloadJson: string;
 
   constructor(
     document: ScpArticleDocument | undefined = undefined,
@@ -88,7 +90,8 @@ export class ArticleLoadResult {
     source: ArticleContentSource = ArticleContentSource.NETWORK,
     fetchedAt: number = 0,
     stale: boolean = false,
-    error: string = ''
+    error: string = '',
+    rawPayloadJson: string = ''
   ) {
     this.document = document;
     this.pendingExtraction = pendingExtraction;
@@ -96,6 +99,7 @@ export class ArticleLoadResult {
     this.fetchedAt = fetchedAt;
     this.stale = stale;
     this.error = error;
+    this.rawPayloadJson = rawPayloadJson;
   }
 }
 

@@ -9,6 +9,7 @@ import {
   ArticleHtmlPort,
   ArticleHtmlSource
 } from '../domain/ArticleContracts';
+import { ArticleOfflineStoragePort } from '../domain/ArticleOfflineContracts';
 import { LibraryContentRef } from 'library';
 import { ScpArticleDocument } from '../domain/ScpDocument';
 
@@ -23,15 +24,18 @@ export class ContentGateway implements ArticleContentGateway {
   private readonly htmlPort: ArticleHtmlPort;
   private readonly documentCache: ArticleDocumentCachePort;
   private readonly parser: ArticleDocumentParserPort;
+  private readonly offlineStore: ArticleOfflineStoragePort | undefined;
 
   constructor(
     htmlPort: ArticleHtmlPort,
     documentCache: ArticleDocumentCachePort,
-    parser: ArticleDocumentParserPort
+    parser: ArticleDocumentParserPort,
+    offlineStore?: ArticleOfflineStoragePort
   ) {
     this.htmlPort = htmlPort;
     this.documentCache = documentCache;
     this.parser = parser;
+    this.offlineStore = offlineStore;
   }
 
   async load(
@@ -55,12 +59,32 @@ export class ContentGateway implements ArticleContentGateway {
               undefined,
               ArticleContentSource.DOCUMENT_CACHE,
               stored.parsedAt,
-              !this.documentCache.isFresh(stored)
+              !this.documentCache.isFresh(stored),
+              '',
+              stored.json
             );
           }
         }
       } catch (_error) {
-        // A derived document cache is optional; fall through to source HTML.
+        // A derived document cache is optional; fall through to offline vault / source HTML.
+      }
+      if (this.offlineStore !== undefined) {
+        try {
+          const offline = await this.offlineStore.loadDocument(content);
+          if (offline !== undefined) {
+            return new ArticleLoadResult(
+              offline.document,
+              undefined,
+              ArticleContentSource.OFFLINE_ARCHIVE,
+              offline.savedAt,
+              false,
+              '',
+              offline.rawPayloadJson
+            );
+          }
+        } catch (_offlineError) {
+          // Fall through to HTML pipeline if permanent offline lookup fails.
+        }
       }
     }
 
@@ -103,7 +127,9 @@ export class ContentGateway implements ArticleContentGateway {
             undefined,
             source,
             html.fetchedAt,
-            html.source === ArticleHtmlSource.STALE_CACHE
+            html.source === ArticleHtmlSource.STALE_CACHE,
+            '',
+            payload
           );
         } catch (_error) {
           // Fall through to the legacy extraction handshake.
@@ -125,6 +151,23 @@ export class ContentGateway implements ArticleContentGateway {
         html.source === ArticleHtmlSource.STALE_CACHE
       );
     } catch (error) {
+      if (this.offlineStore !== undefined) {
+        try {
+          const offline = await this.offlineStore.loadDocument(content);
+          if (offline !== undefined) {
+            return new ArticleLoadResult(
+              offline.document,
+              undefined,
+              ArticleContentSource.OFFLINE_ARCHIVE,
+              offline.savedAt,
+              false,
+              '',
+              offline.rawPayloadJson
+            );
+          }
+        } catch (_offlineFallbackError) {
+        }
+      }
       return new ArticleLoadResult(
         undefined,
         undefined,

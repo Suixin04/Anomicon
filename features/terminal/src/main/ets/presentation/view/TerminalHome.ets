@@ -4,6 +4,7 @@ import {
   TerminalErrorState,
   TerminalFavoriteCards,
   TerminalLibrarySectionTitle,
+  TerminalOfflineArticleList,
   TerminalQuickWorkbenchBar,
   TerminalReadingHistoryList
 } from './TerminalLibraryComponents';
@@ -29,7 +30,7 @@ import {
   READING_CONTENT_MAX_WIDTH,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
-import { TerminalViewModel } from '../viewmodel/TerminalViewModel';
+import { TerminalOfflineArticleSummary, TerminalViewModel } from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
 
 const SECTION_SPACE: number = 20;
@@ -182,6 +183,16 @@ export struct TerminalHome {
   @Computed
   get resumeEntries(): ReadingHistoryEntry[] {
     return this.viewModel.resumeEntries;
+  }
+
+  @Computed
+  get offlineEntries(): TerminalOfflineArticleSummary[] {
+    return this.viewModel.offlineEntries;
+  }
+
+  @Computed
+  get offlineCount(): number {
+    return this.viewModel.offlineCount;
   }
 
   /** 最近预览排除已经提升到“继续上次阅读”的条目，同一内容不重复出现。 */
@@ -384,6 +395,29 @@ export struct TerminalHome {
   }
 
   @Builder
+  private offlineArticlesSection() {
+    if (this.offlineCount > 0) {
+      Column({ space: 10 }) {
+        TerminalLibrarySectionTitle({
+          symbol: $r('sys.symbol.archivebox_fill'),
+          title: '离线保存',
+          count: this.offlineCount,
+          showMore: false,
+          onOpen: () => {}
+        })
+        TerminalOfflineArticleList({
+          entries: this.offlineEntries,
+          materialEnabled: this.isImmersiveMaterialEnabled(),
+          onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content)
+        })
+      }
+      .width('100%')
+      .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
+      .alignItems(HorizontalAlign.Start)
+    }
+  }
+
+  @Builder
   private favoritesPreview() {
     Column({ space: 10 }) {
       Column() {
@@ -522,6 +556,8 @@ export struct TerminalHome {
       .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
 
       this.resumeReadingSection()
+
+      this.offlineArticlesSection()
 
       this.favoritesPreview()
 

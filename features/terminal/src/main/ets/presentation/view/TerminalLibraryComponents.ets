@@ -1,9 +1,13 @@
 import {
   LibraryContentKind,
   LibraryContentRef,
-  LibraryFavorite
+  LibraryFavorite,
+  ReadingHistoryEntry
 } from 'library';
-import { ReadingHistoryEntry } from 'library';
+import {
+  TerminalOfflineArticleSummary
+} from '../viewmodel/TerminalViewModel';
+import { formatStorageBytes } from 'settings';
 import {
   AppTypography,
   CARD_PRESS_MODIFIER,
@@ -580,6 +584,95 @@ export struct TerminalReadingHistoryList {
     .border(this.materialEnabled ?
       { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(this.continueReading ? 20 : 18)
+    .clip(true)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+  }
+}
+
+/** 离线保存文章列表：突出离线就绪状态，断网冷启动可一键直达正文。 */
+@ComponentV2
+export struct TerminalOfflineArticleList {
+  @Require @Param entries: TerminalOfflineArticleSummary[];
+  @Require @Param materialEnabled: boolean;
+  @Event onOpenContent: (content: LibraryContentRef) => void;
+
+  @Builder
+  private itemRow(item: TerminalOfflineArticleSummary) {
+    Row({ space: 12 }) {
+      Column() {
+        SymbolGlyph($r('sys.symbol.archivebox_fill'))
+          .fontSize(18)
+          .fontColor([$r('sys.color.icon_emphasize')])
+      }
+      .width(38)
+      .height(38)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor($r('sys.color.comp_background_tertiary'))
+      .borderRadius(12)
+
+      Column({ space: 3 }) {
+        Text(item.content.title)
+          .fontSize(AppTypography.BODY_M)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(`${item.detailText} · ${formatStorageBytes(item.totalBytes)}`)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Row({ space: 6 }) {
+        Text(item.badgeText)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(item.ready ? '#16A34A' : $r('sys.color.warning'))
+          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(8)
+          .maxLines(1)
+        SymbolGlyph($r('sys.symbol.chevron_right'))
+          .fontSize(13)
+          .fontColor([$r('sys.color.icon_secondary')])
+      }
+      .alignItems(VerticalAlign.Center)
+    }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .width('100%')
+    .constraintSize({ minHeight: 64 })
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+    .onClick(() => this.onOpenContent(item.content))
+    .accessibilityText(`打开离线文章，${item.content.title}，${item.badgeText}`)
+  }
+
+  build() {
+    Column() {
+      Repeat<TerminalOfflineArticleSummary>(this.entries)
+        .each((row: RepeatItem<TerminalOfflineArticleSummary>) => {
+          Column() {
+            this.itemRow(row.item)
+            if (row.index < this.entries.length - 1) {
+              Divider()
+                .strokeWidth(0.5)
+                .color($r('sys.color.comp_divider'))
+                .margin({ left: 64, right: 14 })
+            }
+          }
+          .width('100%')
+        })
+        .key((item: TerminalOfflineArticleSummary) => `${item.content.key}:${item.badgeText}:${item.totalBytes}`)
+    }
+    .width('100%')
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(18)
     .clip(true)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
   }

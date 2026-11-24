@@ -2,6 +2,7 @@ import { ScpContentBlock } from '../../domain/ScpDocument';
 import {
   AppMotion,
   AppTypography,
+  ExternalUrlPolicy,
   ImagePreviewActions,
   isReduceMotionEnabled,
   pressAnimation,
@@ -40,11 +41,15 @@ struct ScpPreviewPage {
 
   private loadImage(): void {
     this.loadEpoch += 1;
-    const requestedUrl = this.url.trim();
+    const requestedUrl = this.url.replace(/[\r\n\t]/g, '').trim();
     this.browserUrl = requestedUrl;
     try {
+      this.browserUrl = ExternalUrlPolicy.resolveImageHttps(requestedUrl);
+    } catch (_urlError) {
+      this.browserUrl = requestedUrl;
+    }
+    try {
       this.resolvedUrl = this.actions.resolveUrl(requestedUrl);
-      this.browserUrl = this.resolvedUrl;
       this.loading = true;
       this.failed = false;
       this.resetZoom();

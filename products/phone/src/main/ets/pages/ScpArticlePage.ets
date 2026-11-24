@@ -21,6 +21,7 @@ import {
   ArticleRenderer,
   ArticleScrollRestore,
   ArticleRelatedTale,
+  ArticleOfflineSnapshot,
   ArticleViewModel,
   ScpArticleDocument,
   ScpContentBlock,
@@ -77,6 +78,32 @@ import { FastPerformanceHintScope } from '../composition/FastPerformanceHints';
 const WIKI_BASE_URL: string = 'https://scp-wiki-cn.wikidot.com';
 const DOMAIN = 0x0000;
 const TAG = 'AnomiconArticle';
+
+class OfflineAwareImagePreviewActions implements ImagePreviewActions {
+  private readonly base: ImagePreviewActions;
+  private readonly localResolver: (url: string) => string;
+
+  constructor(base: ImagePreviewActions, localResolver: (url: string) => string) {
+    this.base = base;
+    this.localResolver = localResolver;
+  }
+
+  resolveUrl(url: string): string {
+    const localUri = this.localResolver(url);
+    if (localUri.length > 0) {
+      return localUri;
+    }
+    return this.base.resolveUrl(url);
+  }
+
+  save(url: string): Promise<boolean> {
+    return this.base.save(url);
+  }
+
+  open(url: string): Promise<void> {
+    return this.base.open(url);
+  }
+}
 
 @Builder
 export function ScpArticlePageBuilder(
@@ -177,6 +204,12 @@ struct ScpArticlePage {
   @Local private tocCount: number = 0;
   @Local private tocOpenEpoch: number = 0;
   @Local private searchBarOpen: boolean = false;
+  @Local private offlineSnapshot: ArticleOfflineSnapshot | undefined = undefined;
+  @Local private offlineSaving: boolean = false;
+  @Local private offlineProgressCompleted: number = 0;
+  @Local private offlineProgressTotal: number = 0;
+  @Local private offlineRevision: number = 0;
+  private offlinePreviewActionsCache: ImagePreviewActions | undefined = undefined;
   private autoWebEvaluatedItemId: string = '';
   private revealHiddenOverridden: boolean = false;
   private lastAppliedKeepScreenOn: boolean = false;
@@ -292,6 +325,11 @@ struct ScpArticlePage {
       this.itemName = vm.content.title;
     }
     this.relatedTales = vm.relatedTales.slice();
+    this.offlineSnapshot = vm.offlineSnapshot;
+    this.offlineSaving = vm.offlineSaving;
+    this.offlineProgressCompleted = vm.offlineProgressCompleted;
+    this.offlineProgressTotal = vm.offlineProgressTotal;
+    this.offlineRevision = vm.offlineRevision;
     this.pendingHtml = vm.pendingExtraction?.html ?? '';
     this.pendingSourceUrl = vm.pendingExtraction?.sourceUrl ?? '';
     this.activeExtractionRequestId = vm.pendingExtraction?.requestId ?? 0;
@@ -796,6 +834,44 @@ struct ScpArticlePage {
       '已开启反白透视（本文未检测到隐藏文本）');
   }
 
+  private previewImageActions(): ImagePreviewActions {
+    if (this.offlinePreviewActionsCache === undefined) {
+      this.offlinePreviewActionsCache = new OfflineAwareImagePreviewActions(
+        this.imageActions,
+        (imageUrl: string): string => this.viewModel.resolveLocalImageUri(imageUrl)
+      );
+    }
+    return this.offlinePreviewActionsCache;
+  }
+
+  private async saveArticleForOffline(): Promise<void> {
+    if (this.document === undefined || this.offlineSaving) {
+      return;
+    }
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    try {
+      const snapshot = await this.viewModel.saveForOffline();
+      if (snapshot !== undefined) {
+        this.showToast(`离线保存完成：${snapshot.badgeText}`);
+      }
+    } catch (error) {
+      this.showToast(error instanceof Error ? error.message : '离线保存失败');
+    }
+  }
+
+  private async removeOfflineArticle(): Promise<void> {
+    if (this.offlineSnapshot === undefined || this.offlineSaving) {
+      return;
+    }
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    try {
+      await this.viewModel.removeOffline();
+      this.showToast('已移除离线保存');
+    } catch (error) {
+      this.showToast(error instanceof Error ? error.message : '移除离线保存失败');
+    }
+  }
+
   private async toggleCompleted(): Promise<void> {
     try {
       const next = !this.completed;
@@ -960,6 +1036,30 @@ struct ScpArticlePage {
     }
     items.push({
       content: {
+        icon: this.offlineSnapshot !== undefined ?
+          $r('sys.symbol.arrow_clockwise') : $r('sys.symbol.archivebox_fill'),
+        label: this.offlineSnapshot === undefined ? '保存供离线阅读' :
+          (this.offlineSnapshot.missingImages > 0 ? '补齐离线图片' : '更新离线副本'),
+        isEnabled: this.document !== undefined && !this.offlineSaving,
+        action: () => {
+          this.saveArticleForOffline();
+        }
+      }
+    });
+    if (this.offlineSnapshot !== undefined) {
+      items.push({
+        content: {
+          icon: $r('sys.symbol.trash'),
+          label: '移除离线保存',
+          isEnabled: !this.offlineSaving,
+          action: () => {
+            this.removeOfflineArticle();
+          }
+        }
+      });
+    }
+    items.push({
+      content: {
         icon: $r('sys.symbol.arrow_up_right'),
         label: '在浏览器中打开',
         action: () => this.openUrl(this.webModeActive && this.webModeUrl.length > 0 ?
@@ -1096,6 +1196,18 @@ struct ScpArticlePage {
             targetAnchorEpoch: this.targetAnchorEpoch,
             tocOpenEpoch: this.tocOpenEpoch,
             searchBarOpen: this.searchBarOpen,
+            offlineEnabled: true,
+            offlineSnapshot: this.offlineSnapshot,
+            offlineSaving: this.offlineSaving,
+            offlineProgressCompleted: this.offlineProgressCompleted,
+            offlineProgressTotal: this.offlineProgressTotal,
+            offlineRevision: this.offlineRevision,
+            onSaveOffline: (): void => {
+              this.saveArticleForOffline();
+            },
+            onRemoveOffline: (): void => {
+              this.removeOfflineArticle();
+            },
             onSwitchToWebMode: (): void => {
               this.hapticService.playSelection(this.settings.hapticEnabled);
               this.enterWebMode(this.sourceUrl);
@@ -1205,7 +1317,7 @@ struct ScpArticlePage {
             ScpImagePreviewer({
               images: this.document!.images,
               initialIndex: this.previewIndex,
-              actions: this.imageActions,
+              actions: this.previewImageActions(),
               materialEnabled: this.settings.immersiveMaterialEnabled,
               onClose: () => {
                 this.closePreview();

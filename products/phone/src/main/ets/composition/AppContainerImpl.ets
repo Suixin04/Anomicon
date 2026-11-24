@@ -66,7 +66,9 @@ import {
 import {
   ArticleViewModel,
   ArticleMetadataPort,
+  ArticleFeatureDependencies,
   ArticleFeatureGraph,
+  ArticleOfflineImageFetcher,
   createArticleFeatureGraph
 } from 'article';
 import {
@@ -89,9 +91,22 @@ import {
 import { AbilityScopeOwner } from './AbilityScopeOwner';
 import {
   TerminalFavoritesAdapter,
+  TerminalOfflineArticlesAdapter,
   TerminalReadingHistoryAdapter,
   TerminalResearchProfileAdapter
 } from './TerminalLibraryAdapters';
+
+class CatalogOfflineImageFetcher implements ArticleOfflineImageFetcher {
+  private readonly catalogGraph: CatalogFeatureGraph;
+
+  constructor(catalogGraph: CatalogFeatureGraph) {
+    this.catalogGraph = catalogGraph;
+  }
+
+  fetchToLocalFile(url: string): Promise<string> {
+    return this.catalogGraph.downloadImageToCache(url);
+  }
+}
 
 const FAVORITES_STORAGE_KEY: string = 'anomicon.library.favorites';
 const READING_HISTORY_STORAGE_KEY: string = 'anomicon.library.readingHistory';
@@ -269,11 +284,14 @@ export class AppContainer {
       );
       // Article owns its gateway/parser/view-state adapters; the product only
       // supplies Catalog domain ports assembled above.
-      this.articleGraph = createArticleFeatureGraph(context, {
-        html: new CatalogArticleHtmlAdapter(this.catalogGraph.articleHtmlRepository),
+      const catalogGraph = this.catalogGraph;
+      const articleDependencies: ArticleFeatureDependencies = {
+        html: new CatalogArticleHtmlAdapter(catalogGraph.articleHtmlRepository),
         history: new ArticleHistoryAdapter(this.readingHistory()),
-        metadata: articleMetadata
-      });
+        metadata: articleMetadata,
+        imageFetcher: new CatalogOfflineImageFetcher(catalogGraph)
+      };
+      this.articleGraph = createArticleFeatureGraph(context, articleDependencies);
     }
 
     // Build feature graphs once in the composition root.  These adapters retain
@@ -474,7 +492,7 @@ export class AppContainer {
   }
 
   createTerminalViewModel(): TerminalViewModel {
-    if (this.catalogGraph === undefined) {
+    if (this.catalogGraph === undefined || this.articleGraph === undefined) {
       throw new Error('AppContainer must be initialized before creating Terminal ViewModel');
     }
     const titleResolver = this.catalogGraph.titleResolver;
@@ -482,7 +500,8 @@ export class AppContainer {
       new TerminalFavoritesAdapter(this.favorites()),
       new TerminalReadingHistoryAdapter(this.readingHistory()),
       new TerminalResearchProfileAdapter(this.researchProfile()),
-      (ids: string[]): Promise<Map<string, string>> => titleResolver.resolveMany(ids)
+      (ids: string[]): Promise<Map<string, string>> => titleResolver.resolveMany(ids),
+      new TerminalOfflineArticlesAdapter(this.articleGraph)
     );
   }
 

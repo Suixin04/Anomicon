@@ -65,6 +65,8 @@ export enum SettingsNavigationTarget {
 export interface SettingsStorageUsage {
   readonly tempCacheBytes: number;
   readonly archive3DBytes: number;
+  readonly offlineArticlesBytes: number;
+  readonly offlineArticlesCount: number;
   readonly searchHistoryCount: number;
 }
 
