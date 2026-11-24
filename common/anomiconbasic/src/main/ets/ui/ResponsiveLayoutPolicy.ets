@@ -98,9 +98,12 @@ export function shouldUseCenterSheet(windowWidthVp: number): boolean {
   return Number.isFinite(windowWidthVp) && windowWidthVp >= BREAKPOINT_MD_MIN_WIDTH;
 }
 
-/** Sidebar width scales modestly between split-pane (288vp) and full-screen (336vp). */
+/** Sidebar width scales cleanly across MD dual-screen (272vp), LG split (288vp), and wide canvas (336vp). */
 export function resolveArticleSidebarWidth(containerWidthVp: number): number {
-  if (!Number.isFinite(containerWidthVp) || containerWidthVp < ARTICLE_SIDEBAR_AUTO_OPEN_MIN_WIDTH) {
+  if (!Number.isFinite(containerWidthVp) || containerWidthVp < BREAKPOINT_LG_MIN_WIDTH) {
+    return 272;
+  }
+  if (containerWidthVp < ARTICLE_SIDEBAR_AUTO_OPEN_MIN_WIDTH) {
     return 288;
   }
   return 336;

@@ -234,9 +234,22 @@ export struct ExploreMixedSection {
   @Require @Param error: string;
   @Require @Param showDate: boolean;
   @Require @Param mode: ExploreCollectionMode;
+  @Param twoColumn: boolean = false;
   @Event onOpenContent: (content: LibraryContentRef) => void;
   @Event onOpenCollection: (mode: ExploreCollectionMode) => void;
   @Event onRetry: () => void;
+
+  private shouldShowGridRowDivider(index: number, totalCount: number): boolean {
+    const trailingRowCount = totalCount % 2 === 0 ? 2 : 1;
+    return index < totalCount - trailingRowCount;
+  }
+
+  private itemKey(item: ExploreContentItem): string {
+    return `${item.key.length}:${item.key}` +
+      `${item.entry.title.length}:${item.entry.title}` +
+      `${item.entry.date.length}:${item.entry.date}` +
+      `${item.sourceLabel.length}:${item.sourceLabel}:${item.timestamp}`;
+  }
 
   private formatDate(value: string): string {
     if (/^\d{4}-\d{2}-\d{2}/.test(value) && value.length >= 16) {
@@ -305,22 +318,47 @@ export struct ExploreMixedSection {
 
       if (this.items.length > 0) {
         Column() {
-          Repeat<ExploreContentItem>(this.items.slice(0, PREVIEW_LIMIT))
-            .each((row: RepeatItem<ExploreContentItem>) => {
-              Column() {
-                this.itemRow(row)
-                Divider()
-                  .strokeWidth(0.5)
-                  .color($r('sys.color.comp_divider'))
-                  .margin({ left: 16, right: 16 })
-              }
-              .width('100%')
-            })
-            .key((item: ExploreContentItem) =>
-              `${item.key.length}:${item.key}` +
-              `${item.entry.title.length}:${item.entry.title}` +
-              `${item.entry.date.length}:${item.entry.date}` +
-              `${item.sourceLabel.length}:${item.sourceLabel}:${item.timestamp}`)
+          if (this.twoColumn) {
+            GridRow({ columns: 2, gutter: { x: 20, y: 0 } }) {
+              Repeat<ExploreContentItem>(this.items.slice(0, PREVIEW_LIMIT))
+                .each((row: RepeatItem<ExploreContentItem>) => {
+                  GridCol({ span: 1 }) {
+                    Column() {
+                      this.itemRow(row)
+                      if (this.shouldShowGridRowDivider(
+                        row.index,
+                        Math.min(this.items.length, PREVIEW_LIMIT)
+                      )) {
+                        Divider()
+                          .strokeWidth(0.5)
+                          .color($r('sys.color.comp_divider'))
+                          .margin({ left: 16, right: 16 })
+                      }
+                    }
+                    .width('100%')
+                  }
+                })
+                .key((item: ExploreContentItem) => this.itemKey(item))
+            }
+            .width('100%')
+            Divider()
+              .strokeWidth(0.5)
+              .color($r('sys.color.comp_divider'))
+              .margin({ left: 16, right: 16 })
+          } else {
+            Repeat<ExploreContentItem>(this.items.slice(0, PREVIEW_LIMIT))
+              .each((row: RepeatItem<ExploreContentItem>) => {
+                Column() {
+                  this.itemRow(row)
+                  Divider()
+                    .strokeWidth(0.5)
+                    .color($r('sys.color.comp_divider'))
+                    .margin({ left: 16, right: 16 })
+                }
+                .width('100%')
+              })
+              .key((item: ExploreContentItem) => this.itemKey(item))
+          }
           Row({ space: 6 }) {
             Text('查看更多')
               .fontSize(AppTypography.BODY_S)

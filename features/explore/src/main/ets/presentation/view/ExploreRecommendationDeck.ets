@@ -16,6 +16,8 @@ const CARD_LIFT_DISTANCE: number = 220;
 const CARD_EXIT_DISTANCE: number = 520;
 const RECOMMENDATION_CARD_HEIGHT: number = 340;
 const RECOMMENDATION_STAGE_HEIGHT: number = 372;
+const HORIZONTAL_RECOMMENDATION_CARD_HEIGHT: number = 224;
+const HORIZONTAL_RECOMMENDATION_STAGE_HEIGHT: number = 256;
 
 @ObservedV2
 class ExploreRecommendationRowState {
@@ -51,6 +53,15 @@ export struct ExploreRecommendationSkeleton {
   @Param animated: boolean = true;
   /** 0 renders only the stable card surface; 1 renders the complete skeleton. */
   @Param detailProgress: number = 1;
+  @Param horizontal: boolean = false;
+
+  private cardHeight(): number {
+    return this.horizontal ? HORIZONTAL_RECOMMENDATION_CARD_HEIGHT : RECOMMENDATION_CARD_HEIGHT;
+  }
+
+  private stageHeight(): number {
+    return this.horizontal ? HORIZONTAL_RECOMMENDATION_STAGE_HEIGHT : RECOMMENDATION_STAGE_HEIGHT;
+  }
 
   private detailReveal(): number {
     return Math.max(0, Math.min(1, this.detailProgress));
@@ -65,7 +76,7 @@ export struct ExploreRecommendationSkeleton {
   private backCard(scale: number, translateY: number, opacity: number) {
     Column() {}
       .width('100%')
-      .height(RECOMMENDATION_CARD_HEIGHT)
+      .height(this.cardHeight())
       .backgroundColor($r('sys.color.comp_background_primary'))
       .border({ width: 1, color: $r('sys.color.comp_divider') })
       .borderRadius(24)
@@ -75,11 +86,11 @@ export struct ExploreRecommendationSkeleton {
   }
 
   @Builder
-  private imageSkeleton() {
+  private imageSkeleton(mediaWidth: Length = '100%', mediaHeight: Length = 176) {
     Stack({ alignContent: Alignment.Center }) {
       SkeletonBlock({ animated: this.skeletonAnimated(), radius: 0 })
         .width('100%')
-        .height(176)
+        .height('100%')
 
       SkeletonBlock({ animated: this.skeletonAnimated(), radius: 18 })
         .width(58)
@@ -87,8 +98,8 @@ export struct ExploreRecommendationSkeleton {
         .border({ width: 1, color: $r('sys.color.comp_divider') })
         .opacity(0.72)
     }
-    .width('100%')
-    .height(176)
+    .width(mediaWidth)
+    .height(mediaHeight)
   }
 
   @Builder
@@ -122,15 +133,31 @@ export struct ExploreRecommendationSkeleton {
   @Builder
   private frontCard() {
     Stack({ alignContent: Alignment.TopStart }) {
-      Column() {
-        this.imageSkeleton()
-        this.detailSkeleton()
+      if (this.horizontal) {
+        Row() {
+          this.imageSkeleton('44%', '100%')
+          Column() {
+            this.detailSkeleton()
+          }
+          .layoutWeight(1)
+          .height('100%')
+          .justifyContent(FlexAlign.Center)
+        }
+        .width('100%')
+        .height('100%')
+        .opacity(this.detailReveal())
+        .translate({ y: (1 - this.detailReveal()) * 8 })
+      } else {
+        Column() {
+          this.imageSkeleton()
+          this.detailSkeleton()
+        }
+        .opacity(this.detailReveal())
+        .translate({ y: (1 - this.detailReveal()) * 8 })
       }
-      .opacity(this.detailReveal())
-      .translate({ y: (1 - this.detailReveal()) * 8 })
     }
     .width('100%')
-    .height(RECOMMENDATION_CARD_HEIGHT)
+    .height(this.cardHeight())
     .backgroundColor($r('sys.color.comp_background_primary'))
     .border({ width: 1, color: $r('sys.color.comp_divider') })
     .borderRadius(24)
@@ -144,7 +171,7 @@ export struct ExploreRecommendationSkeleton {
       this.frontCard()
     }
     .width('100%')
-    .height(RECOMMENDATION_STAGE_HEIGHT)
+    .height(this.stageHeight())
     .padding({ top: 4, bottom: 28 })
     .accessibilityText('正在准备今日推荐')
   }
@@ -159,6 +186,7 @@ struct ExploreRecommendationCard {
   @Require @Param row: ExploreRecommendationRowState;
   @Require @Param dragX: number;
   @Require @Param materialEnabled: boolean;
+  @Param horizontal: boolean = false;
 
   private mounted: boolean = false;
   /** Invalidates callbacks from a card node after it leaves the visible deck. */
@@ -278,12 +306,24 @@ struct ExploreRecommendationCard {
     return (_error: ImageError): void => this.handleImageError(captured);
   }
 
+  private cardHeight(): number {
+    return this.horizontal ? HORIZONTAL_RECOMMENDATION_CARD_HEIGHT : RECOMMENDATION_CARD_HEIGHT;
+  }
+
+  private imageWidth(): Length {
+    return this.horizontal ? '44%' : '100%';
+  }
+
+  private imageHeight(): Length {
+    return this.horizontal ? '100%' : 176;
+  }
+
   @Builder
   private previewImage($$: ExploreRecommendationImageParams) {
     Stack({ alignContent: Alignment.Center }) {
       Image($$.source)
         .width('100%')
-        .height(176)
+        .height('100%')
         .objectFit(ImageFit.Cover)
         // Recommendation cards never display the source at full resolution;
         // let ImageKit decode to the measured card bounds to reduce memory and
@@ -296,12 +336,12 @@ struct ExploreRecommendationCard {
       if (this.row.loadedSource !== $$.source) {
         SkeletonBlock({ animated: this.row.depth === 0, radius: 0 })
           .width('100%')
-          .height(176)
+          .height('100%')
           .hitTestBehavior(HitTestMode.None)
       }
     }
-    .width('100%')
-    .height(176)
+    .width(this.imageWidth())
+    .height(this.imageHeight())
   }
 
   private imageHasFailed(): boolean {
@@ -324,54 +364,81 @@ struct ExploreRecommendationCard {
           .fontColor($r('sys.color.font_tertiary'))
       }
     }
-    .width('100%')
-    .height(176)
+    .width(this.imageWidth())
+    .height(this.imageHeight())
     .justifyContent(FlexAlign.Center)
     .backgroundColor(recommendationFallbackBackgroundColor())
-    .border({ width: { bottom: 0.5 }, color: $r('sys.color.comp_divider') })
+    .border({
+      width: this.horizontal ? { right: 0.5 } : { bottom: 0.5 },
+      color: $r('sys.color.comp_divider')
+    })
     .accessibilityText(this.imageHasFailed() ? '图片加载失败，档案正文仍可打开' : '暂无预览图')
   }
 
   @Builder
-  private cardContent() {
-    Column() {
-      if (this.previewSource().length > 0 && !this.row.imageFailed &&
-        !this.row.recommendation.preview.failed) {
-        this.previewImage({
-          source: this.previewSource(),
-          row: this.row,
-          rowGeneration: this.row.imageGeneration,
-          lifecycleGeneration: this.lifecycleGeneration
-        })
-      } else {
-        this.imageFallback()
-      }
+  private mediaPane() {
+    if (this.previewSource().length > 0 && !this.row.imageFailed &&
+      !this.row.recommendation.preview.failed) {
+      this.previewImage({
+        source: this.previewSource(),
+        row: this.row,
+        rowGeneration: this.row.imageGeneration,
+        lifecycleGeneration: this.lifecycleGeneration
+      })
+    } else {
+      this.imageFallback()
+    }
+  }
 
-      Column({ space: 6 }) {
-        Text(this.row.recommendation.entry.itemId)
-          .fontSize(AppTypography.BODY_S)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('sys.color.font_emphasize'))
-        Text(this.row.recommendation.entry.title.length > 0 ?
-          this.row.recommendation.entry.title : this.row.recommendation.entry.itemId)
-          .fontSize(AppTypography.TITLE_S)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font'))
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.description())
-          .fontSize(AppTypography.BODY_S)
-          .fontColor($r('sys.color.font_secondary'))
-          .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-          .maxLines(3)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
+  @Builder
+  private textPane() {
+    Column({ space: 6 }) {
+      Text(this.row.recommendation.entry.itemId)
+        .fontSize(AppTypography.BODY_S)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('sys.color.font_emphasize'))
+      Text(this.row.recommendation.entry.title.length > 0 ?
+        this.row.recommendation.entry.title : this.row.recommendation.entry.itemId)
+        .fontSize(AppTypography.TITLE_S)
+        .fontWeight(FontWeight.Bold)
+        .fontColor($r('sys.color.font'))
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      Text(this.description())
+        .fontSize(AppTypography.BODY_S)
+        .fontColor($r('sys.color.font_secondary'))
+        .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+        .maxLines(this.horizontal ? 4 : 3)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+    }
+    .width(this.horizontal ? undefined : '100%')
+    .layoutWeight(this.horizontal ? 1 : 0)
+    .height(this.horizontal ? '100%' : undefined)
+    .alignItems(HorizontalAlign.Start)
+    .justifyContent(this.horizontal ? FlexAlign.Center : FlexAlign.Start)
+    .padding(this.horizontal ?
+      { left: 20, right: 20, top: 18, bottom: 18 } :
+      { left: 18, right: 18, top: 14, bottom: 18 })
+  }
+
+  @Builder
+  private cardContent() {
+    if (this.horizontal) {
+      Row() {
+        this.mediaPane()
+        this.textPane()
       }
       .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding({ left: 18, right: 18, top: 14, bottom: 18 })
+      .height(this.cardHeight())
+      .alignItems(VerticalAlign.Center)
+    } else {
+      Column() {
+        this.mediaPane()
+        this.textPane()
+      }
+      .width('100%')
+      .height(this.cardHeight())
     }
-    .width('100%')
-    .height(RECOMMENDATION_CARD_HEIGHT)
   }
 
   @Builder
@@ -380,7 +447,7 @@ struct ExploreRecommendationCard {
       this.cardContent()
     }
     .width('100%')
-    .height(RECOMMENDATION_CARD_HEIGHT)
+    .height(this.cardHeight())
     // 叠卡升层只改变位置和透明度，不切换材质。卡组仅挂载当前四层。
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
@@ -423,6 +490,7 @@ export struct ExploreRecommendationDeck {
   @Param status: ViewModelLoadState = ViewModelLoadState.IDLE;
   @Param refreshing: boolean = false;
   @Param skeletonAnimated: boolean = true;
+  @Param horizontal: boolean = false;
   @Require @Param materialEnabled: boolean;
   @Event onOpen: (itemId: string, name: string) => void;
   @Event onDismiss: (deckVersion: number) => void;
@@ -711,20 +779,28 @@ export struct ExploreRecommendationDeck {
     });
   }
 
+  private cardHeight(): number {
+    return this.horizontal ? HORIZONTAL_RECOMMENDATION_CARD_HEIGHT : RECOMMENDATION_CARD_HEIGHT;
+  }
+
+  private stageHeight(): number {
+    return this.horizontal ? HORIZONTAL_RECOMMENDATION_STAGE_HEIGHT : RECOMMENDATION_STAGE_HEIGHT;
+  }
+
   @Builder
   private unavailableState() {
-    Column({ space: 16 }) {
+    Column({ space: this.horizontal ? 12 : 16 }) {
       Column() {
         SymbolGlyph(this.error.length > 0 || this.refreshing ?
           $r('sys.symbol.exclamationmark_circle') : $r('sys.symbol.doc_text'))
-          .fontSize(30)
+          .fontSize(this.horizontal ? 24 : 30)
           .fontColor([$r('sys.color.icon_secondary')])
       }
-      .width(60)
-      .height(60)
+      .width(this.horizontal ? 48 : 60)
+      .height(this.horizontal ? 48 : 60)
       .justifyContent(FlexAlign.Center)
       .backgroundColor($r('sys.color.comp_background_tertiary'))
-      .borderRadius(30)
+      .borderRadius(this.horizontal ? 24 : 30)
 
       Column({ space: 6 }) {
         Text(this.unavailableTitle())
@@ -737,7 +813,7 @@ export struct ExploreRecommendationDeck {
           .fontColor($r('sys.color.font_secondary'))
           .textAlign(TextAlign.Center)
           .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-          .maxLines(3)
+          .maxLines(this.horizontal ? 2 : 3)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
         if (this.error.length > 0 && !this.refreshing) {
           Text('网络恢复后，重试即可继续调阅')
@@ -768,15 +844,20 @@ export struct ExploreRecommendationDeck {
         .justifyContent(FlexAlign.Center)
       }
       .width(148)
-      .height(48)
+      .height(44)
       .backgroundColor($r('sys.color.comp_background_emphasize'))
       .enabled(!this.refreshing)
       .accessibilityText(this.refreshing ? '正在重新加载今日推荐' : '重新加载今日推荐')
       .onClick(() => this.onRefresh())
     }
     .width('100%')
-    .height(340)
-    .padding({ left: 28, right: 28, top: 24, bottom: 24 })
+    .height(this.cardHeight())
+    .padding({
+      left: 28,
+      right: 28,
+      top: this.horizontal ? 16 : 24,
+      bottom: this.horizontal ? 16 : 24
+    })
     .justifyContent(FlexAlign.Center)
     .backgroundColor($r('sys.color.comp_background_primary'))
     .borderRadius(24)
@@ -788,14 +869,18 @@ export struct ExploreRecommendationDeck {
   private landingStage() {
     Stack({ alignContent: Alignment.Top }) {
       if (this.showSkeleton()) {
-        ExploreRecommendationSkeleton({ animated: this.skeletonAnimated })
+        ExploreRecommendationSkeleton({
+          animated: this.skeletonAnimated,
+          horizontal: this.horizontal
+        })
       } else if (this.recommendations.length > 0) {
         Stack({ alignContent: Alignment.Top }) {
           ForEach(this.visibleRecommendations(), (row: ExploreRecommendationRowState) => {
             ExploreRecommendationCard({
               row: row,
               dragX: this.dragX,
-              materialEnabled: this.materialEnabled
+              materialEnabled: this.materialEnabled,
+              horizontal: this.horizontal
             })
           }, (row: ExploreRecommendationRowState) => row.itemId)
         }
@@ -807,12 +892,12 @@ export struct ExploreRecommendationDeck {
           this.unavailableState()
         }
         .width('100%')
-        .height(RECOMMENDATION_STAGE_HEIGHT)
+        .height(this.stageHeight())
         .padding({ top: 4, bottom: 28 })
       }
     }
     .width('100%')
-    .height(RECOMMENDATION_STAGE_HEIGHT)
+    .height(this.stageHeight())
     .padding(this.recommendations.length > 0 ? { top: 4, bottom: 28 } : 0)
     .accessibilityText(this.landingAccessibilityText())
     .onAreaChange((_oldArea: Area, newArea: Area): void => {

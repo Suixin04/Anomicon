@@ -70,7 +70,9 @@ export default function responsiveLayoutTest(): void {
       expect(shouldUseCenterSheet(600)).assertTrue();
       expect(shouldUseCenterSheet(1113)).assertTrue();
 
-      expect(resolveArticleSidebarWidth(732)).assertEqual(288);
+      expect(resolveArticleSidebarWidth(712)).assertEqual(272);
+      expect(resolveArticleSidebarWidth(732)).assertEqual(272);
+      expect(resolveArticleSidebarWidth(840)).assertEqual(288);
       expect(resolveArticleSidebarWidth(960)).assertEqual(336);
       expect(resolveArticleSidebarWidth(1440)).assertEqual(336);
     });

@@ -116,7 +116,7 @@ jobs:
           TITLE: ${{ needs.prepare.outputs.title }}
           ASSET: ${{ needs.prepare.outputs.asset }}
         run: |
-          printf '\n> 附件为未签名 HAP，不能直接安装到真机。\n' >> release-notes/anomicon-release-notes.md
+          printf '\n> 附件为未签名 HAP，真机安装需自行签名或配合相应安装方式。\n' >> release-notes/anomicon-release-notes.md
           gh release create "$TAG" "release-assets/$ASSET" \
             --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "$TITLE" \
             --notes-file release-notes/anomicon-release-notes.md

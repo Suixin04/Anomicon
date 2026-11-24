@@ -23,6 +23,7 @@ import {
   isDetailFullscreen,
   pageContentTop,
   popNavigationDestination,
+  READING_CONTENT_MAX_WIDTH,
   setDetailFullscreen,
   shouldUseCenterSheet,
   supportsSplitNavigation,
@@ -173,6 +174,15 @@ struct Scp3DArchivePage {
   private workbenchViewerHeight(): number {
     const height = this.paneHeight > 0 ? this.paneHeight : windowHeightVp();
     return Math.max(400, Math.min(540, Math.round(height - pageContentTop() - 124)));
+  }
+
+  private verticalViewerHeight(): number {
+    const width = this.resolvedWidth();
+    const height = this.paneHeight > 0 ? this.paneHeight : windowHeightVp();
+    if (width >= 600 && height > 0 && height < 820) {
+      return Math.max(320, Math.min(360, Math.round(height * 0.45)));
+    }
+    return VIEWER_HEIGHT;
   }
 
   private archiveMenuOptions(): HdsNavigationMenuContentOptions | undefined {
@@ -871,7 +881,7 @@ struct Scp3DArchivePage {
       }
     }
     .width('100%')
-    .height(this.workbenchMode() ? this.workbenchViewerHeight() : VIEWER_HEIGHT)
+    .height(this.workbenchMode() ? this.workbenchViewerHeight() : this.verticalViewerHeight())
     .backgroundColor('#0A1221')
     .borderRadius(24)
     .clip(true)
@@ -1077,7 +1087,7 @@ struct Scp3DArchivePage {
                 this.archiveInfo();
               }
               .width('100%')
-              .constraintSize({ maxWidth: 680 })
+              .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
               .padding({
                 left: this.horizontalMargin(),
                 right: this.horizontalMargin(),

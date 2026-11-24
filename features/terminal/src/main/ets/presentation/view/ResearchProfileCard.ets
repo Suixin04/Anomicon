@@ -5,7 +5,7 @@ import {
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 
-const PROFILE_WIDE_BANNER_MIN_WIDTH: number = 740;
+const PROFILE_WIDE_BANNER_MIN_WIDTH: number = 640;
 const STATISTICS_WIDE_BREAKPOINT: string = '520vp';
 
 /** 动态统计格必须是组件；多参数 @Builder 会把 value 固定为首次构建值。 */
@@ -294,7 +294,7 @@ export struct ResearchProfileCard {
   @Builder
   private profileContent() {
     if (this.wideBanner) {
-      Row({ space: 24 }) {
+      Row({ space: 20 }) {
         Column({ space: 18 }) {
           this.cardHeader()
           this.progressSection()
@@ -347,7 +347,7 @@ export struct ResearchProfileCard {
   @Builder
   private disclaimer() {
     if (this.wideBanner) {
-      Row({ space: 24 }) {
+      Row({ space: 20 }) {
         Row({ space: 8 }) {
           SymbolGlyph($r('sys.symbol.clock_fill'))
             .fontSize(15)

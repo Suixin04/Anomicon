@@ -13,8 +13,8 @@ import {
   pageContentTop,
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_BOTTOM_SPACE,
-  PHONE_TAB_CONTENT_MAX_WIDTH,
   PHONE_TAB_CONTENT_TOP_GAP,
+  READING_CONTENT_MAX_WIDTH,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 import { ExploreCollectionMode } from '../../domain/ExploreContracts';
@@ -22,7 +22,9 @@ import { ExploreHomeViewModel } from '../viewmodel/ExploreHomeViewModel';
 import { ExploreHeroAnchor } from './ExploreViewContracts';
 
 const SECTION_SPACE: number = 24;
+const EXPLORE_DUAL_SCREEN_MIN_WIDTH: number = 640;
 const EXPLORE_TWO_COLUMN_MIN_WIDTH: number = 840;
+const DUAL_COLUMN_GUTTER: number = 20;
 
 /**
  * Explore View：只投影 ViewModel 状态并发出用户事件。
@@ -41,6 +43,7 @@ export struct ExploreHome {
   @Param active: boolean = false;
   @Param recommendationSkeletonAnimated: boolean = true;
   @Local private sideBySide: boolean = false;
+  @Local private dualScreen: boolean = false;
   @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
 
   aboutToAppear(): void {
@@ -94,7 +97,7 @@ export struct ExploreHome {
   }
 
   @Builder
-  private recommendationSection() {
+  private recommendationSection(horizontal: boolean = false) {
     ExploreRecommendationDeck({
       recommendations: this.viewModel.recommendations,
       currentIndex: this.viewModel.recommendationIndex,
@@ -104,6 +107,7 @@ export struct ExploreHome {
       status: this.viewModel.recommendationStatus,
       refreshing: this.viewModel.recommendationRefreshing,
       skeletonAnimated: this.recommendationSkeletonAnimated,
+      horizontal: horizontal,
       materialEnabled: this.materialEnabled,
       onOpen: (itemId: string, name: string) =>
         this.openContent(itemId, name, LibraryContentKind.SCP),
@@ -142,7 +146,7 @@ export struct ExploreHome {
   }
 
   @Builder
-  private jokeSection() {
+  private jokeSection(twoColumn: boolean = false) {
     ExploreMixedSection({
       title: '轻松一下',
       description: '每日轮换搞笑 SCP 与轻松故事',
@@ -151,6 +155,7 @@ export struct ExploreHome {
       error: this.viewModel.jokeError,
       showDate: false,
       mode: ExploreCollectionMode.JOKE,
+      twoColumn: twoColumn,
       onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content),
       onOpenCollection: (mode: ExploreCollectionMode) => this.onOpenCollection(mode),
       onRetry: () => this.retryJokes()
@@ -160,28 +165,58 @@ export struct ExploreHome {
   build() {
     Column() {
       Scroll(this.scroller) {
-        Flex({ direction: this.sideBySide ? FlexDirection.Row : FlexDirection.Column, alignItems: ItemAlign.Start }) {
-          Column({ space: SECTION_SPACE }) {
-            this.recommendationSection()
-            if (this.sideBySide) {
-              this.jokeSection()
-            }
-          }
-          .width(this.sideBySide ? '44%' : '100%')
-          .margin({ bottom: this.sideBySide ? 0 : SECTION_SPACE })
+        Column() {
+          if (this.sideBySide) {
+            Flex({ direction: FlexDirection.Row, alignItems: ItemAlign.Start }) {
+              Column({ space: SECTION_SPACE }) {
+                this.recommendationSection(false)
+                this.jokeSection(false)
+              }
+              .width('44%')
 
-          Column({ space: SECTION_SPACE }) {
-            this.topRatedSection()
-            this.recentSection()
-            if (!this.sideBySide) {
-              this.jokeSection()
+              Column({ space: SECTION_SPACE }) {
+                this.topRatedSection()
+                this.recentSection()
+              }
+              .width('56%')
+              .padding({ left: SECTION_SPACE })
             }
+            .width('100%')
+          } else if (this.dualScreen) {
+            Column({ space: SECTION_SPACE }) {
+              this.recommendationSection(true)
+
+              Row({ space: DUAL_COLUMN_GUTTER }) {
+                Column() {
+                  this.topRatedSection()
+                }
+                .layoutWeight(1)
+
+                Column() {
+                  this.recentSection()
+                }
+                .layoutWeight(1)
+              }
+              .width('100%')
+              .alignItems(VerticalAlign.Top)
+
+              this.jokeSection(true)
+            }
+            .width('100%')
+          } else {
+            Column({ space: SECTION_SPACE }) {
+              this.recommendationSection(false)
+              this.topRatedSection()
+              this.recentSection()
+              this.jokeSection(false)
+            }
+            .width('100%')
           }
-          .width(this.sideBySide ? '56%' : '100%')
-          .padding({ left: this.sideBySide ? SECTION_SPACE : 0 })
         }
         .width('100%')
-        .constraintSize({ maxWidth: this.sideBySide ? WIDE_CONTENT_MAX_WIDTH : PHONE_TAB_CONTENT_MAX_WIDTH })
+        .constraintSize({
+          maxWidth: this.sideBySide || this.dualScreen ? WIDE_CONTENT_MAX_WIDTH : READING_CONTENT_MAX_WIDTH
+        })
         .padding({
           left: this.horizontalMargin,
           right: this.horizontalMargin,
@@ -199,6 +234,8 @@ export struct ExploreHome {
         if (Number.isFinite(measuredWidth) && measuredWidth > 0) {
           this.horizontalMargin = adaptivePageMarginForWidth(measuredWidth);
           this.sideBySide = measuredWidth >= EXPLORE_TWO_COLUMN_MIN_WIDTH;
+          this.dualScreen = measuredWidth >= EXPLORE_DUAL_SCREEN_MIN_WIDTH &&
+            measuredWidth < EXPLORE_TWO_COLUMN_MIN_WIDTH;
         }
       })
     }

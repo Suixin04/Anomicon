@@ -22,7 +22,7 @@ import {
   materialCardSurfaceColor,
   pageContentTop,
   PHONE_PAGE_MARGIN,
-  PHONE_TAB_CONTENT_MAX_WIDTH,
+  READING_CONTENT_MAX_WIDTH,
   ROW_PRESS_MODIFIER,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
@@ -30,7 +30,8 @@ import { TerminalViewModel } from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
 
 const SECTION_SPACE: number = 28;
-const TERMINAL_TWO_COLUMN_MIN_WIDTH: number = 840;
+const TERMINAL_TWO_COLUMN_MIN_WIDTH: number = 680;
+const TERMINAL_WIDE_TWO_COLUMN_MIN_WIDTH: number = 840;
 
 /**
  * 终端首页：档案阅历、个人资料库与基金会手册。
@@ -47,6 +48,7 @@ export struct TerminalHome {
   @Require @Param viewModel: TerminalViewModel;
   @Require @Param settings: SettingsViewModel;
   @Local private sideBySide: boolean = false;
+  @Local private wideTwoColumn: boolean = false;
   @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
 
   private isImmersiveMaterialEnabled(): boolean {
@@ -282,8 +284,12 @@ export struct TerminalHome {
     .borderRadius(12)
   }
 
+  private columnHalfGutter(): number {
+    return this.wideTwoColumn ? 14 : 10;
+  }
+
   private leftPaneRightMargin(): number {
-    return this.sideBySide ? 0 : this.horizontalMargin;
+    return this.sideBySide ? this.columnHalfGutter() : this.horizontalMargin;
   }
 
   @Builder
@@ -561,14 +567,17 @@ export struct TerminalHome {
           Column() {
             this.personalLibrary()
           }
-          .width(this.sideBySide ? '56%' : '100%')
+          .width(this.sideBySide ? (this.wideTwoColumn ? '56%' : '50%') : '100%')
           .margin({ bottom: this.sideBySide ? 0 : SECTION_SPACE })
 
           Column() {
             this.foundationManual()
           }
-          .width(this.sideBySide ? '44%' : '100%')
-          .padding({ left: this.sideBySide ? SECTION_SPACE : this.horizontalMargin, right: this.horizontalMargin })
+          .width(this.sideBySide ? (this.wideTwoColumn ? '44%' : '50%') : '100%')
+          .padding({
+            left: this.sideBySide ? this.columnHalfGutter() : this.horizontalMargin,
+            right: this.horizontalMargin
+          })
         }
         .width('100%')
 
@@ -577,7 +586,7 @@ export struct TerminalHome {
           .height(136)
       }
       .width('100%')
-      .constraintSize({ maxWidth: this.sideBySide ? WIDE_CONTENT_MAX_WIDTH : PHONE_TAB_CONTENT_MAX_WIDTH })
+      .constraintSize({ maxWidth: this.sideBySide ? WIDE_CONTENT_MAX_WIDTH : READING_CONTENT_MAX_WIDTH })
       .padding({
         top: pageContentTop() + 12,
         bottom: 24
@@ -593,6 +602,7 @@ export struct TerminalHome {
       if (Number.isFinite(viewportWidth) && viewportWidth > 0) {
         this.horizontalMargin = adaptivePageMarginForWidth(viewportWidth);
         this.sideBySide = viewportWidth >= TERMINAL_TWO_COLUMN_MIN_WIDTH;
+        this.wideTwoColumn = viewportWidth >= TERMINAL_WIDE_TWO_COLUMN_MIN_WIDTH;
       }
     })
     .backgroundColor($r('sys.color.background_secondary'))

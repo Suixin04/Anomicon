@@ -85,7 +85,8 @@ export struct StartupOverlay {
         // laid-out Explore page after this container reaches its final anchor.
         ExploreRecommendationSkeleton({
           animated: false,
-          detailProgress: 0
+          detailProgress: 0,
+          horizontal: this.coordinator.deckHeight > 0 && this.coordinator.deckHeight < 300
         })
       }
       .width(this.coordinator.deckWidth)

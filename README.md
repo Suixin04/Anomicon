@@ -57,28 +57,10 @@
 
 ## 下载与安装
 
-请前往项目 Releases 页面查看最新版本与发布说明。当前应用面向 HarmonyOS 7.0（API 26）的手机（`phone`）、平板（`tablet`）、二合一（`2in1`）及折叠屏设备构建。
+请前往项目 Releases 页面查看最新版本与发布说明，或克隆仓库后直接使用 DevEco Studio（HarmonyOS SDK 7.0.0 / API 26）打开并构建运行。当前应用面向 HarmonyOS 7.0（API 26）的手机（`phone`）、平板（`tablet`）、二合一（`2in1`）及折叠屏设备构建。
 
 > [!NOTE]
-> GitHub Releases 附带的 `.hap` 构建产物为自动化流水线生成的**未签名安装包**（unsigned HAP），无法直接安装到零售真机。如需安装测试，请使用 DevEco Studio 配合个人/团队调试签名或正式签名重新签名打包，或克隆仓库从源码构建安装。请只从本项目发布页获取文件并核对发布说明。
-
-### 本地开发与构建检查
-
-构建或调试源码需安装支持 HarmonyOS SDK 7.0.0（API 26）的 DevEco Studio（含 `ohpm` 与 `hvigorw`）以及 Node.js（用于架构约束检查）：
-
-```sh
-# 1. 安装 OHPM 依赖
-ohpm install --all
-
-# 2. 检查模块依赖方向与环依赖（products -> features -> common）
-node scripts/architecture-check.mjs --strict
-
-# 3. 运行基础层与响应式布局单元测试
-hvigorw test -p module=anomiconbasic@default -p buildMode=test --no-daemon
-
-# 4. 构建 Debug HAP
-hvigorw assembleHap -p module=phone@default -p product=default -p buildMode=debug --no-daemon
-```
+> GitHub Releases 附带的 `.hap` 构建产物为自动化流水线生成的未签名安装包（unsigned HAP），真机安装需自行签名或配合相应安装方式。请只从本项目发布页获取文件并核对发布说明。
 
 ## 技术实现
 
