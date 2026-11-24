@@ -23,7 +23,13 @@ import {
 } from '../navigation/AppRoutes';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import { FastPerformanceHintScope } from '../composition/FastPerformanceHints';
-import { createAppBackIcon, createAppTitleBarStyle, popNavigationDestination } from 'anomiconbasic';
+import {
+  createAppBackIcon,
+  createAppTitleBarStyle,
+  DestinationMotionState,
+  NavigationTransitionRegistry,
+  popNavigationDestination
+} from 'anomiconbasic';
 import { SettingsViewModel } from 'settings';
 
 @Builder
@@ -49,6 +55,8 @@ struct ScpSearchPage {
   @Require @Param viewModel: CatalogSearchViewModel;
   @Param settings: SettingsViewModel | undefined = undefined;
   private pageStack: NavPathStack | undefined = undefined;
+  private navDestinationId: string = '';
+  @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
   private readonly contentScroller: Scroller = new Scroller();
   private readonly searchLoadHint: FastPerformanceHintScope =
     new FastPerformanceHintScope(
@@ -59,6 +67,7 @@ struct ScpSearchPage {
   @Local private readonly searchState: ScpCatalogSearchState = sharedCatalogSearchState();
 
   aboutToDisappear(): void {
+    NavigationTransitionRegistry.unregister(this.navDestinationId);
     this.syncSearchLoadHint(false);
   }
 
@@ -136,7 +145,11 @@ struct ScpSearchPage {
     })
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      this.navDestinationId = context.navDestinationId ?? '';
+      NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
     })
+    .opacity(this.navMotion.opacity)
+    .translate({ x: this.navMotion.translateX })
     .onActive(() => {
       this.viewModel.activate();
       this.syncSearchLoadHint(this.viewModel.allSeriesLoading);

@@ -9,7 +9,13 @@ import {
   LibraryCollectionVM,
   LibraryContentRef
 } from 'library';
-import { createAppBackIcon, createAppTitleBarStyle, popNavigationDestination } from 'anomiconbasic';
+import {
+  createAppBackIcon,
+  createAppTitleBarStyle,
+  DestinationMotionState,
+  NavigationTransitionRegistry,
+  popNavigationDestination
+} from 'anomiconbasic';
 import {
   AppRoutes,
   ScpArticleRouteParams
@@ -35,10 +41,13 @@ struct LibraryCollectionPage {
   @Require @Param viewModel: LibraryCollectionVM;
 
   private pageStack: NavPathStack | undefined = undefined;
+  private navDestinationId: string = '';
+  @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
   private readonly scroller: Scroller = new Scroller();
   private routeResolved: boolean = false;
 
   aboutToDisappear(): void {
+    NavigationTransitionRegistry.unregister(this.navDestinationId);
     this.viewModel.dispose();
   }
 
@@ -94,10 +103,14 @@ struct LibraryCollectionPage {
     })
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      this.navDestinationId = context.navDestinationId ?? '';
+      NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
       this.resolveRoute(context.pathInfo.param as Object | null | undefined);
       this.routeResolved = true;
       this.viewModel.activate();
     })
+    .opacity(this.navMotion.opacity)
+    .translate({ x: this.navMotion.translateX })
     .onActive(() => {
       if (this.routeResolved) {
         this.viewModel.activate();

@@ -3,16 +3,19 @@ import {
   accentPillBackgroundColor,
   accentPillForegroundColor,
   adaptivePageMarginForWidth,
+  AppMotion,
   AppTypography,
   autoOpenArticleSidePanel,
   badgeInfoBackgroundColor,
   CARD_PRESS_MODIFIER,
   ContentUpdateNotice,
   isDarkModeActive,
+  isReduceMotionEnabled,
   materialCardBorderColor,
   materialCardSurfaceColor,
   objectClassColor,
   PHONE_PAGE_MARGIN,
+  pressAnimation,
   READING_CONTENT_MAX_WIDTH,
   resolveArticleSidebarWidth,
   ROW_PRESS_MODIFIER,
@@ -455,6 +458,8 @@ export struct ArticleNativeRenderer {
   @Param revealHiddenText: boolean = false;
   @Param justifyBodyText: boolean = true;
   @Param webModeHint: string = '';
+  @Param previewVisible: boolean = false;
+  @Param previewSourceKey: string = '';
 
   @Event onRetryPartial: () => void = () => {};
   @Event onHiddenRevealInteraction: () => void = () => {};
@@ -467,7 +472,7 @@ export struct ArticleNativeRenderer {
   @Event onOpenUrl: (url: string) => void;
   /** Open a readable same-site article through the product route. */
   @Event onOpenArticleLink: (url: string, title: string) => void;
-  @Event onOpenImage: (index: number) => void;
+  @Event onOpenImage: (index: number, sourceKey?: string) => void;
   @Event onToggleExpanded: (block: ScpContentBlock) => void;
   @Event onOpenRelatedTale: (tale: ArticleRelatedTale) => void;
   @Event onContentLaidOut: () => void;
@@ -1112,7 +1117,9 @@ export struct ArticleNativeRenderer {
   private closeSidePanel(): void {
     this.userClosedSidePanel = true;
     if (this.sidePanelOpen) {
-      this.onSidePanelOpenChange(false);
+      this.getUIContext().animateTo(AppMotion.layoutAnimateParam(), (): void => {
+        this.onSidePanelOpenChange(false);
+      });
     }
   }
 
@@ -1295,7 +1302,9 @@ export struct ArticleNativeRenderer {
     } else {
       next.push(key);
     }
-    this.revealedHiddenKeys = next;
+    this.getUIContext().animateTo(AppMotion.microAnimateParam(), (): void => {
+      this.revealedHiddenKeys = next;
+    });
     this.onHiddenRevealInteraction();
   }
 
@@ -1655,10 +1664,10 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private quoteBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+  private quoteBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
     Column({ space: 8 }) {
       ForEach(row.children, (child: ArticleBlockRowState) => {
-        this.blockView(child, inTerminal)
+        this.blockView(child, inTerminal, heroEnabled)
       }, (child: ArticleBlockRowState) => child.key)
     }
     .width('100%')
@@ -1669,14 +1678,14 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private collapsibleBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+  private collapsibleBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(16)
           .fontColor([inTerminal ? '#94A3B8' : $r('sys.color.icon_secondary')])
           .rotate({ angle: this.isExpanded(row.block) ? 90 : 0 })
-          .animation({ duration: 220, curve: Curve.FastOutSlowIn })
+          .animation(AppMotion.springAnimateParam(false))
         Text((this.isExpanded(row.block) && row.block.closeCaption.length > 0) ?
           row.block.closeCaption :
           (row.block.caption.length > 0 ? row.block.caption : '展开内容'))
@@ -1686,16 +1695,13 @@ export struct ArticleNativeRenderer {
           .layoutWeight(1)
       }
       .attributeModifier(ROW_PRESS_MODIFIER)
-      .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+      .animation(pressAnimation())
       .width('100%')
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
       .backgroundColor(inTerminal ? '#232A34' : $r('sys.color.comp_background_tertiary'))
       .borderRadius(10)
       .onClick(() => {
-        this.getUIContext().animateTo({
-          duration: 240,
-          curve: Curve.FastOutSlowIn
-        }, (): void => {
+        this.getUIContext().animateTo(AppMotion.springAnimateParam(false), (): void => {
           this.onToggleExpanded(row.block);
         });
       })
@@ -1703,14 +1709,15 @@ export struct ArticleNativeRenderer {
       if (this.isExpanded(row.block)) {
         Column({ space: 12 }) {
           ForEach(row.children, (child: ArticleBlockRowState) => {
-            this.blockView(child, inTerminal)
+            this.blockView(child, inTerminal, heroEnabled)
           }, (child: ArticleBlockRowState) => child.key)
         }
         .width('100%')
         .padding({ left: 12, right: 12 })
         .transition(
-          TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.TOP))
-            .animation({ duration: 220, curve: Curve.FastOutSlowIn })
+          isReduceMotionEnabled() ? TransitionEffect.IDENTITY :
+            TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.TOP))
+              .animation(AppMotion.springAnimateParam(false))
         )
       }
     }
@@ -1873,7 +1880,7 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private tabsBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+  private tabsBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
     Column({ space: 10 }) {
       Scroll() {
         Row({ space: 8 }) {
@@ -1889,8 +1896,11 @@ export struct ArticleNativeRenderer {
                 accentPillBackgroundColor() :
                 (inTerminal ? '#232A34' : $r('sys.color.comp_background_tertiary')))
               .borderRadius(16)
+              .animation(pressAnimation())
               .onClick(() => {
-                row.activeTabIndex = index;
+                this.getUIContext().animateTo(AppMotion.microAnimateParam(), (): void => {
+                  row.activeTabIndex = index;
+                });
               })
           }, (panel: ArticleBlockRowState) => panel.key)
         }
@@ -1904,7 +1914,7 @@ export struct ArticleNativeRenderer {
           ForEach(
             row.children[Math.max(0, Math.min(row.activeTabIndex, row.children.length - 1))].children,
             (child: ArticleBlockRowState) => {
-              this.blockView(child, inTerminal)
+              this.blockView(child, inTerminal, heroEnabled)
             },
             (child: ArticleBlockRowState) => child.key
           )
@@ -1915,17 +1925,22 @@ export struct ArticleNativeRenderer {
         .backgroundColor(inTerminal ? '#1B212A' : $r('sys.color.comp_background_primary'))
         .border({ width: 0.8, color: inTerminal ? '#334155' : materialCardBorderColor(this.materialEnabled) })
         .borderRadius(12)
+        .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
       }
     }
     .width('100%')
   }
 
   @Builder
-  private calloutBlock(row: ArticleBlockRowState, parentInTerminal: boolean = false) {
+  private calloutBlock(
+    row: ArticleBlockRowState,
+    parentInTerminal: boolean = false,
+    heroEnabled: boolean = true
+  ) {
     if (row.block.calloutTone === ScpCalloutTone.TERMINAL || parentInTerminal) {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, true)
+          this.blockView(child, true, heroEnabled)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -1937,7 +1952,7 @@ export struct ArticleNativeRenderer {
     } else if (row.block.calloutTone === ScpCalloutTone.WARNING) {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false)
+          this.blockView(child, false, heroEnabled)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -1949,7 +1964,7 @@ export struct ArticleNativeRenderer {
     } else if (row.block.calloutTone === ScpCalloutTone.NOTE) {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false)
+          this.blockView(child, false, heroEnabled)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -1965,7 +1980,7 @@ export struct ArticleNativeRenderer {
     } else {
       Column({ space: 10 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false)
+          this.blockView(child, false, heroEnabled)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -1998,7 +2013,7 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private listBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+  private listBlock(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
     Column({ space: 6 }) {
       ForEach(row.children, (item: ArticleBlockRowState, itemIndex: number) => {
         Column({ space: 6 }) {
@@ -2020,7 +2035,7 @@ export struct ArticleNativeRenderer {
           if (item.children.length > 0) {
             Column({ space: 6 }) {
               ForEach(item.children, (nested: ArticleBlockRowState) => {
-                this.blockView(nested, inTerminal)
+                this.blockView(nested, inTerminal, heroEnabled)
               }, (nested: ArticleBlockRowState) => nested.key)
             }
             .width('100%')
@@ -2057,16 +2072,24 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private standaloneImageBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+  private standaloneImageBlock(
+    row: ArticleBlockRowState,
+    inTerminal: boolean = false,
+    heroEnabled: boolean = true
+  ) {
     Column({ space: 6 }) {
       ScpArticleImage({
         url: row.block.source,
         preferredWidth: row.block.preferredWidth,
         inlineMode: true,
+        geometryId: (heroEnabled && !isReduceMotionEnabled() && this.imageIndexOf(row.block.source) >= 0) ?
+          `article-hero:inline:${row.key}` : '',
+        hiddenForPreview: heroEnabled && this.previewVisible &&
+          this.previewSourceKey === `inline:${row.key}`,
         onOpen: () => {
           const galleryIndex = this.imageIndexOf(row.block.source);
           if (galleryIndex >= 0) {
-            this.onOpenImage(galleryIndex);
+            this.onOpenImage(galleryIndex, heroEnabled ? `inline:${row.key}` : '');
           } else {
             this.handleOpenUrl(row.block.source);
           }
@@ -2086,13 +2109,17 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private unsupportedBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+  private unsupportedBlock(
+    row: ArticleBlockRowState,
+    inTerminal: boolean = false,
+    heroEnabled: boolean = true
+  ) {
     if (row.spans.length > 0) {
       this.spanText(row, inTerminal)
     } else if (row.children.length > 0) {
       Column({ space: 12 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, inTerminal)
+          this.blockView(child, inTerminal, heroEnabled)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
@@ -2106,7 +2133,7 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private blockView(row: ArticleBlockRowState, inTerminal: boolean = false) {
+  private blockView(row: ArticleBlockRowState, inTerminal: boolean = false, heroEnabled: boolean = true) {
     if (row.block.type === ScpBlockType.PARAGRAPH) {
       if (ArticleRenderer.isPureWhisperBlock(row.block)) {
         this.pureWhisperBlock(row, inTerminal)
@@ -2116,27 +2143,27 @@ export struct ArticleNativeRenderer {
     } else if (row.block.type === ScpBlockType.HEADING) {
       this.headingBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.QUOTE) {
-      this.quoteBlock(row, inTerminal)
+      this.quoteBlock(row, inTerminal, heroEnabled)
     } else if (row.block.type === ScpBlockType.COLLAPSIBLE) {
-      this.collapsibleBlock(row, inTerminal)
+      this.collapsibleBlock(row, inTerminal, heroEnabled)
     } else if (row.block.type === ScpBlockType.ACS_HEADER) {
       this.acsHeaderBlock(row)
     } else if (row.block.type === ScpBlockType.TABS) {
-      this.tabsBlock(row, inTerminal)
+      this.tabsBlock(row, inTerminal, heroEnabled)
     } else if (row.block.type === ScpBlockType.CALLOUT) {
-      this.calloutBlock(row, inTerminal)
+      this.calloutBlock(row, inTerminal, heroEnabled)
     } else if (row.block.type === ScpBlockType.CODE_BLOCK) {
       this.codeBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.LIST) {
-      this.listBlock(row, inTerminal)
+      this.listBlock(row, inTerminal, heroEnabled)
     } else if (row.block.type === ScpBlockType.TABLE) {
       this.tableBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.EMBED) {
       this.embedBlock(row)
     } else if (row.block.type === ScpBlockType.IMAGE) {
-      this.standaloneImageBlock(row, inTerminal)
+      this.standaloneImageBlock(row, inTerminal, heroEnabled)
     } else if (row.block.type === ScpBlockType.UNSUPPORTED) {
-      this.unsupportedBlock(row, inTerminal)
+      this.unsupportedBlock(row, inTerminal, heroEnabled)
     } else if (row.block.type === ScpBlockType.DIVIDER) {
       Divider()
         .strokeWidth(0.5)
@@ -2202,7 +2229,10 @@ export struct ArticleNativeRenderer {
             Column({ space: 6 }) {
               ScpArticleImage({
                 url: row.block.source,
-                onOpen: () => this.onOpenImage(row.index),
+                geometryId: !isReduceMotionEnabled() ? `article-hero:gallery:${row.index}` : '',
+                hiddenForPreview: this.previewVisible &&
+                  this.previewSourceKey === `gallery:${row.index}`,
+                onOpen: () => this.onOpenImage(row.index, `gallery:${row.index}`),
                 onOpenInBrowser: (url: string) => this.onOpenUrl(url)
               })
               if (row.block.caption.length > 0) {
@@ -2266,7 +2296,7 @@ export struct ArticleNativeRenderer {
         .fontColor($r('sys.color.font_emphasize'))
       Column({ space: 6 }) {
         ForEach(row.blocks, (block: ArticleBlockRowState) => {
-          this.blockView(block)
+          this.blockView(block, false, false)
         }, (block: ArticleBlockRowState) => block.key)
         Row({ space: 4 }) {
           SymbolGlyph($r('sys.symbol.arrow_up'))
@@ -2278,7 +2308,7 @@ export struct ArticleNativeRenderer {
             .fontColor($r('sys.color.font_emphasize'))
         }
         .attributeModifier(ROW_PRESS_MODIFIER)
-        .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+        .animation(pressAnimation())
         .constraintSize({ minHeight: 34 })
         .padding({ left: 10, right: 10, top: 6, bottom: 6 })
         .backgroundColor($r('sys.color.comp_background_tertiary'))
@@ -2329,7 +2359,7 @@ export struct ArticleNativeRenderer {
               .fontColor([$r('sys.color.icon_secondary')])
           }
           .attributeModifier(ROW_PRESS_MODIFIER)
-          .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+          .animation(pressAnimation())
           .width('100%')
           .alignItems(VerticalAlign.Center)
           .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -2486,7 +2516,7 @@ export struct ArticleNativeRenderer {
         }
       }
       .attributeModifier(ROW_PRESS_MODIFIER)
-      .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+      .animation(pressAnimation())
       .constraintSize({ minHeight: 36 })
       .padding({
         left: delta < 0 ? 12 : 14,
@@ -2510,7 +2540,7 @@ export struct ArticleNativeRenderer {
         Scroll(this.footnoteSheetScroller) {
           Column({ space: 10 }) {
             ForEach(this.currentFootnoteBlocks(), (block: ArticleBlockRowState) => {
-              this.blockView(block)
+              this.blockView(block, false, false)
             }, (block: ArticleBlockRowState) => block.key)
           }
           .width('100%')
@@ -2600,7 +2630,7 @@ export struct ArticleNativeRenderer {
         .fontColor($r('sys.color.font_emphasize'))
       Column({ space: 6 }) {
         ForEach(fnRow.blocks, (block: ArticleBlockRowState) => {
-          this.blockView(block)
+          this.blockView(block, false, false)
         }, (block: ArticleBlockRowState) => block.key)
       }
       .layoutWeight(1)
@@ -2644,7 +2674,7 @@ export struct ArticleNativeRenderer {
         .fontColor([$r('sys.color.icon_secondary')])
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .alignItems(VerticalAlign.Center)
     .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -2762,10 +2792,7 @@ export struct ArticleNativeRenderer {
     .border({ width: { left: 0.5 }, color: $r('sys.color.comp_divider') })
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
-    .transition(
-      TransitionEffect.OPACITY.combine(TransitionEffect.move(TransitionEdge.END))
-        .animation({ duration: 220, curve: Curve.FastOutSlowIn })
-    )
+    .transition(AppMotion.panelEdgeTransition(TransitionEdge.END))
   }
 
   build() {

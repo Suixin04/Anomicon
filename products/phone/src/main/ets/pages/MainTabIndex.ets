@@ -58,12 +58,15 @@ import {
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import {
   adaptivePageMarginForWidth,
+  AppMotion,
   createAppTitleBarStyle,
   immersiveMaterialSupported,
   isDetailFullscreen,
   isLargeWindow,
   isPreviewFullscreen,
+  isReduceMotionEnabled,
   navigationStackRevision,
+  NavigationTransitionRegistry,
   setDetailFullscreen,
   setPreviewFullscreen,
   setSplitNavigationActive,
@@ -102,6 +105,7 @@ export struct MainTabIndex {
   // 顶部栏跟随页签选中；页面激活和滚动绑定仍等切页完成。
   @Local private titleTabIndex: number = HomeTabId.EXPLORE;
   @Local private tabContentOpacity: number = 1;
+  @Local private tabContentOffsetY: number = 0;
   @Local private stackDepth: number = 0;
   @Local private navPaneWidth: number = 0;
   private readingHistoryUnsubscribe: (() => void) | undefined = undefined;
@@ -315,15 +319,23 @@ export struct MainTabIndex {
   @Builder
   private toolbarBuilder() {
     if (this.titleTabIndex === HomeTabId.CATALOG) {
-      this.catalogToolbar()
+      Column() {
+        this.catalogToolbar()
+      }
+      .width('100%')
+      .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
     } else if (this.titleTabIndex === HomeTabId.STORY) {
-      StoryFilterBar({
-        state: this.taleFilterState,
-        hapticEnabled: this.settings.hapticEnabled,
-        materialEnabled: this.settings.immersiveMaterialEnabled,
-        horizontalMargin: this.toolbarHorizontalMargin(),
-        onHaptic: (enabled: boolean) => this.hapticService.playSelection(enabled)
-      })
+      Column() {
+        StoryFilterBar({
+          state: this.taleFilterState,
+          hapticEnabled: this.settings.hapticEnabled,
+          materialEnabled: this.settings.immersiveMaterialEnabled,
+          horizontalMargin: this.toolbarHorizontalMargin(),
+          onHaptic: (enabled: boolean) => this.hapticService.playSelection(enabled)
+        })
+      }
+      .width('100%')
+      .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
     }
   }
 
@@ -385,13 +397,16 @@ export struct MainTabIndex {
                   settings: this.settings,
                   active: this.tabsViewModel.currentIndex === HomeTabId.TERMINAL,
                   onOpenContent: (content: LibraryContentRef) => this.openContent(content),
-                  onOpenCollection: (mode: LibraryCollectionMode) => this.openLibraryCollection(mode)
+                  onOpenCollection: (mode: LibraryCollectionMode) => this.openLibraryCollection(mode),
+                  onOpenArchive3DGallery: () => this.openArchive3DGallery(),
+                  onOpenSettings: () => this.openSettings()
                 })
               }
             }
             .width('100%')
             .height('100%')
             .opacity(this.tabContentOpacity)
+            .translate({ y: this.tabContentOffsetY })
           }
           .tabBar(this.createTabBarStyle(item))
         }, (item: TabItem) => item.id.toString())
@@ -431,16 +446,65 @@ export struct MainTabIndex {
       .onChange((index: number) => {
         if (this.tabsViewModel.select(index)) {
           this.hapticService.playSelection(this.settings.hapticEnabled);
-          this.tabContentOpacity = 0.84;
-          this.getUIContext().animateTo({
-            duration: 160,
-            curve: Curve.EaseOut
-          }, (): void => {
+          if (isReduceMotionEnabled()) {
             this.tabContentOpacity = 1;
+            this.tabContentOffsetY = 0;
+            return;
+          }
+          this.tabContentOpacity = 0.86;
+          this.tabContentOffsetY = 8;
+          this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
+            this.tabContentOpacity = 1;
+            this.tabContentOffsetY = 0;
           });
         }
       })
     }
+    .customNavContentTransition((
+      from: NavContentInfo,
+      to: NavContentInfo,
+      operation: NavigationOperation
+    ): NavigationAnimatedTransition | undefined => {
+      if (operation !== NavigationOperation.REPLACE || isReduceMotionEnabled() ||
+        from.index < 0 || to.index < 0) {
+        return undefined;
+      }
+      const fromId = from.navDestinationId;
+      const toId = to.navDestinationId;
+      return {
+        timeout: 360,
+        onTransitionEnd: (_success: boolean): void => {
+          NavigationTransitionRegistry.get(fromId)?.reset();
+          NavigationTransitionRegistry.get(toId)?.reset();
+        },
+        transition: (transitionProxy: NavigationTransitionProxy): void => {
+          const fromState = NavigationTransitionRegistry.get(transitionProxy.from.navDestinationId);
+          const toState = NavigationTransitionRegistry.get(transitionProxy.to.navDestinationId);
+          if (toState === undefined) {
+            transitionProxy.finishTransition();
+            return;
+          }
+          toState.opacity = 0;
+          toState.translateX = 16;
+          if (fromState !== undefined) {
+            fromState.opacity = 1;
+            fromState.translateX = 0;
+          }
+          this.getUIContext().animateTo(AppMotion.springAnimateParam(true, (): void => {
+            fromState?.reset();
+            toState.reset();
+            transitionProxy.finishTransition();
+          }), (): void => {
+            toState.opacity = 1;
+            toState.translateX = 0;
+            if (fromState !== undefined) {
+              fromState.opacity = 0;
+              fromState.translateX = -8;
+            }
+          });
+        }
+      };
+    })
     // Full-screen tabs at home; Switch to Split when a detail page is pushed on LG+ windows.
     .mode(this.shouldUseSplitMode() ? NavigationMode.Split : NavigationMode.Stack)
     .hideNavBar(this.shouldHideNavBar())

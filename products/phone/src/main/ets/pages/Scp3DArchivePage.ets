@@ -13,6 +13,7 @@ import {
   accentPillBackgroundColor,
   accentPillForegroundColor,
   adaptivePageMarginForWidth,
+  AppMotion,
   AppTypography,
   ARCHIVE_3D_WORKBENCH_MIN_WIDTH,
   badgeInfoBackgroundColor,
@@ -199,7 +200,9 @@ struct Scp3DArchivePage {
             $r('sys.symbol.arrow_up_left_and_arrow_down_right'),
           label: fullscreen ? '恢复分栏' : '全屏展开',
           action: () => {
-            setDetailFullscreen(!fullscreen);
+            this.getUIContext().animateTo(AppMotion.layoutAnimateParam(), (): void => {
+              setDetailFullscreen(!fullscreen);
+            });
           }
         }
       }]

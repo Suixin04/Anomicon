@@ -10,11 +10,12 @@ import {
   materialCardBorderColor,
   materialCardSurfaceColor,
   PHONE_PAGE_MARGIN,
+  pressAnimation,
   ROW_PRESS_MODIFIER
 } from 'anomiconbasic';
 
-const FAVORITE_CARD_WIDTH: number = 220;
-const FAVORITE_CARD_HEIGHT: number = 132;
+const FAVORITE_CARD_WIDTH: number = 212;
+const FAVORITE_CARD_HEIGHT: number = 122;
 
 function contentIconFor(kind: LibraryContentKind): Resource {
   switch (kind) {
@@ -42,6 +43,155 @@ function kindLabelFor(kind: LibraryContentKind): string {
   }
 }
 
+/** 终端资料区轻量单行空态提示，避免抢占首屏空间。 */
+@ComponentV2
+export struct TerminalCompactEmptyBanner {
+  @Require @Param symbol: Resource;
+  @Require @Param title: string;
+  @Require @Param description: string;
+  @Param materialEnabled: boolean = false;
+
+  build() {
+    Row({ space: 12 }) {
+      Column() {
+        SymbolGlyph(this.symbol)
+          .fontSize(17)
+          .fontColor([$r('sys.color.icon_secondary')])
+      }
+      .width(36)
+      .height(36)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor($r('sys.color.comp_background_tertiary'))
+      .borderRadius(10)
+
+      Column({ space: 2 }) {
+        Text(this.title)
+          .fontSize(AppTypography.BODY_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+        Text(this.description)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+    }
+    .width('100%')
+    .padding({ left: 14, right: 14, top: 11, bottom: 11 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(16)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+  }
+}
+
+/** 终端常用入口工作条：三维档案馆 / 全部收藏 / 阅读设置。 */
+@ComponentV2
+export struct TerminalQuickWorkbenchBar {
+  @Require @Param favoriteCount: number;
+  @Require @Param materialEnabled: boolean;
+  @Event onOpenArchive3DGallery: () => void = () => {};
+  @Event onOpenFavorites: () => void = () => {};
+  @Event onOpenSettings: () => void = () => {};
+
+  @Builder
+  private actionTile(
+    symbol: Resource,
+    title: string,
+    trailingBadge: string,
+    accessibilityLabel: string,
+    onTap: () => void
+  ) {
+    Column({ space: 8 }) {
+      Row() {
+        Column() {
+          SymbolGlyph(symbol)
+            .fontSize(15)
+            .fontColor([$r('sys.color.icon_emphasize')])
+        }
+        .width(28)
+        .height(28)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(9)
+
+        Blank()
+
+        if (trailingBadge.length > 0) {
+          Text(trailingBadge)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_secondary'))
+            .height(20)
+            .padding({ left: 7, right: 7 })
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .borderRadius(10)
+        } else {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(11)
+            .fontColor([$r('sys.color.icon_tertiary')])
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Text(title)
+        .fontSize(AppTypography.BODY_S)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('sys.color.font'))
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+    }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .layoutWeight(1)
+    .height(68)
+    .padding({ left: 11, right: 11, top: 10, bottom: 9 })
+    .alignItems(HorizontalAlign.Start)
+    .justifyContent(FlexAlign.SpaceBetween)
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(16)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+    .onClick(() => onTap())
+    .accessibilityText(accessibilityLabel)
+  }
+
+  build() {
+    Row({ space: 10 }) {
+      this.actionTile(
+        $r('sys.symbol.viewfinder_3D'),
+        '三维档案',
+        '',
+        '打开三维档案馆',
+        (): void => this.onOpenArchive3DGallery()
+      )
+      this.actionTile(
+        $r('sys.symbol.star_fill'),
+        '全部收藏',
+        `${this.favoriteCount}`,
+        '打开全部收藏',
+        (): void => this.onOpenFavorites()
+      )
+      this.actionTile(
+        $r('sys.symbol.gearshape'),
+        '阅读设置',
+        '',
+        '打开阅读设置',
+        (): void => this.onOpenSettings()
+      )
+    }
+    .width('100%')
+  }
+}
+
 /** 收藏卡片使用稳定内容身份复用节点，并由 Repeat 更新最新快照。 */
 @ComponentV2
 export struct TerminalFavoriteCards {
@@ -58,17 +208,17 @@ export struct TerminalFavoriteCards {
   private favoriteCard(row: RepeatItem<LibraryFavorite>) {
     Stack({ alignContent: Alignment.TopEnd }) {
       SymbolGlyph(contentIconFor(row.item.content.kind))
-        .fontSize(92)
+        .fontSize(86)
         .fontColor([$r('sys.color.icon_emphasize')])
-        .opacity(0.08)
-        .translate({ x: 22, y: -20 })
+        .opacity(0.07)
+        .translate({ x: 20, y: -18 })
         .hitTestBehavior(HitTestMode.None)
 
       Column() {
         Row() {
           Row({ space: 6 }) {
             SymbolGlyph(contentIconFor(row.item.content.kind))
-              .fontSize(14)
+              .fontSize(13)
               .fontColor([$r('sys.color.icon_emphasize')])
             Text(kindLabelFor(row.item.content.kind))
               .fontSize(AppTypography.CAPTION_M)
@@ -76,10 +226,10 @@ export struct TerminalFavoriteCards {
               .fontColor($r('sys.color.font_emphasize'))
               .maxLines(1)
           }
-          .height(28)
+          .height(26)
           .padding({ left: 9, right: 9 })
           .backgroundColor($r('sys.color.comp_background_tertiary'))
-          .borderRadius(14)
+          .borderRadius(13)
         }
         .width('100%')
 
@@ -98,21 +248,21 @@ export struct TerminalFavoriteCards {
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .width('100%')
-          .margin({ top: 4 })
+          .margin({ top: 3 })
       }
       .width('100%')
       .height('100%')
       .alignItems(HorizontalAlign.Start)
-      .padding(16)
+      .padding(14)
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width(FAVORITE_CARD_WIDTH)
     .height(FAVORITE_CARD_HEIGHT)
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
     .border(this.materialEnabled ?
       { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
-    .borderRadius(20)
+    .borderRadius(18)
     .clip(true)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
     .onClick(() => this.onOpenContent(row.item.content))
@@ -120,7 +270,7 @@ export struct TerminalFavoriteCards {
   }
 
   build() {
-    Row({ space: 12 }) {
+    Row({ space: 10 }) {
       Repeat<LibraryFavorite>(this.entries)
         .each((row: RepeatItem<LibraryFavorite>) => {
           this.favoriteCard(row)
@@ -150,11 +300,11 @@ export struct TerminalLibrarySectionTitle {
           .fontSize(15)
           .fontColor([$r('sys.color.icon_emphasize')])
       }
-      .width(30)
-      .height(30)
+      .width(28)
+      .height(28)
       .justifyContent(FlexAlign.Center)
       .backgroundColor($r('sys.color.comp_background_tertiary'))
-      .borderRadius(10)
+      .borderRadius(9)
 
       Text(this.title)
         .fontSize(AppTypography.SUBTITLE_M)
@@ -182,10 +332,10 @@ export struct TerminalLibrarySectionTitle {
             .fontSize(11)
             .fontColor([$r('sys.color.icon_emphasize')])
         }
-        .height(32)
+        .height(30)
         .padding({ left: 10, right: 8 })
         .backgroundColor($r('sys.color.comp_background_tertiary'))
-        .borderRadius(16)
+        .borderRadius(15)
         .onClick(() => this.onOpen())
         .accessibilityText(`查看全部${this.title}`)
       }
@@ -218,7 +368,7 @@ export struct TerminalErrorState {
         .onClick(() => this.onRetry())
     }
     .width('100%')
-    .padding({ left: 24, right: 24, top: 22, bottom: 22 })
+    .padding({ left: 24, right: 24, top: 20, bottom: 20 })
     .backgroundColor($r('sys.color.comp_background_primary'))
     .borderRadius(16)
   }
@@ -262,65 +412,75 @@ struct TerminalReadingHistoryRow {
 
   @Builder
   private resumeCard() {
-    Stack({ alignContent: Alignment.TopEnd }) {
-      SymbolGlyph(contentIconFor(this.entry.content.kind))
-        .fontSize(104)
-        .fontColor([$r('sys.color.icon_emphasize')])
-        .opacity(0.07)
-        .translate({ x: 26, y: -24 })
-        .hitTestBehavior(HitTestMode.None)
-
-      Row({ space: 16 }) {
-        Column({ space: 7 }) {
-          Row({ space: 6 }) {
+    Row({ space: 14 }) {
+      Column({ space: 6 }) {
+        Row({ space: 6 }) {
+          Row({ space: 5 }) {
             SymbolGlyph($r('sys.symbol.doc_text_badge_clock_fill'))
-              .fontSize(14)
+              .fontSize(13)
               .fontColor([$r('sys.color.icon_emphasize')])
             Text('继续阅读')
-              .fontSize(AppTypography.CAPTION_L)
+              .fontSize(AppTypography.CAPTION_M)
               .fontWeight(FontWeight.Bold)
               .fontColor($r('sys.color.font_emphasize'))
           }
-          .height(24)
+          .height(22)
+          .padding({ left: 8, right: 8 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(11)
 
-          Text(this.entry.content.title)
-            .fontSize(AppTypography.SUBTITLE_M)
-            .fontWeight(FontWeight.Bold)
-            .fontColor($r('sys.color.font'))
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%')
-
-          Text(this.historyMetadata())
-            .fontSize(AppTypography.CAPTION_M)
-            .fontColor($r('sys.color.font_tertiary'))
-            .maxLines(1)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%')
+          if (this.entry.completed) {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.checkmark_circle_fill'))
+                .fontSize(12)
+                .fontColor(['#16A34A'])
+              Text('已读')
+                .fontSize(AppTypography.CAPTION_M)
+                .fontWeight(FontWeight.Medium)
+                .fontColor('#16A34A')
+            }
+            .height(22)
+            .padding({ left: 7, right: 7 })
+            .backgroundColor('#1A16A34A')
+            .borderRadius(11)
+          }
         }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
 
-        Column() {
-          SymbolGlyph($r('sys.symbol.chevron_right'))
-            .fontSize(14)
-            .fontColor([$r('sys.color.icon_emphasize')])
-        }
-        .width(36)
-        .height(36)
-        .justifyContent(FlexAlign.Center)
-        .backgroundColor($r('sys.color.comp_background_tertiary'))
-        .borderRadius(18)
+        Text(this.entry.content.title)
+          .fontSize(AppTypography.SUBTITLE_M)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+
+        Text(this.historyMetadata())
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
       }
-      .width('100%')
-      .height('100%')
-      .alignItems(VerticalAlign.Center)
-      .padding({ left: 18, right: 16, top: 16, bottom: 16 })
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Column() {
+        SymbolGlyph($r('sys.symbol.chevron_right'))
+          .fontSize(14)
+          .fontColor([$r('sys.color.icon_emphasize')])
+      }
+      .width(34)
+      .height(34)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor($r('sys.color.comp_background_tertiary'))
+      .borderRadius(17)
     }
     .attributeModifier(ROW_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
-    .height(128)
+    .height(106)
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 16, right: 14, top: 14, bottom: 14 })
     .onClick(() => this.onOpenContent(this.entry.content))
     .accessibilityText(`继续阅读，${this.entry.content.title}`)
   }
@@ -330,16 +490,16 @@ struct TerminalReadingHistoryRow {
     Row({ space: 12 }) {
       Column() {
         SymbolGlyph(contentIconFor(this.entry.content.kind))
-          .fontSize(20)
+          .fontSize(18)
           .fontColor([$r('sys.color.icon_emphasize')])
       }
-      .width(42)
-      .height(42)
+      .width(38)
+      .height(38)
       .justifyContent(FlexAlign.Center)
       .backgroundColor($r('sys.color.comp_background_tertiary'))
-      .borderRadius(14)
+      .borderRadius(12)
 
-      Column({ space: 4 }) {
+      Column({ space: 3 }) {
         Text(this.entry.content.title)
           .fontSize(AppTypography.BODY_M)
           .fontWeight(FontWeight.Bold)
@@ -355,16 +515,24 @@ struct TerminalReadingHistoryRow {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(13)
-        .fontColor([$r('sys.color.icon_secondary')])
+      Row({ space: 6 }) {
+        if (this.entry.completed) {
+          SymbolGlyph($r('sys.symbol.checkmark_circle_fill'))
+            .fontSize(14)
+            .fontColor(['#16A34A'])
+        }
+        SymbolGlyph($r('sys.symbol.chevron_right'))
+          .fontSize(13)
+          .fontColor([$r('sys.color.icon_secondary')])
+      }
+      .alignItems(VerticalAlign.Center)
     }
     .attributeModifier(ROW_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
-    .constraintSize({ minHeight: 72 })
+    .constraintSize({ minHeight: 62 })
     .alignItems(VerticalAlign.Center)
-    .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+    .padding({ left: 14, right: 14, top: 10, bottom: 10 })
     .onClick(() => this.onOpenContent(this.entry.content))
     .accessibilityText(`打开最近浏览，${this.entry.content.title}`)
   }
@@ -400,7 +568,7 @@ export struct TerminalReadingHistoryList {
               Divider()
                 .strokeWidth(0.5)
                 .color($r('sys.color.comp_divider'))
-                .margin({ left: 68, right: 14 })
+                .margin({ left: 64, right: 14 })
             }
           }
           .width('100%')
@@ -411,7 +579,7 @@ export struct TerminalReadingHistoryList {
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
     .border(this.materialEnabled ?
       { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
-    .borderRadius(this.continueReading ? 22 : 18)
+    .borderRadius(this.continueReading ? 20 : 18)
     .clip(true)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
   }

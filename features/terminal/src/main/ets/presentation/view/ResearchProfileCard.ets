@@ -1,12 +1,24 @@
 import {
+  accentPillBackgroundColor,
+  accentPillForegroundColor,
+  AppMotion,
   AppTypography,
   materialCardBorderColor,
   materialCardSurfaceColor,
+  pressAnimation,
+  ROW_PRESS_MODIFIER,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
+import { ResearchDailyProgress } from 'library';
+import {
+  DailyActivityBar,
+  buildRecentSevenDayActivity,
+  formatTodayQuotaLabel
+} from '../model/TerminalProfileHelpers';
 
-const PROFILE_WIDE_BANNER_MIN_WIDTH: number = 640;
+const PROFILE_WIDE_BANNER_MIN_WIDTH: number = 620;
 const STATISTICS_WIDE_BREAKPOINT: string = '520vp';
+const ACTIVITY_BAR_MAX_HEIGHT: number = 22;
 
 /** 动态统计格必须是组件；多参数 @Builder 会把 value 固定为首次构建值。 */
 @ComponentV2
@@ -14,39 +26,67 @@ struct ResearchStatisticItem {
   @Require @Param symbol: Resource;
   @Require @Param value: string;
   @Require @Param label: string;
+  @Param clickable: boolean = false;
+  @Event onTap: () => void = () => {};
 
-  build() {
-    Column({ space: 8 }) {
-      SymbolGlyph(this.symbol)
-        .fontSize(21)
-        .fontColor([$r('sys.color.icon_secondary')])
+  @Builder
+  private tileContent() {
+    Column({ space: 6 }) {
+      Row({ space: 6 }) {
+        SymbolGlyph(this.symbol)
+          .fontSize(16)
+          .fontColor([this.clickable ? $r('sys.color.icon_emphasize') : $r('sys.color.icon_secondary')])
+        Text(this.label)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(1)
+          .layoutWeight(1)
+        if (this.clickable) {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(11)
+            .fontColor([$r('sys.color.icon_tertiary')])
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
       Text(this.value)
         .fontSize(AppTypography.SUBTITLE_M)
         .fontWeight(FontWeight.Bold)
         .fontColor($r('sys.color.font'))
         .maxLines(1)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
-      Text(this.label)
-        .fontSize(AppTypography.CAPTION_M)
-        .fontColor($r('sys.color.font_tertiary'))
-        .maxLines(1)
     }
     .width('100%')
-    .height(94)
-    .padding({ left: 10, right: 10, top: 12, bottom: 12 })
+    .height(72)
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
     .alignItems(HorizontalAlign.Start)
-    .justifyContent(FlexAlign.Center)
+    .justifyContent(FlexAlign.SpaceBetween)
     .backgroundColor($r('sys.color.comp_background_tertiary'))
-    .borderRadius(16)
+    .borderRadius(15)
+  }
+
+  build() {
+    if (this.clickable) {
+      Column() {
+        this.tileContent()
+      }
+      .attributeModifier(ROW_PRESS_MODIFIER)
+      .animation(pressAnimation())
+      .width('100%')
+      .onClick(() => this.onTap())
+      .accessibilityText(`查看全部${this.label}，当前 ${this.value}`)
+    } else {
+      this.tileContent()
+    }
   }
 }
 
 /**
- * 终端档案阅历摘要。
+ * 终端档案阅历摘要（研究员档案工牌）。
  *
- * 组件只消费可展示的原始值，不持有阅历计算、持久化或共享状态，方便终端首页
- * 在数据模型演进时保持稳定。统计栅格以组件宽度而非窗口宽度为断点，因此既可
- * 用于窄屏，也可放入最大 680vp 的页面内容区。
+ * 组件只消费可展示的原始值，不持有阅历计算、持久化或共享状态。
+ * 规则说明折叠收入右上角信息按钮以释放首屏空间，同时展示今日计分进度与近 7 日活跃条。
  */
 @ComponentV2
 export struct ResearchProfileCard {
@@ -66,9 +106,14 @@ export struct ResearchProfileCard {
   @Require @Param error: string;
   @Require @Param notice: string;
   @Require @Param materialEnabled: boolean;
+  @Param todayActiveMs: number = 0;
+  @Param dailyProgress: ResearchDailyProgress[] = [];
   @Param maxWidth: number = WIDE_CONTENT_MAX_WIDTH;
   @Event onRetry: () => void;
+  @Event onOpenFavorites: () => void = () => {};
+  @Event onOpenHistory: () => void = () => {};
   @Local private wideBanner: boolean = false;
+  @Local private rulesExpanded: boolean = false;
 
   private normalizedInteger(value: number, minimum: number = 0): number {
     if (!Number.isFinite(value)) {
@@ -130,45 +175,69 @@ export struct ResearchProfileCard {
     return `${hours}时 ${remainder}分`;
   }
 
+  @Computed
+  get recentActivityBars(): DailyActivityBar[] {
+    return buildRecentSevenDayActivity(this.dailyProgress, this.todayActiveMs);
+  }
+
   @Builder
   private cardHeader() {
-    Row({ space: 14 }) {
-      Column({ space: 1 }) {
+    Row({ space: 12 }) {
+      Column({ space: 0 }) {
         Text('LV')
-          .fontSize(AppTypography.CAPTION_M)
+          .fontSize(10)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('sys.color.font_emphasize'))
         Text(`${this.normalizedLevel()}`)
-          .fontSize(AppTypography.TITLE_M)
+          .fontSize(AppTypography.TITLE_S)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('sys.color.font'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
       }
-      .width(58)
-      .height(58)
+      .width(52)
+      .height(52)
       .justifyContent(FlexAlign.Center)
       .backgroundColor($r('sys.color.comp_background_tertiary'))
-      .borderRadius(18)
+      .borderRadius(16)
 
-      Column({ space: 3 }) {
-        Text('档案阅历')
-          .fontSize(AppTypography.CAPTION_L)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('sys.color.font_secondary'))
+      Column({ space: 2 }) {
+        Row({ space: 6 }) {
+          Text('档案阅历')
+            .fontSize(AppTypography.CAPTION_L)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_secondary'))
+          Text(`累计 ${this.normalizedInteger(this.experience)} XP`)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+            .maxLines(1)
+        }
         Text(this.displayTitle())
           .fontSize(AppTypography.TITLE_S)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('sys.color.font'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(`累计 ${this.normalizedInteger(this.experience)} XP`)
-          .fontSize(AppTypography.CAPTION_L)
-          .fontColor($r('sys.color.font_tertiary'))
-          .maxLines(1)
       }
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
+
+      Button({ type: ButtonType.Circle, stateEffect: false }) {
+        SymbolGlyph($r('sys.symbol.info_circle'))
+          .fontSize(15)
+          .fontColor([this.rulesExpanded ? accentPillForegroundColor() : $r('sys.color.icon_secondary')])
+      }
+      .width(30)
+      .height(30)
+      .backgroundColor(this.rulesExpanded ?
+        accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+      .animation(pressAnimation())
+      .accessibilityText(this.rulesExpanded ? '收起阅历规则说明' : '查看阅历规则说明')
+      .onClick(() => {
+        this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
+          this.rulesExpanded = !this.rulesExpanded;
+        });
+      })
     }
     .width('100%')
     .alignItems(VerticalAlign.Center)
@@ -176,7 +245,7 @@ export struct ResearchProfileCard {
 
   @Builder
   private progressSection() {
-    Column({ space: 8 }) {
+    Column({ space: 6 }) {
       Row() {
         Text(this.experienceForLevel() <= 0 ? '已达最高等级' : `距 Lv.${this.normalizedLevel() + 1}`)
           .fontSize(AppTypography.CAPTION_L)
@@ -196,23 +265,79 @@ export struct ResearchProfileCard {
         type: ProgressType.Linear
       })
         .width('100%')
-        .height(8)
+        .height(7)
         .color($r('sys.color.icon_emphasize'))
         .backgroundColor($r('sys.color.comp_background_tertiary'))
         .style({
-          strokeWidth: 8,
+          strokeWidth: 7,
           enableSmoothEffect: true
         })
-        .borderRadius(4)
+        .borderRadius(3.5)
     }
     .width('100%')
+  }
+
+  @Builder
+  private activityStrip() {
+    Row({ space: 12 }) {
+      Column({ space: 2 }) {
+        Text('今日研读')
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+        Text(formatTodayQuotaLabel(this.todayActiveMs))
+          .fontSize(AppTypography.BODY_S)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+      }
+      .alignItems(HorizontalAlign.Start)
+
+      Blank()
+
+      Row({ space: 6 }) {
+        ForEach(this.recentActivityBars, (bar: DailyActivityBar) => {
+          Column({ space: 3 }) {
+            Stack({ alignContent: Alignment.Bottom }) {
+              Column()
+                .width(7)
+                .height(ACTIVITY_BAR_MAX_HEIGHT)
+                .borderRadius(3.5)
+                .backgroundColor($r('sys.color.comp_background_secondary'))
+              if (bar.ratio > 0) {
+                Column()
+                  .width(7)
+                  .height(Math.max(4, Math.round(ACTIVITY_BAR_MAX_HEIGHT * bar.ratio)))
+                  .borderRadius(3.5)
+                  .backgroundColor(bar.isToday ?
+                    $r('sys.color.icon_emphasize') : $r('sys.color.comp_background_emphasize'))
+                  .opacity(bar.isToday ? 1 : 0.45)
+              }
+            }
+            .width(7)
+            .height(ACTIVITY_BAR_MAX_HEIGHT)
+
+            Text(bar.label)
+              .fontSize(9)
+              .fontWeight(bar.isToday ? FontWeight.Bold : FontWeight.Regular)
+              .fontColor(bar.isToday ? $r('sys.color.font_emphasize') : $r('sys.color.font_tertiary'))
+          }
+          .alignItems(HorizontalAlign.Center)
+        }, (bar: DailyActivityBar) => bar.key)
+      }
+      .alignItems(VerticalAlign.Bottom)
+    }
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
+    .backgroundColor($r('sys.color.comp_background_tertiary'))
+    .borderRadius(14)
+    .alignItems(VerticalAlign.Center)
   }
 
   @Builder
   private statistics() {
     GridRow({
       columns: { xs: 2, sm: 4 },
-      gutter: { x: 12, y: 12 },
+      gutter: { x: 10, y: 10 },
       breakpoints: {
         value: [STATISTICS_WIDE_BREAKPOINT],
         reference: BreakpointsReference.ComponentSize
@@ -228,7 +353,7 @@ export struct ResearchProfileCard {
       GridCol({ span: 1 }) {
         ResearchStatisticItem({
           symbol: $r('sys.symbol.book_open_fill'),
-          value: `${this.normalizedInteger(this.studiedCount)}`,
+          value: `${this.normalizedInteger(this.studiedCount)} 篇`,
           label: '已研读'
         })
       }
@@ -236,14 +361,18 @@ export struct ResearchProfileCard {
         ResearchStatisticItem({
           symbol: $r('sys.symbol.star_fill'),
           value: this.favoriteReady ? `${this.normalizedInteger(this.favoriteCount)}` : '—',
-          label: '收藏'
+          label: '收藏',
+          clickable: true,
+          onTap: () => this.onOpenFavorites()
         })
       }
       GridCol({ span: 1 }) {
         ResearchStatisticItem({
           symbol: $r('sys.symbol.doc_text_badge_clock_fill'),
           value: this.historyReady ? `${this.normalizedInteger(this.historyCount)}` : '—',
-          label: '记录'
+          label: '记录',
+          clickable: true,
+          onTap: () => this.onOpenHistory()
         })
       }
     }
@@ -262,7 +391,7 @@ export struct ResearchProfileCard {
         .fontColor($r('sys.color.font_secondary'))
     }
     .width('100%')
-    .height(112)
+    .height(96)
     .justifyContent(FlexAlign.Center)
   }
 
@@ -280,7 +409,7 @@ export struct ResearchProfileCard {
         .maxLines(3)
         .textOverflow({ overflow: TextOverflow.Ellipsis })
       Button('重试', { type: ButtonType.Capsule, stateEffect: false })
-        .height(48)
+        .height(44)
         .fontSize(AppTypography.BODY_M)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('sys.color.font_on_primary'))
@@ -288,18 +417,19 @@ export struct ResearchProfileCard {
         .onClick(() => this.onRetry())
     }
     .width('100%')
-    .padding({ left: 16, right: 16, top: 10, bottom: 4 })
+    .padding({ left: 16, right: 16, top: 8, bottom: 4 })
   }
 
   @Builder
   private profileContent() {
     if (this.wideBanner) {
-      Row({ space: 20 }) {
-        Column({ space: 18 }) {
+      Row({ space: 18 }) {
+        Column({ space: 12 }) {
           this.cardHeader()
           this.progressSection()
+          this.activityStrip()
         }
-        .width('42%')
+        .width('48%')
         .alignItems(HorizontalAlign.Start)
 
         Column() {
@@ -310,9 +440,10 @@ export struct ResearchProfileCard {
       .width('100%')
       .alignItems(VerticalAlign.Center)
     } else {
-      Column({ space: 18 }) {
+      Column({ space: 12 }) {
         this.cardHeader()
         this.progressSection()
+        this.activityStrip()
         this.statistics()
       }
       .width('100%')
@@ -338,79 +469,50 @@ export struct ResearchProfileCard {
         .onClick(() => this.onRetry())
     }
     .width('100%')
-    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .padding({ left: 12, right: 12, top: 9, bottom: 9 })
     .backgroundColor($r('sys.color.comp_background_tertiary'))
     .borderRadius(12)
     .alignItems(VerticalAlign.Center)
   }
 
   @Builder
-  private disclaimer() {
-    if (this.wideBanner) {
-      Row({ space: 20 }) {
-        Row({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.clock_fill'))
-            .fontSize(15)
-            .fontColor([$r('sys.color.icon_tertiary')])
-          Text('有效阅读每分钟 +1 XP，单篇满 1 分钟额外 +8 XP，每日计分上限 180 分钟')
-            .fontSize(AppTypography.CAPTION_M)
-            .fontColor($r('sys.color.font_tertiary'))
-            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-            .layoutWeight(1)
-        }
-        .layoutWeight(1)
-        .alignItems(VerticalAlign.Center)
-
-        Row({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.lock_fill'))
-            .fontSize(15)
-            .fontColor([$r('sys.color.icon_tertiary')])
-          Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
-            .fontSize(AppTypography.CAPTION_M)
-            .fontColor($r('sys.color.font_tertiary'))
-            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-            .layoutWeight(1)
-        }
-        .layoutWeight(1)
-        .alignItems(VerticalAlign.Center)
+  private rulesDrawer() {
+    Column({ space: 6 }) {
+      Row({ space: 8 }) {
+        SymbolGlyph($r('sys.symbol.clock_fill'))
+          .fontSize(14)
+          .fontColor([$r('sys.color.icon_secondary')])
+        Text('有效阅读每分钟 +1 XP，单篇满 1 分钟额外 +8 XP，每日计分上限 180 分钟')
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+          .layoutWeight(1)
       }
       .width('100%')
       .alignItems(VerticalAlign.Center)
-    } else {
-      Column({ space: 8 }) {
-        Row({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.clock_fill'))
-            .fontSize(15)
-            .fontColor([$r('sys.color.icon_tertiary')])
-          Text('有效阅读每分钟 +1 XP，单篇满 1 分钟额外 +8 XP，每日计分上限 180 分钟')
-            .fontSize(AppTypography.CAPTION_M)
-            .fontColor($r('sys.color.font_tertiary'))
-            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
 
-        Row({ space: 8 }) {
-          SymbolGlyph($r('sys.symbol.lock_fill'))
-            .fontSize(15)
-            .fontColor([$r('sys.color.icon_tertiary')])
-          Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
-            .fontSize(AppTypography.CAPTION_M)
-            .fontColor($r('sys.color.font_tertiary'))
-            .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .alignItems(VerticalAlign.Center)
+      Row({ space: 8 }) {
+        SymbolGlyph($r('sys.symbol.lock_fill'))
+          .fontSize(14)
+          .fontColor([$r('sys.color.icon_secondary')])
+        Text('仅记录本地阅读阅历，并非基金会世界观内的安保许可')
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
+          .layoutWeight(1)
       }
       .width('100%')
-      .alignItems(HorizontalAlign.Start)
+      .alignItems(VerticalAlign.Center)
     }
+    .width('100%')
+    .padding(12)
+    .backgroundColor($r('sys.color.comp_background_tertiary'))
+    .borderRadius(14)
+    .transition(AppMotion.slideUpFadeTransition(-6))
   }
 
   build() {
-    Column({ space: 18 }) {
+    Column({ space: 12 }) {
       if (this.loading) {
         this.loadingContent()
       } else if (this.error.trim().length > 0) {
@@ -422,19 +524,17 @@ export struct ResearchProfileCard {
         }
       }
 
-      Divider()
-        .strokeWidth(0.5)
-        .color($r('sys.color.comp_divider'))
-
-      this.disclaimer()
+      if (this.rulesExpanded) {
+        this.rulesDrawer()
+      }
     }
     .width('100%')
     .constraintSize({ maxWidth: this.maxWidth })
-    .padding(20)
+    .padding(18)
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
     .border(this.materialEnabled ?
       { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
-    .borderRadius(24)
+    .borderRadius(22)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
     .onAreaChange((_oldArea: Area, newArea: Area): void => {
       const width = Number(newArea.width);

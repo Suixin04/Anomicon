@@ -12,4 +12,6 @@ export interface TerminalViewContract {
   viewModel: TerminalViewModel;
   onOpenContent: (content: LibraryContentRef) => void;
   onOpenCollection: (mode: LibraryCollectionMode) => void;
+  onOpenArchive3DGallery?: () => void;
+  onOpenSettings?: () => void;
 }

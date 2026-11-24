@@ -1,11 +1,19 @@
 import { ScpContentBlock } from '../../domain/ScpDocument';
-import { AppTypography, ImagePreviewActions, windowAvoidTop } from 'anomiconbasic';
+import {
+  AppMotion,
+  AppTypography,
+  ImagePreviewActions,
+  isReduceMotionEnabled,
+  pressAnimation,
+  windowAvoidTop
+} from 'anomiconbasic';
 
 /** 单页图片：由原生 Scroll 负责双指缩放、边界约束与缩放后拖动。 */
 @ComponentV2
 struct ScpPreviewPage {
   @Require @Param url: string;
   @Require @Param actions: ImagePreviewActions;
+  @Param geometryId: string = '';
   @Event onBrowserOpen: (url: string) => void;
   @Event onZoomedChange: (zoomed: boolean) => void;
 
@@ -77,10 +85,7 @@ struct ScpPreviewPage {
       canOverScroll: false
     });
     if (animated) {
-      this.getUIContext().animateTo({
-        duration: 240,
-        curve: Curve.FastOutSlowIn
-      }, (): void => {
+      this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
         this.zoomScale = 1;
       });
     } else {
@@ -99,13 +104,10 @@ struct ScpPreviewPage {
     this.imageScroller.scrollTo({
       xOffset: this.viewportWidth * (targetScale - 1) / 2,
       yOffset: this.viewportHeight * (targetScale - 1) / 2,
-      animation: true,
+      animation: !isReduceMotionEnabled(),
       canOverScroll: true
     });
-    this.getUIContext().animateTo({
-      duration: 240,
-      curve: Curve.FastOutSlowIn
-    }, (): void => {
+    this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
       this.zoomScale = targetScale;
     });
     this.onZoomedChange(true);
@@ -139,6 +141,7 @@ struct ScpPreviewPage {
             .height('100%')
             .objectFit(ImageFit.Contain)
             .autoResize(true)
+            .geometryTransition(this.geometryId, { follow: true })
             .onComplete(this.onImageComplete(this.loadEpoch))
             .onError(this.onImageError(this.loadEpoch))
         }
@@ -215,6 +218,7 @@ export struct ScpImagePreviewer {
   @Require @Param initialIndex: number;
   @Require @Param actions: ImagePreviewActions;
   @Param materialEnabled: boolean = true;
+  @Param heroGeometryId: string = '';
   @Event onClose: () => void;
   @Event onIndexChange: (index: number) => void;
   /** Product-owned system notice/effect boundary. */
@@ -306,6 +310,7 @@ export struct ScpImagePreviewer {
         .width('100%')
         .height('100%')
         .backgroundColor('#000000')
+        .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
 
       Swiper(this.previewController) {
         Repeat<ScpContentBlock>(this.images)
@@ -313,6 +318,8 @@ export struct ScpImagePreviewer {
             ScpPreviewPage({
               url: row.item.source,
               actions: this.actions,
+              geometryId: (!isReduceMotionEnabled() && row.index === this.currentIndex) ?
+                this.heroGeometryId : '',
               onBrowserOpen: (url: string) => this.openInBrowser(url),
               onZoomedChange: (zoomed: boolean) => {
                 this.zoomed = zoomed;
@@ -346,6 +353,7 @@ export struct ScpImagePreviewer {
         .backgroundColor(this.materialEnabled ? '#66181E28' : '#A6181E28')
         .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THIN : undefined)
         .border({ width: 0.5, color: '#33FFFFFF' })
+        .animation(pressAnimation())
         .onClick(() => this.onClose())
 
         Blank()
@@ -370,6 +378,7 @@ export struct ScpImagePreviewer {
       .padding({ left: 16, right: 16 })
       // 预览打开时宿主页已隐藏标题栏，控件避开实时状态栏高度布局。
       .margin({ top: windowAvoidTop() + 8 })
+      .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
 
       // 底部图注：铺满高度的容器底部对齐。
       Column() {
@@ -391,6 +400,7 @@ export struct ScpImagePreviewer {
       .height('100%')
       .justifyContent(FlexAlign.End)
       .hitTestBehavior(HitTestMode.None)
+      .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
     }
     .width('100%')
     .height('100%')

@@ -34,6 +34,7 @@ export class FoundationKnowledgeItem {
   readonly content: LibraryContentRef;
   readonly title: string;
   readonly subtitle: string;
+  readonly categoryLabel: string;
   readonly icon: FoundationKnowledgeIcon;
   readonly section: FoundationKnowledgeSectionId;
 
@@ -43,12 +44,14 @@ export class FoundationKnowledgeItem {
     subtitle: string,
     icon: FoundationKnowledgeIcon,
     section: FoundationKnowledgeSectionId,
-    kind: LibraryContentKind
+    kind: LibraryContentKind,
+    categoryLabel: string = ''
   ) {
     this.content = new LibraryContentRef(kind, id, title);
     this.key = this.content.key;
     this.title = this.content.title;
     this.subtitle = subtitle;
+    this.categoryLabel = categoryLabel;
     this.icon = icon;
     this.section = section;
   }
@@ -80,7 +83,8 @@ const FOUNDATION_OVERVIEW = new FoundationKnowledgeItem(
   '了解基金会的使命、原则与基本设定',
   FoundationKnowledgeIcon.FOUNDATION,
   FoundationKnowledgeSectionId.OVERVIEW,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '入门导读'
 );
 
 const OBJECT_CLASSES = new FoundationKnowledgeItem(
@@ -89,7 +93,8 @@ const OBJECT_CLASSES = new FoundationKnowledgeItem(
   '理解收容难度与项目分类体系',
   FoundationKnowledgeIcon.CLASSIFICATION,
   FoundationKnowledgeSectionId.SYSTEM,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '分级体系'
 );
 
 const ESOTERIC_CLASSES = new FoundationKnowledgeItem(
@@ -98,7 +103,8 @@ const ESOTERIC_CLASSES = new FoundationKnowledgeItem(
   '查阅非常规与叙事性项目等级，各分级并无固定高低之分',
   FoundationKnowledgeIcon.ESOTERIC_CLASSIFICATION,
   FoundationKnowledgeSectionId.SYSTEM,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '特殊分级'
 );
 
 const SECURITY_CLEARANCE_LEVELS = new FoundationKnowledgeItem(
@@ -107,7 +113,8 @@ const SECURITY_CLEARANCE_LEVELS = new FoundationKnowledgeItem(
   '了解人员等级、信息访问与权限结构',
   FoundationKnowledgeIcon.CLEARANCE,
   FoundationKnowledgeSectionId.SYSTEM,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '权限规则'
 );
 
 const TASK_FORCES = new FoundationKnowledgeItem(
@@ -116,7 +123,8 @@ const TASK_FORCES = new FoundationKnowledgeItem(
   '了解特遣队的编制、职责与任务索引',
   FoundationKnowledgeIcon.TASK_FORCE,
   FoundationKnowledgeSectionId.ORGANIZATION,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '特遣编制'
 );
 
 const DEPARTMENTS = new FoundationKnowledgeItem(
@@ -125,7 +133,8 @@ const DEPARTMENTS = new FoundationKnowledgeItem(
   '浏览基金会部门及其职能索引',
   FoundationKnowledgeIcon.DEPARTMENT,
   FoundationKnowledgeSectionId.ORGANIZATION,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '部门职能'
 );
 
 const SECURE_FACILITIES = new FoundationKnowledgeItem(
@@ -134,7 +143,8 @@ const SECURE_FACILITIES = new FoundationKnowledgeItem(
   '查阅站点、区域与其他设施索引',
   FoundationKnowledgeIcon.FACILITY,
   FoundationKnowledgeSectionId.ORGANIZATION,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '站点设施'
 );
 
 const GROUPS_OF_INTEREST = new FoundationKnowledgeItem(
@@ -143,7 +153,8 @@ const GROUPS_OF_INTEREST = new FoundationKnowledgeItem(
   '认识与基金会相关的组织、势力与团体',
   FoundationKnowledgeIcon.GROUP,
   FoundationKnowledgeSectionId.ORGANIZATION,
-  LibraryContentKind.KNOWLEDGE
+  LibraryContentKind.KNOWLEDGE,
+  '外部势力'
 );
 
 const WIKI_COMMUNITY_HISTORY = new FoundationKnowledgeItem(
@@ -152,8 +163,24 @@ const WIKI_COMMUNITY_HISTORY = new FoundationKnowledgeItem(
   '回顾 SCP 维基与创作社群的现实发展历程',
   FoundationKnowledgeIcon.HISTORY,
   FoundationKnowledgeSectionId.COMMUNITY,
-  LibraryContentKind.WIKI
+  LibraryContentKind.WIKI,
+  '社群脉络'
 );
+
+/** 手册顶部核心导读条目。 */
+export const FOUNDATION_FEATURED_KNOWLEDGE: FoundationKnowledgeItem = FOUNDATION_OVERVIEW;
+
+/** 手册双列专题网格条目（除核心导读外的 8 个主题）。 */
+export const FOUNDATION_MANUAL_GRID_ITEMS: FoundationKnowledgeItem[] = [
+  OBJECT_CLASSES,
+  ESOTERIC_CLASSES,
+  SECURITY_CLEARANCE_LEVELS,
+  TASK_FORCES,
+  DEPARTMENTS,
+  SECURE_FACILITIES,
+  GROUPS_OF_INTEREST,
+  WIKI_COMMUNITY_HISTORY
+];
 
 /** 终端首页的默认知识分组。 */
 export const FOUNDATION_KNOWLEDGE_SECTIONS: FoundationKnowledgeSection[] = [

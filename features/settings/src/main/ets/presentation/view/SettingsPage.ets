@@ -15,10 +15,13 @@ import {
   AppTypography,
   createAppBackIcon,
   createAppTitleBarStyle,
+  DestinationMotionState,
   isDarkModeActive,
+  NavigationTransitionRegistry,
   pageContentTop,
   PHONE_PAGE_MARGIN,
   popNavigationDestination,
+  pressAnimation,
   READING_CONTENT_MAX_WIDTH,
   ROW_PRESS_MODIFIER,
   WIDE_CONTENT_MAX_WIDTH,
@@ -179,7 +182,7 @@ struct SettingsActionRow {
       }
     }
     .attributeModifier(ROW_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .opacity(this.rowEnabled ? 1 : 0.65)
     .width('100%')
     .constraintSize({ minHeight: 68 })
@@ -205,6 +208,8 @@ export struct SettingsPage {
   ) => void;
 
   private pageStack: NavPathStack | undefined = undefined;
+  private navDestinationId: string = '';
+  @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
   private scroller: Scroller = new Scroller();
   private readonly alignLabels: string[] = ['两端对齐', '左对齐'];
   private readonly complexModeLabels: string[] = ['智能识别', '仅提示', '始终原生'];
@@ -252,6 +257,10 @@ export struct SettingsPage {
     this.fontSizeDraftDirty = false;
     this.lineHeightDraftDirty = false;
     this.refreshStorageUsage();
+  }
+
+  aboutToDisappear(): void {
+    NavigationTransitionRegistry.unregister(this.navDestinationId);
   }
 
   @Monitor('viewModel.fontSize')
@@ -948,7 +957,7 @@ export struct SettingsPage {
           .fontColor([$r('sys.color.icon_secondary')])
       }
       .attributeModifier(ROW_PRESS_MODIFIER)
-      .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+      .animation(pressAnimation())
       .width('100%')
       .constraintSize({ minHeight: 68 })
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
@@ -1115,7 +1124,11 @@ export struct SettingsPage {
     })
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      this.navDestinationId = context.navDestinationId ?? '';
+      NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
     })
+    .opacity(this.navMotion.opacity)
+    .translate({ x: this.navMotion.translateX })
     .onWillShow(() => {
       this.refreshStorageUsage();
     })

@@ -20,8 +20,11 @@ import {
   CARD_PRESS_MODIFIER,
   createAppBackIcon,
   createAppTitleBarStyle,
+  DestinationMotionState,
+  NavigationTransitionRegistry,
   pageContentTop,
   popNavigationDestination,
+  pressAnimation,
   WIDE_CONTENT_MAX_WIDTH,
   windowWidthVp
 } from 'anomiconbasic';
@@ -109,6 +112,8 @@ const GALLERY_FILTER_BAR_HEIGHT: number = 48;
 struct Scp3DArchiveGalleryPage {
   private readonly scroller: Scroller = new Scroller();
   private pageStack: NavPathStack | undefined = undefined;
+  private navDestinationId: string = '';
+  @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
   /** Snapshot the build-time list so a future repository cannot mutate it. */
   private readonly manifest: Scp3DAssetManifestEntry[] = SCP_3D_ASSET_MANIFEST.slice();
 
@@ -164,6 +169,7 @@ struct Scp3DArchiveGalleryPage {
   }
 
   aboutToDisappear(): void {
+    NavigationTransitionRegistry.unregister(this.navDestinationId);
     const items = this.stateUnsubscribers.splice(0, this.stateUnsubscribers.length);
     items.forEach((unsubscribe: () => void): void => unsubscribe());
     this.liveStates.clear();
@@ -473,7 +479,7 @@ struct Scp3DArchiveGalleryPage {
       }
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .padding(16)
     .backgroundColor($r('sys.color.comp_background_primary'))
@@ -598,7 +604,11 @@ struct Scp3DArchiveGalleryPage {
     })
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      this.navDestinationId = context.navDestinationId ?? '';
+      NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
     })
+    .opacity(this.navMotion.opacity)
+    .translate({ x: this.navMotion.translateX })
     .ignoreLayoutSafeArea(
       [LayoutSafeAreaType.SYSTEM],
       [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]

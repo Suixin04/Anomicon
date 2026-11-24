@@ -36,9 +36,12 @@ import {
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import {
   adaptivePageMarginForWidth,
+  AppMotion,
   createAppBackIcon,
   createAppTitleBarStyle,
+  DestinationMotionState,
   isDetailFullscreen,
+  NavigationTransitionRegistry,
   pageContentTop,
   popNavigationDestination,
   setDetailFullscreen,
@@ -105,6 +108,8 @@ struct ScpArticlePage {
   @Require @Param archive3dAvailability: (contentId: string) => boolean;
   @Param networkBoost: NetworkBoostPort | undefined = undefined;
   private pageStack: NavPathStack | undefined = undefined;
+  private navDestinationId: string = '';
+  @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
   private scroller: Scroller = new Scroller();
   private readonly pageLoadHint: FastPerformanceHintScope =
     new FastPerformanceHintScope(
@@ -138,6 +143,7 @@ struct ScpArticlePage {
   @Local private expandedKeys: string[] = [];
   @Local private previewVisible: boolean = false;
   @Local private previewIndex: number = 0;
+  @Local private previewSourceKey: string = '';
   @Local private galleryReturnEpoch: number = 0;
   // 标题栏用 @Local 状态承载：onReady 在首帧后才赋值，
   // 普通字段的变化不会触发标题栏重渲染，必须走状态。
@@ -176,6 +182,7 @@ struct ScpArticlePage {
   }
 
   aboutToDisappear(): void {
+    NavigationTransitionRegistry.unregister(this.navDestinationId);
     // A route can be retained while hidden, so only dispose on actual component
     // destruction. NavDestination callbacks below handle temporary inactivity.
     this.acceptsProgressEvents = false;
@@ -463,33 +470,30 @@ struct ScpArticlePage {
     this.viewModel.setContinuousInteraction(active, this.currentReadingOffset());
   }
 
-  private openPreview(index: number): void {
+  private openPreview(index: number, sourceKey?: string): void {
     if (this.document === undefined || this.document.images.length === 0 ||
       !Number.isFinite(index)) {
       return;
     }
     this.noteReadingInteraction();
-    this.previewIndex = Math.max(0, Math.min(Math.floor(index), this.document.images.length - 1));
+    const clampedIndex = Math.max(0, Math.min(Math.floor(index), this.document.images.length - 1));
+    this.previewIndex = clampedIndex;
+    this.previewSourceKey = (sourceKey !== undefined && sourceKey.length > 0) ?
+      sourceKey : `gallery:${clampedIndex}`;
     setPreviewFullscreen(true);
-    this.getUIContext().animateTo({
-      duration: 220,
-      curve: Curve.FastOutSlowIn
-    }, (): void => {
+    this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
       this.previewVisible = true;
     });
   }
 
   private closePreview(): void {
     setPreviewFullscreen(false);
-    this.getUIContext().animateTo({
-      duration: 180,
-      curve: Curve.EaseOut
-    }, (): void => {
+    // Notify the feature renderer before the reverse hero flight so any
+    // gallery Swiper realigns to the active slide before returning.
+    this.galleryReturnEpoch++;
+    this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
       this.previewVisible = false;
     });
-    // Notify the feature renderer even when the selected preview index did
-    // not change, so its private SwiperController is always realigned.
-    this.galleryReturnEpoch++;
   }
 
   private toggleRendererBlock(block: ScpContentBlock): void {
@@ -529,6 +533,16 @@ struct ScpArticlePage {
     }
   }
 
+  private setWebModeActiveAnimated(active: boolean): void {
+    try {
+      this.getUIContext().animateTo(AppMotion.standardAnimateParam(220), (): void => {
+        this.webModeActive = active;
+      });
+    } catch (_error) {
+      this.webModeActive = active;
+    }
+  }
+
   private enterWebMode(targetUrl: string = '', toastMessage: string = ''): void {
     const rawTarget = targetUrl.trim().length > 0 ? targetUrl.trim() : this.sourceUrl;
     const upgraded = rawTarget.toLowerCase().indexOf('http://scp-wiki-cn.wikidot.com/') === 0 ?
@@ -545,7 +559,7 @@ struct ScpArticlePage {
     }
     this.sidePanelOpen = false;
     this.webModeUrl = resolved;
-    this.webModeActive = true;
+    this.setWebModeActiveAnimated(true);
     if (toastMessage.length > 0) {
       this.showToast(toastMessage);
     }
@@ -553,7 +567,7 @@ struct ScpArticlePage {
 
   private exitWebMode(): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    this.webModeActive = false;
+    this.setWebModeActiveAnimated(false);
     this.webModeCanGoBack = false;
   }
 
@@ -715,7 +729,9 @@ struct ScpArticlePage {
     this.noteReadingInteraction();
     this.revealHiddenOverridden = true;
     const next = !this.revealHiddenText;
-    this.revealHiddenText = next;
+    this.getUIContext().animateTo(AppMotion.microAnimateParam(), (): void => {
+      this.revealHiddenText = next;
+    });
     if (!next) {
       this.showToast('已关闭反白透视');
       return;
@@ -825,7 +841,9 @@ struct ScpArticlePage {
           label: fullscreen ? '恢复分栏' : '全屏阅读',
           action: () => {
             this.hapticService.playSelection(this.settings.hapticEnabled);
-            setDetailFullscreen(!fullscreen);
+            this.getUIContext().animateTo(AppMotion.layoutAnimateParam(), (): void => {
+              setDetailFullscreen(!fullscreen);
+            });
           }
         }
       });
@@ -901,7 +919,9 @@ struct ScpArticlePage {
       revealHiddenActive: this.revealHiddenText,
       webModeActive: this.webModeActive,
       onToggleSidePanel: (): void => {
-        this.sidePanelOpen = !this.sidePanelOpen;
+        this.getUIContext().animateTo(AppMotion.layoutAnimateParam(), (): void => {
+          this.sidePanelOpen = !this.sidePanelOpen;
+        });
       },
       onDisableRevealHidden: (): void => {
         if (this.revealHiddenText) {
@@ -936,6 +956,7 @@ struct ScpArticlePage {
             bottom: 48
           })
           .justifyContent(FlexAlign.Center)
+          .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
         } else if (this.errorMessage.length > 0) {
           Column({ space: 12 }) {
             Text(this.errorMessage)
@@ -966,6 +987,7 @@ struct ScpArticlePage {
             bottom: 48
           })
           .justifyContent(FlexAlign.Center)
+          .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
         } else if (this.document !== undefined) {
           ArticleNativeRenderer({
             scroller: this.scroller,
@@ -986,6 +1008,8 @@ struct ScpArticlePage {
             revealHiddenText: this.revealHiddenText,
             justifyBodyText: this.justifyBodyText,
             webModeHint: this.webModeHint,
+            previewVisible: this.previewVisible,
+            previewSourceKey: this.previewSourceKey,
             onSwitchToWebMode: (): void => {
               this.hapticService.playSelection(this.settings.hapticEnabled);
               this.enterWebMode(this.sourceUrl);
@@ -1029,11 +1053,12 @@ struct ScpArticlePage {
             },
             onOpenUrl: (url: string) => this.openUrl(url),
             onOpenArticleLink: (url: string, title: string) => this.openArticleLink(url, title),
-            onOpenImage: (index: number) => this.openPreview(index),
+            onOpenImage: (index: number, sourceKey?: string) => this.openPreview(index, sourceKey),
             onToggleExpanded: (block: ScpContentBlock) => this.toggleRendererBlock(block),
             onOpenRelatedTale: (tale: ArticleRelatedTale) => this.openTale(tale),
             onContentLaidOut: () => this.onRendererContentLaidOut()
           })
+            .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
             .visibility(this.webModeActive ? Visibility.Hidden : Visibility.Visible)
         }
 
@@ -1052,6 +1077,7 @@ struct ScpArticlePage {
             },
             onSwitchToNative: () => this.exitWebMode()
           })
+            .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
         }
 
         // 离屏解析：仅在一次解析期间挂载，完成后由状态移除。
@@ -1084,11 +1110,15 @@ struct ScpArticlePage {
               initialIndex: this.previewIndex,
               actions: this.imageActions,
               materialEnabled: this.settings.immersiveMaterialEnabled,
+              heroGeometryId: this.previewSourceKey.length > 0 ?
+                `article-hero:${this.previewSourceKey}` : '',
               onClose: () => {
                 this.closePreview();
               },
               onIndexChange: (index: number) => {
                 this.previewIndex = index;
+                this.previewSourceKey = `gallery:${index}`;
+                this.galleryReturnEpoch++;
               },
               onNotice: (message: string) => {
                 this.showToast(message);
@@ -1097,10 +1127,7 @@ struct ScpArticlePage {
           }
           .width('100%')
           .height('100%')
-          .transition(
-            TransitionEffect.OPACITY.combine(TransitionEffect.scale({ x: 0.96, y: 0.96 }))
-              .animation({ duration: 220, curve: Curve.FastOutSlowIn })
-          )
+          .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
         }
       }
       .width('100%')
@@ -1138,10 +1165,14 @@ struct ScpArticlePage {
     .bindToScrollable([this.scroller])
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      this.navDestinationId = context.navDestinationId ?? '';
+      NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
       const param: Object | null | undefined =
         context.pathInfo.param as Object | null | undefined;
       this.applyRouteParam(param);
     })
+    .opacity(this.navMotion.opacity)
+    .translate({ x: this.navMotion.translateX })
     .onShown(() => {
       this.acceptsProgressEvents = true;
       this.syncReadingSettings();

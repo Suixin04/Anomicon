@@ -18,8 +18,15 @@ export { ContentUpdateNotice } from './ContentUpdateNotice';
 export {
   PressFeedbackModifier,
   CARD_PRESS_MODIFIER,
-  ROW_PRESS_MODIFIER
+  ROW_PRESS_MODIFIER,
+  pressAnimation
 } from './PressFeedback';
+export {
+  AppMotion,
+  isReduceMotionEnabled,
+  DestinationMotionState,
+  NavigationTransitionRegistry
+} from './AppMotion';
 export {
   AppWidthBreakpoint,
   BREAKPOINT_MD_MIN_WIDTH,

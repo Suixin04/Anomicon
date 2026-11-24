@@ -1,9 +1,11 @@
+import { AppMotion } from './AppMotion';
+
 /**
  * Shared tactile press-feedback modifier for clickable cards and list rows.
  *
- * Callers must chain `.animation({ duration: 120, curve: Curve.FastOutSlowIn })`
- * directly after `.attributeModifier(...)` before layout modifiers such as
- * `.width` or `.padding`, because ArkUI forbids calling `animation` inside
+ * Callers should chain `.animation(pressAnimation())` directly after
+ * `.attributeModifier(...)` before layout modifiers such as `.width` or
+ * `.padding`, because ArkUI forbids calling `animation` inside
  * `AttributeModifier` callbacks.
  */
 export class PressFeedbackModifier implements AttributeModifier<CommonAttribute> {
@@ -24,6 +26,11 @@ export class PressFeedbackModifier implements AttributeModifier<CommonAttribute>
     instance.scale({ x: this.pressedScale, y: this.pressedScale });
     instance.opacity(this.pressedOpacity);
   }
+}
+
+/** Shared press-feedback animation curve respecting system reduce-motion settings. */
+export function pressAnimation(): AnimateParam {
+  return AppMotion.pressAnimateParam();
 }
 
 export const CARD_PRESS_MODIFIER: PressFeedbackModifier = new PressFeedbackModifier(0.982, 0.92);

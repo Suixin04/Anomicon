@@ -10,10 +10,17 @@ export {
   TerminalErrorState,
   TerminalLibrarySectionTitle,
   TerminalReadingHistoryList,
+  TerminalCompactEmptyBanner,
+  TerminalQuickWorkbenchBar,
   TerminalViewContract,
+  FOUNDATION_FEATURED_KNOWLEDGE,
   FOUNDATION_KNOWLEDGE_SECTIONS,
+  FOUNDATION_MANUAL_GRID_ITEMS,
   FoundationKnowledgeIcon,
   FoundationKnowledgeItem,
   FoundationKnowledgeSection,
-  FoundationKnowledgeSectionId
+  FoundationKnowledgeSectionId,
+  DailyActivityBar,
+  buildRecentSevenDayActivity,
+  formatTodayQuotaLabel
 } from './src/main/ets/Index';

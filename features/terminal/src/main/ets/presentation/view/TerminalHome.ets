@@ -1,15 +1,17 @@
 import { ResearchProfileCard } from './ResearchProfileCard';
 import {
+  TerminalCompactEmptyBanner,
   TerminalErrorState,
   TerminalFavoriteCards,
   TerminalLibrarySectionTitle,
+  TerminalQuickWorkbenchBar,
   TerminalReadingHistoryList
 } from './TerminalLibraryComponents';
 import {
-  FOUNDATION_KNOWLEDGE_SECTIONS,
+  FOUNDATION_FEATURED_KNOWLEDGE,
+  FOUNDATION_MANUAL_GRID_ITEMS,
   FoundationKnowledgeIcon,
-  FoundationKnowledgeItem,
-  FoundationKnowledgeSection
+  FoundationKnowledgeItem
 } from '../model/FoundationKnowledge';
 import { LibraryContentRef, LibraryFavorite } from 'library';
 import { ReadingHistoryEntry } from 'library';
@@ -18,23 +20,115 @@ import { LibraryCollectionMode } from 'library';
 import {
   adaptivePageMarginForWidth,
   AppTypography,
+  CARD_PRESS_MODIFIER,
   materialCardBorderColor,
   materialCardSurfaceColor,
   pageContentTop,
   PHONE_PAGE_MARGIN,
+  pressAnimation,
   READING_CONTENT_MAX_WIDTH,
-  ROW_PRESS_MODIFIER,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 import { TerminalViewModel } from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
 
-const SECTION_SPACE: number = 28;
+const SECTION_SPACE: number = 20;
 const TERMINAL_TWO_COLUMN_MIN_WIDTH: number = 680;
 const TERMINAL_WIDE_TWO_COLUMN_MIN_WIDTH: number = 840;
 
+function resolveKnowledgeSymbol(icon: FoundationKnowledgeIcon): Resource {
+  switch (icon) {
+    case FoundationKnowledgeIcon.CLASSIFICATION:
+      return $r('sys.symbol.square_fill_grid_2x2');
+    case FoundationKnowledgeIcon.ESOTERIC_CLASSIFICATION:
+      return $r('sys.symbol.exclamationmark_shield_fill');
+    case FoundationKnowledgeIcon.CLEARANCE:
+      return $r('sys.symbol.person_text_rectangle_fill');
+    case FoundationKnowledgeIcon.TASK_FORCE:
+      return $r('sys.symbol.bolt_shield_fill');
+    case FoundationKnowledgeIcon.DEPARTMENT:
+      return $r('sys.symbol.rectangle_4_group_fill');
+    case FoundationKnowledgeIcon.FACILITY:
+      return $r('sys.symbol.local_and_rectangle_fill');
+    case FoundationKnowledgeIcon.GROUP:
+      return $r('sys.symbol.person_3_fill');
+    case FoundationKnowledgeIcon.HISTORY:
+      return $r('sys.symbol.clock_arrow_2_circlepath_fill');
+    default:
+      return $r('sys.symbol.lock_shield_fill');
+  }
+}
+
+/** B3A 双列手册专题瓷砖。 */
+@ComponentV2
+struct FoundationKnowledgeTile {
+  @Require @Param item: FoundationKnowledgeItem;
+  @Require @Param materialEnabled: boolean;
+  @Event onOpenContent: (content: LibraryContentRef) => void;
+
+  build() {
+    Column({ space: 10 }) {
+      Row({ space: 6 }) {
+        Column() {
+          SymbolGlyph(resolveKnowledgeSymbol(this.item.icon))
+            .fontSize(17)
+            .fontColor([$r('sys.color.icon_emphasize')])
+        }
+        .width(34)
+        .height(34)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(10)
+
+        Blank()
+
+        if (this.item.categoryLabel.length > 0) {
+          Text(this.item.categoryLabel)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+            .maxLines(1)
+        }
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Column({ space: 3 }) {
+        Text(this.item.title)
+          .fontSize(AppTypography.BODY_M)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('sys.color.font'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+        Text(this.item.subtitle)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(2)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+          .width('100%')
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+    }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .width('100%')
+    .constraintSize({ minHeight: 112 })
+    .padding(13)
+    .alignItems(HorizontalAlign.Start)
+    .justifyContent(FlexAlign.SpaceBetween)
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(16)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+    .onClick(() => this.onOpenContent(this.item.content))
+    .accessibilityText(`打开基金会手册，${this.item.title}`)
+  }
+}
+
 /**
- * 终端首页：档案阅历、个人资料库与基金会手册。
+ * 终端首页：紧凑研究员档案工牌、优先级重排的个人资料库（B2）与导读+双列网格基金会手册（B3A）。
  *
  * 页面只消费应用级共享状态，不直接访问数据库；收藏与历史写入成功后，
  * ViewModel 会整体替换数组，此处以稳定的 content.key 更新有限预览。
@@ -45,6 +139,8 @@ export struct TerminalHome {
   @Require @Param active: boolean;
   @Require @Param onOpenContent: (content: LibraryContentRef) => void;
   @Require @Param onOpenCollection: (mode: LibraryCollectionMode) => void;
+  @Event onOpenArchive3DGallery: () => void = () => {};
+  @Event onOpenSettings: () => void = () => {};
   @Require @Param viewModel: TerminalViewModel;
   @Require @Param settings: SettingsViewModel;
   @Local private sideBySide: boolean = false;
@@ -159,29 +255,6 @@ export struct TerminalHome {
     return this.viewModel.researchInitialized;
   }
 
-  private knowledgeIcon(icon: FoundationKnowledgeIcon): Resource {
-    switch (icon) {
-      case FoundationKnowledgeIcon.CLASSIFICATION:
-        return $r('sys.symbol.square_fill_grid_2x2');
-      case FoundationKnowledgeIcon.ESOTERIC_CLASSIFICATION:
-        return $r('sys.symbol.exclamationmark_shield_fill');
-      case FoundationKnowledgeIcon.CLEARANCE:
-        return $r('sys.symbol.person_text_rectangle_fill');
-      case FoundationKnowledgeIcon.TASK_FORCE:
-        return $r('sys.symbol.bolt_shield_fill');
-      case FoundationKnowledgeIcon.DEPARTMENT:
-        return $r('sys.symbol.rectangle_4_group_fill');
-      case FoundationKnowledgeIcon.FACILITY:
-        return $r('sys.symbol.local_and_rectangle_fill');
-      case FoundationKnowledgeIcon.GROUP:
-        return $r('sys.symbol.person_3_fill');
-      case FoundationKnowledgeIcon.HISTORY:
-        return $r('sys.symbol.clock_arrow_2_circlepath_fill');
-      default:
-        return $r('sys.symbol.lock_shield_fill');
-    }
-  }
-
   private retryFavorites(): void {
     this.viewModel.refreshFavorites();
   }
@@ -206,7 +279,7 @@ export struct TerminalHome {
 
   @Builder
   private sectionHeader(title: string, subtitle: string) {
-    Column({ space: 3 }) {
+    Column({ space: 2 }) {
       Text(title)
         .fontSize(AppTypography.TITLE_S)
         .fontWeight(FontWeight.Bold)
@@ -224,7 +297,7 @@ export struct TerminalHome {
   private emptyState(symbol: Resource, title: string, description: string) {
     Column({ space: 8 }) {
       SymbolGlyph(symbol)
-        .fontSize(28)
+        .fontSize(26)
         .fontColor([$r('sys.color.icon_tertiary')])
       Text(title)
         .fontSize(AppTypography.BODY_M)
@@ -237,8 +310,10 @@ export struct TerminalHome {
         .lineHeightMultiple(AppTypography.UI_PARAGRAPH_LINE_HEIGHT)
     }
     .width('100%')
-    .padding({ left: 24, right: 24, top: 26, bottom: 26 })
-    .backgroundColor($r('sys.color.comp_background_primary'))
+    .padding({ left: 20, right: 20, top: 22, bottom: 22 })
+    .backgroundColor(materialCardSurfaceColor(this.isImmersiveMaterialEnabled()))
+    .border(this.isImmersiveMaterialEnabled() ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(16)
   }
 
@@ -254,9 +329,9 @@ export struct TerminalHome {
         .fontColor($r('sys.color.font_secondary'))
     }
     .width('100%')
-    .height(92)
+    .height(76)
     .justifyContent(FlexAlign.Center)
-    .backgroundColor($r('sys.color.comp_background_primary'))
+    .backgroundColor(materialCardSurfaceColor(this.isImmersiveMaterialEnabled()))
     .borderRadius(16)
   }
 
@@ -293,8 +368,24 @@ export struct TerminalHome {
   }
 
   @Builder
+  private resumeReadingSection() {
+    if (this.resumeEntries.length > 0 && !(this.historyLoading && this.historyCount === 0)) {
+      Column() {
+        TerminalReadingHistoryList({
+          entries: this.resumeEntries,
+          continueReading: true,
+          materialEnabled: this.isImmersiveMaterialEnabled(),
+          onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content)
+        })
+      }
+      .width('100%')
+      .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
+    }
+  }
+
+  @Builder
   private favoritesPreview() {
-    Column({ space: 12 }) {
+    Column({ space: 10 }) {
       Column() {
         TerminalLibrarySectionTitle({
           symbol: $r('sys.symbol.star_fill'),
@@ -324,11 +415,12 @@ export struct TerminalHome {
         .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
       } else if (this.favoriteCount === 0) {
         Column() {
-          this.emptyState(
-            $r('sys.symbol.star'),
-            '还没有收藏',
-            '阅读档案或故事时，可在右上角菜单加入收藏。'
-          )
+          TerminalCompactEmptyBanner({
+            symbol: $r('sys.symbol.star'),
+            title: '还没有收藏',
+            description: '阅读档案或故事时，可在右上角菜单加入收藏。',
+            materialEnabled: this.isImmersiveMaterialEnabled()
+          })
         }
         .width('100%')
         .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
@@ -362,8 +454,8 @@ export struct TerminalHome {
   }
 
   @Builder
-  private readingHistoryPreview() {
-    Column({ space: 16 }) {
+  private recentHistorySection() {
+    Column({ space: 12 }) {
       if (this.historyLoading && this.historyCount === 0) {
         this.loadingState('正在读取阅读记录…')
       } else if (this.historyError.length > 0 && this.historyCount === 0) {
@@ -372,22 +464,13 @@ export struct TerminalHome {
           onRetry: () => this.retryHistory()
         })
       } else {
-        if (this.resumeEntries.length > 0) {
-          TerminalReadingHistoryList({
-            entries: this.resumeEntries,
-            continueReading: true,
-            materialEnabled: this.isImmersiveMaterialEnabled(),
-            onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content)
-          })
-        }
-
         if (this.historyCount === 0 || this.recentCount > 0) {
-          Column({ space: 12 }) {
+          Column({ space: 10 }) {
             TerminalLibrarySectionTitle({
               symbol: $r('sys.symbol.clock_fill'),
               title: '最近浏览',
               count: this.recentCount,
-              showMore: this.recentCount > 4,
+              showMore: this.historyCount > 4,
               onOpen: () => this.onOpenCollection(LibraryCollectionMode.RECENT)
             })
             if (this.historyCount === 0) {
@@ -419,17 +502,31 @@ export struct TerminalHome {
 
   @Builder
   private personalLibrary() {
-    Column({ space: 20 }) {
+    Column({ space: 14 }) {
       Column() {
-        this.sectionHeader('个人资料库', '收藏、阅读进度与调阅记录均保存在本地')
+        this.sectionHeader('个人资料库', '阅读进度、藏品与常用本地入口')
       }
       .width('100%')
       .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
 
+      Column() {
+        TerminalQuickWorkbenchBar({
+          favoriteCount: this.favoriteCount,
+          materialEnabled: this.isImmersiveMaterialEnabled(),
+          onOpenArchive3DGallery: () => this.onOpenArchive3DGallery(),
+          onOpenFavorites: () => this.onOpenCollection(LibraryCollectionMode.FAVORITES),
+          onOpenSettings: () => this.onOpenSettings()
+        })
+      }
+      .width('100%')
+      .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
+
+      this.resumeReadingSection()
+
       this.favoritesPreview()
 
       Column() {
-        this.readingHistoryPreview()
+        this.recentHistorySection()
       }
       .width('100%')
       .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
@@ -439,23 +536,32 @@ export struct TerminalHome {
   }
 
   @Builder
-  private knowledgeRow(item: FoundationKnowledgeItem) {
-    Row({ space: 12 }) {
+  private featuredKnowledgeCard(item: FoundationKnowledgeItem) {
+    Row({ space: 14 }) {
       Column() {
-        SymbolGlyph(this.knowledgeIcon(item.icon))
-          .fontSize(21)
-          .fontColor([$r('sys.color.icon_secondary')])
+        SymbolGlyph(resolveKnowledgeSymbol(item.icon))
+          .fontSize(22)
+          .fontColor([$r('sys.color.icon_emphasize')])
       }
-      .width(42)
-      .height(42)
+      .width(46)
+      .height(46)
       .justifyContent(FlexAlign.Center)
       .backgroundColor($r('sys.color.comp_background_tertiary'))
-      .borderRadius(13)
+      .borderRadius(14)
 
-      Column({ space: 3 }) {
+      Column({ space: 4 }) {
+        if (item.categoryLabel.length > 0) {
+          Text(item.categoryLabel)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_emphasize'))
+            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .borderRadius(9)
+        }
         Text(item.title)
-          .fontSize(AppTypography.BODY_M)
-          .fontWeight(FontWeight.Medium)
+          .fontSize(AppTypography.SUBTITLE_M)
+          .fontWeight(FontWeight.Bold)
           .fontColor($r('sys.color.font'))
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -468,68 +574,50 @@ export struct TerminalHome {
       .alignItems(HorizontalAlign.Start)
       .layoutWeight(1)
 
-      SymbolGlyph($r('sys.symbol.chevron_right'))
-        .fontSize(14)
-        .fontColor([$r('sys.color.icon_secondary')])
-    }
-    .attributeModifier(ROW_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
-    .width('100%')
-    .constraintSize({ minHeight: 70 })
-    .alignItems(VerticalAlign.Center)
-    .padding({ left: 14, right: 14, top: 11, bottom: 11 })
-    .onClick(() => this.onOpenContent(item.content))
-    .accessibilityText(`打开基金会手册，${item.title}`)
-  }
-
-  @Builder
-  private knowledgeGroup(section: FoundationKnowledgeSection) {
-    Column({ space: 10 }) {
-      Column({ space: 2 }) {
-        Text(section.title)
-          .fontSize(AppTypography.SUBTITLE_M)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font'))
-        Text(section.subtitle)
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_tertiary'))
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-
       Column() {
-        ForEach(section.items, (item: FoundationKnowledgeItem, index: number) => {
-          Column() {
-            this.knowledgeRow(item)
-            if (index < section.items.length - 1) {
-              Divider()
-                .strokeWidth(0.5)
-                .color($r('sys.color.comp_divider'))
-                .margin({ left: 68, right: 14 })
-            }
-          }
-          .width('100%')
-        }, (item: FoundationKnowledgeItem) => item.key)
+        SymbolGlyph($r('sys.symbol.chevron_right'))
+          .fontSize(13)
+          .fontColor([$r('sys.color.icon_emphasize')])
       }
-      .width('100%')
-      .backgroundColor(materialCardSurfaceColor(this.isImmersiveMaterialEnabled()))
-      .border(this.isImmersiveMaterialEnabled() ?
-        { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
-      .borderRadius(18)
-      .clip(true)
-      .backgroundBlurStyle(this.isImmersiveMaterialEnabled() ? BlurStyle.COMPONENT_REGULAR : undefined)
+      .width(32)
+      .height(32)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor($r('sys.color.comp_background_tertiary'))
+      .borderRadius(16)
     }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation(pressAnimation())
     .width('100%')
-    .alignItems(HorizontalAlign.Start)
+    .padding(15)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(materialCardSurfaceColor(this.isImmersiveMaterialEnabled()))
+    .border(this.isImmersiveMaterialEnabled() ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(18)
+    .backgroundBlurStyle(this.isImmersiveMaterialEnabled() ? BlurStyle.COMPONENT_REGULAR : undefined)
+    .onClick(() => this.onOpenContent(item.content))
+    .accessibilityText(`打开基金会手册导读，${item.title}`)
   }
 
   @Builder
   private foundationManual() {
-    Column({ space: 18 }) {
-      this.sectionHeader('基金会手册', '从核心设定、分级制度与组织架构开始了解基金会')
-      ForEach(FOUNDATION_KNOWLEDGE_SECTIONS, (section: FoundationKnowledgeSection) => {
-        this.knowledgeGroup(section)
-      }, (section: FoundationKnowledgeSection) => section.id)
+    Column({ space: 14 }) {
+      this.sectionHeader('基金会手册', '核心设定、分级制度与组织档案')
+
+      this.featuredKnowledgeCard(FOUNDATION_FEATURED_KNOWLEDGE)
+
+      GridRow({ columns: 2, gutter: { x: 10, y: 10 } }) {
+        ForEach(FOUNDATION_MANUAL_GRID_ITEMS, (item: FoundationKnowledgeItem) => {
+          GridCol({ span: 1 }) {
+            FoundationKnowledgeTile({
+              item: item,
+              materialEnabled: this.isImmersiveMaterialEnabled(),
+              onOpenContent: (content: LibraryContentRef) => this.onOpenContent(content)
+            })
+          }
+        }, (item: FoundationKnowledgeItem) => item.key)
+      }
+      .width('100%')
     }
     .width('100%')
     .alignItems(HorizontalAlign.Start)
@@ -552,12 +640,16 @@ export struct TerminalHome {
             historyCount: this.historyCount,
             favoriteReady: this.favoriteReady,
             historyReady: this.historyReady,
+            todayActiveMs: this.researchSnapshot.todayActiveMs,
+            dailyProgress: this.researchSnapshot.daily,
             loading: this.researchLoading ||
               (this.viewModel.loading && !this.researchReady && this.researchError.trim().length === 0),
             error: !this.researchReady && !this.researchLoading ? this.researchError : '',
             notice: this.researchReady ? this.researchError : '',
             materialEnabled: this.isImmersiveMaterialEnabled(),
-            onRetry: () => this.retryResearch()
+            onRetry: () => this.retryResearch(),
+            onOpenFavorites: () => this.onOpenCollection(LibraryCollectionMode.FAVORITES),
+            onOpenHistory: () => this.onOpenCollection(LibraryCollectionMode.RECENT)
           })
         }
         .width('100%')
@@ -583,7 +675,7 @@ export struct TerminalHome {
 
         Blank()
           .width('100%')
-          .height(136)
+          .height(120)
       }
       .width('100%')
       .constraintSize({ maxWidth: this.sideBySide ? WIDE_CONTENT_MAX_WIDTH : READING_CONTENT_MAX_WIDTH })

@@ -3,7 +3,9 @@ import {
   accentPillBackgroundColor,
   accentPillForegroundColor,
   adaptivePageMarginForWidth,
+  AppMotion,
   AppTypography,
+  pressAnimation,
   READING_CONTENT_MAX_WIDTH,
   windowWidthVp
 } from 'anomiconbasic';
@@ -112,6 +114,7 @@ export struct ArticleReadingStatusBar {
           .padding({ left: 8, right: 8 })
           .borderRadius(12)
           .backgroundColor(accentPillBackgroundColor())
+          .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
           .onClick(() => this.onExitWebMode())
           .accessibilityText('返回原生阅读模式')
         } else if (this.revealHiddenActive) {
@@ -129,6 +132,7 @@ export struct ArticleReadingStatusBar {
           .padding({ left: 8, right: 8 })
           .borderRadius(12)
           .backgroundColor('#22F59E0B')
+          .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
           .onClick(() => this.onDisableRevealHidden())
           .accessibilityText('关闭反白透视')
         }
@@ -174,6 +178,7 @@ export struct ArticleReadingStatusBar {
           .borderRadius(12)
           .backgroundColor(this.sidePanelOpen ?
             accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+          .animation(pressAnimation())
           .onClick(() => this.onToggleSidePanel())
           .accessibilityText(this.sidePanelOpen ? '收起研读侧栏' : '展开研读侧栏')
         }

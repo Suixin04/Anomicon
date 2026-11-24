@@ -6,16 +6,24 @@ import {
   LibraryFavorite,
   ReadingHistoryEntry,
   ResearchActivitySnapshot,
+  ResearchDailyProgress,
   ResearchProgress,
   createLibraryContentRef,
-  emptyResearchProgress
+  emptyResearchProgress,
+  researchDayKeyAt
 } from 'library';
 import {
+  FOUNDATION_FEATURED_KNOWLEDGE,
+  FOUNDATION_KNOWLEDGE_SECTIONS,
+  FOUNDATION_MANUAL_GRID_ITEMS,
+  FoundationKnowledgeItem,
   TerminalFavoritesPort,
   TerminalReadingHistoryPort,
   TerminalResearchProfilePort,
   TerminalViewModel,
-  TerminalViewModelListener
+  TerminalViewModelListener,
+  buildRecentSevenDayActivity,
+  formatTodayQuotaLabel
 } from '../main/ets/Index';
 
 class InMemoryFavorites implements TerminalFavoritesPort {
@@ -280,6 +288,62 @@ export default function terminalViewModelTest(): void {
       expect(fixture.favorites.subscriberCount()).assertEqual(0);
       expect(fixture.history.subscriberCount()).assertEqual(0);
       expect(fixture.research.subscriberCount()).assertEqual(0);
+    });
+  });
+
+  describe('TerminalProfileHelpersAndManual', () => {
+    it('builds 7 ordered daily bars and merges live today active ms', 0, () => {
+      const nowMs = Date.UTC(2026, 10, 24, 12, 0, 0);
+      const tzOffsetMinutes = 480;
+      const dayMs = 24 * 60 * 60 * 1000;
+      const todayKey = researchDayKeyAt(nowMs, tzOffsetMinutes);
+      const daily: ResearchDailyProgress[] = [
+        new ResearchDailyProgress(todayKey - 3 * dayMs, 40 * 60 * 1000),
+        new ResearchDailyProgress(todayKey - 1 * dayMs, 2 * 60 * 1000)
+      ];
+
+      const bars = buildRecentSevenDayActivity(daily, 15 * 60 * 1000, nowMs, tzOffsetMinutes);
+
+      expect(bars.length).assertEqual(7);
+      expect(bars[6].isToday).assertTrue();
+      expect(bars[6].dayKey).assertEqual(todayKey);
+      expect(bars[6].label).assertEqual('二');
+      expect(bars[6].minutes).assertEqual(15);
+      expect(bars[0].ratio).assertEqual(0);
+      expect(bars[3].minutes).assertEqual(40);
+      expect(bars[3].ratio).assertEqual(1);
+      // Small non-zero days remain visibly lifted above the baseline (0.22 minimum).
+      expect(bars[5].minutes).assertEqual(2);
+      expect(bars[5].ratio >= 0.22).assertTrue();
+    });
+
+    it('formats today quota labels across zero, sub-minute, and minute states', 0, () => {
+      expect(formatTodayQuotaLabel(0)).assertEqual('0 / 180 分钟');
+      expect(formatTodayQuotaLabel(45 * 1000)).assertEqual('< 1 / 180 分钟');
+      expect(formatTodayQuotaLabel(12 * 60 * 1000)).assertEqual('12 / 180 分钟');
+    });
+
+    it('keeps featured overview plus 8 unique grid topics aligned with manual sections', 0, () => {
+      const sectionKeys: Set<string> = new Set();
+      for (let i = 0; i < FOUNDATION_KNOWLEDGE_SECTIONS.length; i++) {
+        const items: FoundationKnowledgeItem[] = FOUNDATION_KNOWLEDGE_SECTIONS[i].items;
+        for (let j = 0; j < items.length; j++) {
+          sectionKeys.add(items[j].key);
+        }
+      }
+
+      const gridKeys: Set<string> = new Set();
+      gridKeys.add(FOUNDATION_FEATURED_KNOWLEDGE.key);
+      for (let i = 0; i < FOUNDATION_MANUAL_GRID_ITEMS.length; i++) {
+        gridKeys.add(FOUNDATION_MANUAL_GRID_ITEMS[i].key);
+      }
+
+      expect(FOUNDATION_MANUAL_GRID_ITEMS.length).assertEqual(8);
+      expect(gridKeys.size).assertEqual(9);
+      expect(gridKeys.size).assertEqual(sectionKeys.size);
+      sectionKeys.forEach((key: string): void => {
+        expect(gridKeys.has(key)).assertTrue();
+      });
     });
   });
 }

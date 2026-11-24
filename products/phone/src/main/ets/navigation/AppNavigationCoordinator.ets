@@ -3,7 +3,7 @@
  * only this phone composition boundary touches NavPathStack.
  */
 import { promptAction } from '@kit.ArkUI';
-import { notifyNavigationStackChanged } from 'anomiconbasic';
+import { isReduceMotionEnabled, notifyNavigationStackChanged } from 'anomiconbasic';
 
 export class AppNavigationCoordinator {
   private static readonly pending: Set<string> = new Set<string>();
@@ -109,7 +109,7 @@ export class AppNavigationCoordinator {
       if (paths.length > 1) {
         stack.popToIndex(0, false);
       }
-      await stack.replaceDestination({ name: name, param: param }, { animated: false });
+      await stack.replaceDestination({ name: name, param: param }, { animated: !isReduceMotionEnabled() });
       notifyNavigationStackChanged();
       return true;
     } catch (error) {

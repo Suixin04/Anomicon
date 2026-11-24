@@ -15,7 +15,13 @@ import {
 } from '../navigation/AppRoutes';
 import { parseExploreCollectionRoute } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
-import { createAppBackIcon, createAppTitleBarStyle, popNavigationDestination } from 'anomiconbasic';
+import {
+  createAppBackIcon,
+  createAppTitleBarStyle,
+  DestinationMotionState,
+  NavigationTransitionRegistry,
+  popNavigationDestination
+} from 'anomiconbasic';
 
 @Builder
 export function ExploreCollectionPageBuilder(viewModel: ExploreCollectionVM) {
@@ -34,9 +40,15 @@ export function ExploreCollectionPageBuilder(viewModel: ExploreCollectionVM) {
 struct ExploreCollectionPage {
   @Require @Param viewModel: ExploreCollectionVM;
   private pageStack: NavPathStack | undefined = undefined;
+  private navDestinationId: string = '';
+  @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
   private readonly scroller: Scroller = new Scroller();
   /** Route parameters must be validated before a screen-level load starts. */
   private routeResolved: boolean = false;
+
+  aboutToDisappear(): void {
+    NavigationTransitionRegistry.unregister(this.navDestinationId);
+  }
 
   private pageTitle(): string {
     return this.viewModel.mode === ExploreCollectionMode.RECENT ? '最近更新' : '轻松一下';
@@ -86,10 +98,14 @@ struct ExploreCollectionPage {
     })
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      this.navDestinationId = context.navDestinationId ?? '';
+      NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
       this.applyRouteParam(context.pathInfo.param as Object | null | undefined);
       this.routeResolved = true;
       this.viewModel.activate();
     })
+    .opacity(this.navMotion.opacity)
+    .translate({ x: this.navMotion.translateX })
     .onActive(() => {
       if (this.routeResolved) {
         this.viewModel.activate();

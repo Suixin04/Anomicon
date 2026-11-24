@@ -12,7 +12,13 @@ export { FavoriteRepository, ReadingHistoryRepository } from './domain/LibraryRe
 export { LibraryFeatureGraph } from './domain/LibraryFeaturePorts';
 export { createLibraryFeatureGraph } from './composition/LibraryFeatureFactory';
 export { ReadingHistoryEntry } from './domain/ReadingHistoryEntry';
-export { ResearchProgress } from './domain/ResearchProgress';
+export {
+  RESEARCH_DAILY_CAP_MINUTES,
+  ResearchDailyProgress,
+  ResearchProgress,
+  emptyResearchProgress,
+  researchDayKeyAt
+} from './domain/ResearchProgress';
 export {
   ResearchActivityRepo,
   ResearchActivitySink,
@@ -37,6 +43,5 @@ export {
   LibraryCollectionScreenData,
   LibraryCollectionVM
 } from './presentation/viewmodel/Index';
-export { emptyResearchProgress } from './domain/ResearchProgress';
 export { LibraryCollectionViewContract } from './presentation/view/Index';
 export { LibraryCollectionView } from './presentation/view/Index';
