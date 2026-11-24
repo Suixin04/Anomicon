@@ -3,6 +3,12 @@
     {
       "name": "start_window_background",
       "value": "#000000"
-    }
+    },
+    { "name": "archive_controls_surface", "value": "#CC141C2B" },
+    { "name": "archive_controls_glass", "value": "#88101826" },
+    { "name": "archive_controls_outline", "value": "#33FFFFFF" },
+    { "name": "archive_button_outline", "value": "#00000000" },
+    { "name": "archive_reset_text", "value": "#EAF0FF" },
+    { "name": "archive_reset_fill", "value": "#2BFFFFFF" }
   ]
 }

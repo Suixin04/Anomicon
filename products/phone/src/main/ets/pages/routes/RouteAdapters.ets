@@ -141,6 +141,10 @@ class Archive3DInstallActionsAdapter implements Scp3DArchiveInstallActions {
     return this.useCase.install(this.descriptor(entry));
   }
 
+  resume(entry: Scp3DAssetManifestEntry): Promise<void> {
+    return this.useCase.resume(this.descriptor(entry));
+  }
+
   remove(entry: Scp3DAssetManifestEntry): Promise<void> {
     return this.useCase.remove(this.descriptor(entry));
   }
@@ -159,7 +163,7 @@ class Archive3DInstallActionsAdapter implements Scp3DArchiveInstallActions {
       case ArchiveModelInstallState.READY: return Scp3DArchiveInstallState.READY;
       case ArchiveModelInstallState.QUEUED: return Scp3DArchiveInstallState.QUEUED;
       case ArchiveModelInstallState.WAITING: return Scp3DArchiveInstallState.WAITING;
-      case ArchiveModelInstallState.PAUSED: return Scp3DArchiveInstallState.DOWNLOADING;
+      case ArchiveModelInstallState.PAUSED: return Scp3DArchiveInstallState.PAUSED;
       case ArchiveModelInstallState.DOWNLOADING: return Scp3DArchiveInstallState.DOWNLOADING;
       case ArchiveModelInstallState.VERIFYING: return Scp3DArchiveInstallState.VERIFYING;
       case ArchiveModelInstallState.FAILED: return Scp3DArchiveInstallState.FAILED;

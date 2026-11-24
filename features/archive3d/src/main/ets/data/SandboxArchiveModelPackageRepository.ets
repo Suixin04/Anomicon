@@ -14,6 +14,7 @@ import {
   ArchiveSceneSource
 } from '../domain/ArchiveModelDescriptor';
 import {
+  ArchiveModelNotInstalledError,
   ArchiveModelInstallListener,
   ArchiveModelInstallSnapshot,
   ArchiveModelInstallState,
@@ -365,7 +366,7 @@ export class SandboxArchiveModelPackageRepository implements ArchiveModelPackage
     // to ArkGraphics3D.
     const source = await this.files.locate(model, true);
     if (source === undefined) {
-      throw new Error('三维模型尚未下载');
+      throw new ArchiveModelNotInstalledError();
     }
     return source;
   }

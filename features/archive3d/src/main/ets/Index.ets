@@ -20,6 +20,7 @@ export {
   ArchiveSceneSource
 } from './domain/ArchiveModelDescriptor';
 export {
+  ArchiveModelNotInstalledError,
   ArchiveModelInstallState,
   ArchiveModelInstallSnapshot,
   ArchiveModelInstallListener,
