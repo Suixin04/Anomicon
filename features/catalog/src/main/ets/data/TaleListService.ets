@@ -1,11 +1,24 @@
 import { common } from '@kit.AbilityKit';
 import { relationalStore } from '@kit.ArkData';
 import { ANOMICON_DATABASE_NAME } from 'anomiconbasic';
-import { TalePayload } from '../domain/StaticCatalogContracts';
-import {
-  CachedArticleRepo
-} from './CachedArticleRepo';
-import { ScpHtmlLoadResult, ScpHtmlRequestPriority } from '../domain/ArticleHtmlRepository';
+import { TaleRawEntry } from '../domain/StaticCatalogContracts';
+import { ArticleHtmlRepository, ScpHtmlLoadResult, ScpHtmlRequestPriority } from '../domain/ArticleHtmlRepository';
+
+/** A source can retain its last valid entries while waiting for a successful retry. */
+export interface TaleIndexPart {
+  tales: TaleRawEntry[];
+  fetchedAt: number;
+  needsRetry: boolean;
+}
+
+export interface TaleDirectoryCache {
+  parserVersion: number;
+  ok: boolean;
+  translated?: TaleIndexPart;
+  original?: TaleIndexPart;
+  /** Unattributed rows from an existing v4 installation, until both indexes have been read. */
+  tales?: TaleRawEntry[];
+}
 
 const TABLE_NAME: string = 'tale_list_cache';
 const CREATE_TABLE: string =
@@ -40,9 +53,9 @@ export class TaleListService {
   private store: relationalStore.RdbStore | undefined = undefined;
   private initialization: Promise<void> | undefined = undefined;
   private context: common.UIAbilityContext | undefined = undefined;
-  private readonly repository: CachedArticleRepo;
+  private readonly repository: ArticleHtmlRepository;
 
-  constructor(repository: CachedArticleRepo) {
+  constructor(repository: ArticleHtmlRepository) {
     this.repository = repository;
   }
 
@@ -85,7 +98,7 @@ export class TaleListService {
   }
 
   /** 写入解析结果，并沿用对应原始 HTML 的抓取时间。 */
-  async put(payload: TalePayload, fetchedAt: number): Promise<void> {
+  async put(payload: TaleDirectoryCache, fetchedAt: number): Promise<void> {
     const store = await this.requireStore();
     const values: relationalStore.ValuesBucket = {
       'cache_key': CACHE_KEY,

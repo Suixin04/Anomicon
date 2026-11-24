@@ -1,3 +1,4 @@
+import taleSourcesTest from './TaleSources.test';
 import { describe, expect, it } from '@ohos/hypium';
 import {
   ArticleHtmlRepository,
@@ -136,6 +137,7 @@ const SAMPLE_SERIES_CN_3_HTML: string = `
 </div>`;
 
 export default function seriesTalesEditionTest(): void {
+  taleSourcesTest();
   describe('SeriesTalesEditionContract', () => {
     it('maps Main I-X and CN I-V SCP IDs to Wiki series tales edition slugs', 0, () => {
       expect(resolveSeriesTalesEditionPageId('SCP-001')).assertEqual('scp-series-1-tales-edition');

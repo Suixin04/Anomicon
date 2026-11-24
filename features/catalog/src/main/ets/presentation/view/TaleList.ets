@@ -187,7 +187,7 @@ export struct TaleList {
   private directoryUpdateBlock() {
     Column() {
       ContentUpdateNotice({
-        message: this.viewModel.errorMessage.length > 0 ? '目录更新失败，仍可浏览已缓存的故事' :
+        message: this.viewModel.errorMessage.length > 0 ? this.viewModel.errorMessage :
           '暂未获取到最新目录，仍可浏览已缓存的故事',
         updating: this.viewModel.loading || this.viewModel.refreshing,
         updatingMessage: '正在更新目录',

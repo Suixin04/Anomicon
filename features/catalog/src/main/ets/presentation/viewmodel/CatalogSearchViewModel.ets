@@ -144,6 +144,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   @Trace loadedSeriesCount: number = 0;
   @Trace allSeriesLoading: boolean = false;
   @Trace talesLoading: boolean = false;
+  @Trace checkingMissingSeries: boolean = false;
   @Trace status: ViewModelLoadState = ViewModelLoadState.IDLE;
   @Trace errorMessage: string = '';
   @Trace fetchedAt: number = 0;
@@ -163,6 +164,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   private appliedCatalog: CatalogSnapshot | undefined = undefined;
   private appliedTales: TaleSnapshot | undefined = undefined;
   private readonly allSeriesSnapshots: Map<string, CatalogSnapshot> = new Map();
+  private readonly attemptedSeries: Set<string> = new Set();
   private snapshotRevision: number = 0;
 
   constructor(
@@ -251,6 +253,9 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     if (this.disposed) {
       return;
     }
+    if (this.query.trim() !== query.trim()) {
+      this.attemptedSeries.clear();
+    }
     this.query = query;
     this.publishVisible();
     this.publishSnapshot();
@@ -311,7 +316,44 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     this.publishSnapshot();
   }
 
+  /** Each explicit action can promote one missing index. Typing and background prefetch keep their own budgets. */
+  async checkMissingSeries(): Promise<void> {
+    if (!this.active || this.seriesId !== ALL_SERIES_ID || this.checkingMissingSeries) {
+      return;
+    }
+    const missing = prioritizeMissingSeries(ALL_CATALOG_SERIES.filter((item: ScpSeriesDescriptor): boolean =>
+      !this.allSeriesSnapshots.has(item.id)), this.query);
+    if (missing.length === 0) {
+      return;
+    }
+    let target = missing.find((item: ScpSeriesDescriptor): boolean => !this.attemptedSeries.has(item.id));
+    if (target === undefined) {
+      this.attemptedSeries.clear();
+      target = missing[0];
+    }
+    const token = this.token;
+    this.attemptedSeries.add(target.id);
+    this.checkingMissingSeries = true;
+    const outcome = await this.loadSingleAllSeriesItem(target, token, !this.allSeriesLoading,
+      ScpHtmlRequestPriority.USER_INITIATED);
+    if (!this.isCurrent(token, ALL_SERIES_ID)) {
+      return;
+    }
+    this.checkingMissingSeries = false;
+    if (outcome.loaded !== undefined) {
+      this.applyAllSeriesSnapshot(target.id, token, outcome.loaded);
+    } else if (!this.allSeriesSnapshots.has(target.id)) {
+      this.status = ViewModelLoadState.PARTIAL;
+      this.errorMessage = `本次补查失败，已检索 ${this.loadedSeriesCount}/${ALL_CATALOG_SERIES.length} 个系列`;
+      this.publishSnapshot();
+    }
+  }
+
   retry(): void {
+    if (this.seriesId === ALL_SERIES_ID && this.allSeriesSnapshots.size < ALL_CATALOG_SERIES.length) {
+      this.checkMissingSeries();
+      return;
+    }
     if (this.active) {
       // A retry is an explicit user action.  Do not read the same stale or
       // corrupt cache again; go through the repository's force-refresh path.
@@ -535,7 +577,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
         }
       }
       if (this.allSeriesSnapshots.size > 0) {
-        this.projectAllSeriesSnapshots(token, false, 0);
+        this.projectAllSeriesSnapshots(token, false);
       }
     }
 
@@ -545,12 +587,11 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
 
     if (missing.length === 0) {
       this.allSeriesLoading = false;
-      this.projectAllSeriesSnapshots(token, true, 0);
+      this.projectAllSeriesSnapshots(token, true);
       return;
     }
 
     const orderedMissing = prioritizeMissingSeries(missing, this.query);
-    let failedCount: number = 0;
     let lastError: string = '';
     for (let start: number = 0; start < orderedMissing.length; start += ALL_SERIES_BATCH_SIZE) {
       if (!this.isCurrent(token, ALL_SERIES_ID)) {
@@ -573,12 +614,11 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
           this.allSeriesSnapshots.set(outcome.descriptorId, outcome.loaded);
           batchLoaded = true;
         } else if (outcome.errorMessage !== undefined) {
-          failedCount++;
           lastError = outcome.errorMessage;
         }
       }
       if (batchLoaded) {
-        this.projectAllSeriesSnapshots(token, false, failedCount);
+        this.projectAllSeriesSnapshots(token, false);
       }
     }
 
@@ -596,7 +636,7 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
       }
       return;
     }
-    this.projectAllSeriesSnapshots(token, true, failedCount);
+    this.projectAllSeriesSnapshots(token, true);
   }
 
   private applyAllSeriesSnapshot(seriesId: string, token: number, snapshot: CatalogSnapshot): void {
@@ -609,10 +649,10 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
       return;
     }
     this.allSeriesSnapshots.set(seriesId, snapshot);
-    this.projectAllSeriesSnapshots(token, !this.allSeriesLoading, 0);
+    this.projectAllSeriesSnapshots(token, !this.allSeriesLoading);
   }
 
-  private projectAllSeriesSnapshots(token: number, finished: boolean, failedCount: number): void {
+  private projectAllSeriesSnapshots(token: number, finished: boolean): void {
     if (!this.isCurrent(token, ALL_SERIES_ID)) {
       return;
     }
@@ -649,12 +689,15 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
       this.randomItems = this.search.pickRandom(merged, this.randomCount);
     }
     this.loadedSeriesCount = loadedCount;
+    if (loadedCount === ALL_CATALOG_SERIES.length) {
+      this.allSeriesLoading = false;
+    }
     this.catalogPending = false;
     this.loadTimedOut = false;
     this.stopPendingTimeout();
     this.fetchedAt = latestFetchedAt;
     this.stale = anyStale;
-    if (finished && failedCount > 0) {
+    if (finished && loadedCount < ALL_CATALOG_SERIES.length) {
       this.status = ViewModelLoadState.PARTIAL;
       this.errorMessage = `部分系列目录加载失败，已检索 ${loadedCount}/${ALL_CATALOG_SERIES.length} 个系列`;
     } else {
@@ -721,6 +764,8 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
   private stopObservation(): void {
     this.stopPendingTimeout();
     this.loadTimedOut = false;
+    this.checkingMissingSeries = false;
+    this.attemptedSeries.clear();
     this.appliedCatalog = undefined;
     this.appliedTales = undefined;
     const listeners = this.unsubscribes.splice(0, this.unsubscribes.length);

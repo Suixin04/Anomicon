@@ -1,5 +1,7 @@
 import { describe, expect, it } from '@ohos/hypium';
 import { ViewModelLoadState } from 'anomiconbasic';
+import { ScpHtmlRequestPriority } from '../main/ets/domain/ArticleHtmlRepository';
+import { ScpRequestScheduler } from '../main/ets/data/ScpRequestScheduler';
 import {
   ALL_CATALOG_SERIES,
   ALL_SERIES_ID,
@@ -178,6 +180,7 @@ class MultiSeriesCatalogRepository implements CatalogRepository {
 
   setNetwork(snapshot: CatalogSnapshot): void {
     this.networkBySeries.set(snapshot.seriesId, snapshot);
+    this.failingSeries.delete(snapshot.seriesId);
   }
 
   setFailing(seriesId: string): void {
@@ -206,6 +209,28 @@ class MultiSeriesCatalogRepository implements CatalogRepository {
   subscribe(_seriesId: string, _listener: (snapshot: CatalogSnapshot) => void): () => void {
     return (): void => {
     };
+  }
+}
+
+/** Request boundary used by a search page with one cached series and no background quota. */
+class WeakSearchRepository extends MultiSeriesCatalogRepository {
+  readonly scheduler: ScpRequestScheduler = new ScpRequestScheduler(1, 0);
+  readonly started: string[] = [];
+  readonly page: DeferredCatalogSearchLoad = new DeferredCatalogSearchLoad();
+  private readonly requests: Map<string, Promise<CatalogSnapshot>> = new Map();
+
+  load(series: ScpSeriesDescriptor, priority: ScpHtmlRequestPriority = ScpHtmlRequestPriority.USER_INITIATED): Promise<CatalogSnapshot> {
+    const previous = this.requests.get(series.id);
+    if (previous !== undefined) {
+      this.scheduler.promote(series.id, priority);
+      return previous;
+    }
+    const request = this.scheduler.run<CatalogSnapshot>((): Promise<CatalogSnapshot> => {
+      this.started.push(series.id);
+      return this.page.promise;
+    }, priority, series.id);
+    this.requests.set(series.id, request);
+    return request;
   }
 }
 
@@ -489,6 +514,52 @@ export default function catalogSearchSnapshotTest(): void {
       expect(viewModel.snapshot.data?.entries.length).assertEqual(2);
       expect(viewModel.snapshot.data?.random[0]?.itemId).assertEqual(initialRandomId);
       viewModel.dispose();
+    });
+
+    it('shows the missing 1 of 15 series on zero matches and recovers only that title on retry', 0, async () => {
+      const repo = new MultiSeriesCatalogRepository();
+      const missed = ALL_CATALOG_SERIES[14];
+      for (const series of ALL_CATALOG_SERIES.slice(0, 14)) {
+        repo.setCached(new CatalogSnapshot(series.id, [new CatalogEntry('SCP-173', '雕像')], CatalogSnapshotSource.CACHE, 100));
+      }
+      repo.setFailing(missed.id);
+      const vm = createSearchViewModel(repo, new ManualCatalogSearchTimeout(), ALL_SERIES_ID);
+      vm.activate();
+      vm.setQuery('遗失书目');
+      await drainMicrotasks(60);
+      expect(vm.snapshot.data?.entries.length).assertEqual(0);
+      expect(vm.snapshot.error?.message.includes('14/15')).assertTrue();
+      repo.setNetwork(new CatalogSnapshot(missed.id, [new CatalogEntry('SCP-CN-4555', '遗失书目')], CatalogSnapshotSource.NETWORK, 200));
+      vm.retry();
+      expect(vm.loadedSeriesCount).assertEqual(14);
+      await drainMicrotasks(60);
+      expect(vm.snapshot.data?.entries[0].itemId).assertEqual('SCP-CN-4555');
+      expect(vm.loadedSeriesCount).assertEqual(15);
+      expect(vm.snapshot.state).assertEqual(ViewModelLoadState.READY);
+      vm.dispose();
+    });
+
+    it('under zero background quota an explicit search promotes one missing series and leaves other prefetch queued', 0, async () => {
+      const repo = new WeakSearchRepository();
+      const target = SCP_SERIES[1];
+      repo.setCached(new CatalogSnapshot(SCP_SERIES[0].id, [new CatalogEntry('SCP-173', '雕像')], CatalogSnapshotSource.CACHE, 100));
+      const vm = createSearchViewModel(repo, new ManualCatalogSearchTimeout(), ALL_SERIES_ID);
+      vm.activate();
+      await drainMicrotasks(60);
+      vm.setQuery('回声档案');
+      expect(vm.loadedSeriesCount).assertEqual(1);
+      expect(repo.started.length).assertEqual(0);
+      vm.checkMissingSeries();
+      vm.checkMissingSeries();
+      await drainMicrotasks(30);
+      expect(repo.started.join('/')).assertEqual(target.id);
+      repo.page.resolve(new CatalogSnapshot(target.id, [new CatalogEntry('SCP-1234', '回声档案')], CatalogSnapshotSource.NETWORK, 200));
+      await drainMicrotasks(30);
+      expect(vm.checkingMissingSeries).assertFalse();
+      expect(repo.started.length).assertEqual(1);
+      expect(vm.snapshot.data?.loadedSeriesCount).assertEqual(2);
+      expect(vm.snapshot.data?.entries[0].itemId).assertEqual('SCP-1234');
+      vm.dispose();
     });
 
     it('unifies CN archives, tales, and Wiki direct-open targets in ALL_SERIES_ID', 0, async () => {

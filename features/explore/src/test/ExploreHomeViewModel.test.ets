@@ -49,6 +49,38 @@ class ImmediateExploreRepository implements ExploreListRepository {
   }
 }
 
+class CachedRankingRepository extends ImmediateExploreRepository {
+  rankingLoads: number = 0;
+
+  private ranking(score: string): ExplorePayload {
+    return {
+      ok: true,
+      error: '',
+      entries: [
+        { url: '/scp-cn-001', title: '已有标题', score: '+4510' },
+        { url: '/scp-cn-963-j', title: 'SCP-CN-963-J', score: score }
+      ]
+    };
+  }
+
+  read(source: ExploreSource): Promise<ExploreStoredSnapshot | undefined> {
+    if (source === ExploreSource.TOP_RATED) {
+      return Promise.resolve(new ExploreStoredSnapshot(JSON.stringify(this.ranking('+4508')), 10));
+    }
+    return super.read(source);
+  }
+
+  isFresh(_snapshot: ExploreStoredSnapshot): boolean { return true; }
+
+  load(source: ExploreSource, forceNetwork?: boolean): Promise<ExploreLoadedPayload> {
+    if (source === ExploreSource.TOP_RATED) {
+      this.rankingLoads++;
+      return Promise.resolve(new ExploreLoadedPayload(this.ranking('+4509'), ExploreDataOrigin.NETWORK, 20));
+    }
+    return super.load(source, forceNetwork);
+  }
+}
+
 class SlowTopRatedRepository extends ImmediateExploreRepository {
   private finish: (() => void) | undefined;
 
@@ -180,6 +212,49 @@ export default function exploreHomeViewModelTest(): void {
       viewModel.dispose();
       current.progress?.onTitle('SCP-002', '迟到的标题');
       expect(viewModel.recommendations[0].entry.title).assertEqual('SCP-002');
+    });
+
+    it('publishes cached ranked rows before lookup and fills in only the current request’s title', 0, async () => {
+      const content = new CachedRankingRepository();
+      const recommendations = new PendingRecommendationRepository();
+      const titles: Array<(value: string) => void> = [];
+      const vm = new ExploreHomeViewModel(new ExploreContentUseCase(content,
+        (_id: string): Promise<string> => new Promise<string>((resolve: (value: string) => void): void => {
+          titles.push(resolve);
+        })), new RecommendationUseCase(recommendations));
+      try {
+        const activation = vm.activate();
+        recommendations.requests[0].complete();
+        await drainMicrotasks();
+        const rows = vm.topRatedEntries;
+        expect(titles.length).assertEqual(1);
+        expect(content.rankingLoads).assertEqual(0);
+        expect(vm.topRatedStatus).assertEqual(ViewModelLoadState.READY);
+        expect(vm.topRatedLoading).assertFalse();
+        expect(rows.length).assertEqual(2);
+        expect(rows[0].id).assertEqual('scp-cn-001');
+        expect(rows[0].title).assertEqual('已有标题');
+        expect(rows[1].id).assertEqual('scp-cn-963-j');
+        expect(rows[1].title).assertEqual('SCP-CN-963-J');
+        expect(rows[1].score).assertEqual(4508);
+
+        const refresh = vm.loadTopRated(true);
+        await drainMicrotasks();
+        expect(titles.length).assertEqual(2);
+        expect(content.rankingLoads).assertEqual(1);
+        titles[0]('上一次请求的标题');
+        await activation;
+        expect(vm.topRatedEntries[1].score).assertEqual(4509);
+        expect(vm.topRatedEntries[1].title).assertEqual('SCP-CN-963-J');
+        titles[1]('神烦代码');
+        await refresh;
+        expect(vm.topRatedEntries[1].id).assertEqual('scp-cn-963-j');
+        expect(vm.topRatedEntries[1].title).assertEqual('神烦代码');
+        expect(vm.topRatedEntries[1].score).assertEqual(4509);
+        expect(rows[1].title).assertEqual('SCP-CN-963-J');
+      } finally {
+        vm.dispose();
+      }
     });
 
     it('publishes the first card while the home index is still pending', 0, async () => {
