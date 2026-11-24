@@ -173,7 +173,7 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
     document: ScpArticleDocument,
     rawPayloadJson: string,
     onProgress?: (progress: ArticleOfflineSaveProgress) => void,
-    requireAllImages: boolean = false
+    refreshAllImages: boolean = false
   ): Promise<ArticleOfflineSnapshot> {
     this.beginMutation(content.key);
     let unpublishedDir: string = '';
@@ -196,22 +196,22 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
       const documentPath = `${unpublishedDir}/document.json`;
       await this.ensureDirectoryChain(['offline_articles', 'v1', safeDirName, version, 'images']);
 
-      let existingRow: StoredOfflineRow | undefined = undefined;
-      await this.enqueueOperation(async (): Promise<void> => {
-        existingRow = await this.findRowNow(content);
-      });
       let previousImagesDir = '';
       const existingFileByUrl: Map<string, string> = new Map();
-      if (existingRow !== undefined) {
-        const previous = existingRow as StoredOfflineRow;
-        previousImagesDir = `${previous.documentPath.substring(0, previous.documentPath.lastIndexOf('/'))}/images`;
-        const prevManifest = this.parseManifest(previous.manifestJson);
-        for (let index = 0; index < prevManifest.length; index++) {
-          const entry = prevManifest[index];
-          if (entry.saved && entry.fileName.length > 0) {
-            existingFileByUrl.set(entry.url, entry.fileName);
+      if (!refreshAllImages) {
+        await this.enqueueOperation(async (): Promise<void> => {
+          const previous = await this.findRowNow(content);
+          if (previous === undefined) {
+            return;
           }
-        }
+          previousImagesDir = `${previous.documentPath.substring(0, previous.documentPath.lastIndexOf('/'))}/images`;
+          const prevManifest = this.parseManifest(previous.manifestJson);
+          for (const entry of prevManifest) {
+            if (entry.saved && entry.fileName.length > 0) {
+              existingFileByUrl.set(entry.url, entry.fileName);
+            }
+          }
+        });
       }
 
       const imageUrls = collectArticleImageUrls(savedDocument);
@@ -252,7 +252,7 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         const runWorker = async (): Promise<void> => {
           while (nextSlotIndex < pendingSlots.length) {
             const slot = pendingSlots[nextSlotIndex++];
-            const entry = await this.fetchAndPersistImage(slot.url, imagesDir);
+            const entry = await this.fetchAndPersistImage(slot.url, imagesDir, refreshAllImages);
             results[slot.index] = entry;
             completedImages++;
             onProgress?.({ completedImages, totalImages });
@@ -300,7 +300,7 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
         };
       }
 
-      if (requireAllImages && savedImages < totalImages) {
+      if (refreshAllImages && savedImages < totalImages) {
         throw new Error(`更新副本失败，仍缺 ${totalImages - savedImages} 张图。已保留原副本，请稍后重试`);
       }
       const requiresInteractive = requiresNetworkForInteractiveDocument(savedDocument);
@@ -657,12 +657,16 @@ export class RdbOfflineArticleStore implements ArticleOfflineStoragePort {
     return { snapshot, summary };
   }
 
-  private async fetchAndPersistImage(url: string, imagesDir: string): Promise<ArticleOfflineImageEntry> {
+  private async fetchAndPersistImage(
+    url: string,
+    imagesDir: string,
+    forceNetwork: boolean
+  ): Promise<ArticleOfflineImageEntry> {
     if (this.imageFetcher === undefined) {
       return { url, fileName: '', bytes: 0, saved: false };
     }
     try {
-      const cachedPath = await this.imageFetcher.fetchToLocalFile(url);
+      const cachedPath = await this.imageFetcher.fetchToLocalFile(url, forceNetwork);
       if (cachedPath.length === 0) {
         return { url, fileName: '', bytes: 0, saved: false };
       }

@@ -85,7 +85,7 @@ class StaticDocParserPort implements ArticleDocumentParserPort {
 class MemoryOfflineStore implements ArticleOfflineStoragePort {
   records: Map<string, ArticleOfflineDocumentRecord> = new Map();
   saveCount: number = 0;
-  requireAllImages: boolean = false;
+  refreshAllImages: boolean = false;
 
   initialize(): Promise<void> {
     return Promise.resolve();
@@ -104,10 +104,10 @@ class MemoryOfflineStore implements ArticleOfflineStoragePort {
     document: ScpArticleDocument,
     rawPayloadJson: string,
     onProgress?: (progress: ArticleOfflineSaveProgress) => void,
-    requireAllImages: boolean = false
+    refreshAllImages: boolean = false
   ): Promise<ArticleOfflineSnapshot> {
     this.saveCount++;
-    this.requireAllImages = requireAllImages;
+    this.refreshAllImages = refreshAllImages;
     const urls = collectArticleImageUrls(document);
     onProgress?.({ completedImages: 0, totalImages: urls.length });
     const localUris: Map<string, string> = new Map();
@@ -357,7 +357,7 @@ export default function articleOfflineTest(): void {
       const updated = await scenario.vm.saveForOffline(ArticleOfflineSaveAction.UPDATE);
       expect(scenario.html.requests.length).assertEqual(1);
       expect(scenario.html.requests[0]).assertTrue();
-      expect(scenario.store.requireAllImages).assertTrue();
+      expect(scenario.store.refreshAllImages).assertTrue();
       expect(updated?.title).assertEqual('v2');
       expect(scenario.vm.document?.title).assertEqual('v2');
       expect(scenario.vm.resolveLocalImageUri(`${REVISION_URL}/v2.png`).startsWith('file://')).assertTrue();
@@ -405,7 +405,7 @@ export default function articleOfflineTest(): void {
       await scenario.open(false);
       const repaired = await scenario.vm.saveForOffline(ArticleOfflineSaveAction.REPAIR_IMAGES);
       expect(scenario.html.requests.length).assertEqual(0);
-      expect(scenario.store.requireAllImages).assertFalse();
+      expect(scenario.store.refreshAllImages).assertFalse();
       expect(repaired?.title).assertEqual('v1');
       expect(scenario.vm.document?.title).assertEqual('v2');
       expect((await scenario.store.loadDocument(scenario.content))?.rawPayloadJson).assertEqual('"v1"');

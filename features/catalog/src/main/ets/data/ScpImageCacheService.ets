@@ -182,8 +182,8 @@ export class ScpImageCacheService {
     }
   }
 
-  /** 返回本地文件路径；命中缓存直接返回，未命中则下载。 */
-  async load(url: string): Promise<string> {
+  /** 普通读取先查本地文件，更新离线副本时向图源重新取图。 */
+  async load(url: string, forceNetwork: boolean = false): Promise<string> {
     if (this.disposed) {
       throw new Error('图片缓存服务已关闭');
     }
@@ -194,11 +194,19 @@ export class ScpImageCacheService {
       throw new Error('图片缓存服务尚未初始化');
     }
     const normalizedUrl = this.normalizeHttpsUrl(url);
+    const stem = `img_${this.sha256Hex(normalizedUrl)}`;
+    if (!forceNetwork) {
+      const cachedPath = await this.findReusablePath(stem);
+      if (cachedPath !== undefined) {
+        return cachedPath;
+      }
+    }
+    // Only real downloads enter this map. A refresh must never join a cache lookup.
     const existing = this.inflight.get(normalizedUrl);
     if (existing !== undefined) {
       return existing;
     }
-    const task = this.loadNormalized(normalizedUrl);
+    const task = this.downloadToCache(normalizedUrl, stem);
     this.inflight.set(normalizedUrl, task);
     task.then(() => {
       this.inflight.delete(normalizedUrl);
@@ -275,13 +283,7 @@ export class ScpImageCacheService {
     }
   }
 
-  private async loadNormalized(normalizedUrl: string): Promise<string> {
-    const stem = `img_${this.sha256Hex(normalizedUrl)}`;
-    const cachedPath = await this.findReusablePath(stem);
-    if (cachedPath !== undefined) {
-      return cachedPath;
-    }
-
+  private async downloadToCache(normalizedUrl: string, stem: string): Promise<string> {
     const downloaded = await this.downloadWithSlot(normalizedUrl);
     const inspection = await this.inspectBuffer(downloaded.bytes);
     const declaredExtension = this.extensionForMimeType(downloaded.declaredMimeType);

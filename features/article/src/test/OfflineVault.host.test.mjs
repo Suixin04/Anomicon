@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { join, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { stripTypeScriptTypes } from 'node:module';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -16,11 +16,12 @@ function loadArkTs(path, names, imports = {}) {
   return Function(...Object.keys(imports), `${script}\nreturn {${names}};`)(...Object.values(imports));
 }
 
-const { ScpBlockType } = loadArkTs('domain/ScpDocument', ['ScpBlockType']);
+const documents = loadArkTs('domain/ScpDocument', ['ScpAcsMetadata', 'ScpArticleDocument', 'ScpBlockType',
+  'ScpCalloutTone', 'ScpContentBlock', 'ScpFootnote', 'ScpHiddenTextKind', 'ScpTextAlign', 'ScpTextSpan', 'ScpTextStyle']);
 const domain = loadArkTs('domain/ArticleOfflineContracts', [
   'ArticleOfflineSnapshot', 'ArticleOfflineSummary', 'collectArticleImageUrls', 'evaluateOfflineReadiness',
   'normalizeOfflineImageUrl', 'requiresNetworkForInteractiveDocument'
-], { ScpBlockType });
+], documents);
 
 const fileIo = {
   OpenMode: { CREATE: fs.constants.O_CREAT, WRITE_ONLY: fs.constants.O_WRONLY,
@@ -83,17 +84,17 @@ function document(revision, imageNames) {
     blocks: [], footnotes: [], creditBlocks: [], parserWarnings: [] };
 }
 
-function createScenario(t) {
+function createScenario(t, documentParser = parser) {
   const tempDir = fileURLToPath(new URL('../../.test/', import.meta.url));
   fs.mkdirSync(tempDir, { recursive: true });
   const root = fs.mkdtempSync(join(tempDir, 'offline-vault-'));
   let db;
   const requests = [];
   const missing = new Set();
-  const reopen = () => {
+  const reopen = imageFetcher => {
     db?.close();
     db = new DatabaseSync(join(root, 'vault.sqlite'));
-    return new RdbOfflineArticleStore({ getApplicationContext: () => ({ filesDir: root }), db }, parser, {
+    return new RdbOfflineArticleStore({ getApplicationContext: () => ({ filesDir: root }), db }, documentParser, imageFetcher ?? {
       async fetchToLocalFile(url) {
         requests.push(url);
         if (missing.has(url)) return '';
@@ -109,7 +110,7 @@ function createScenario(t) {
     assert.ok(basename(root).startsWith('offline-vault-'));
     fs.rmSync(root, { recursive: true });
   });
-  return { reopen, get db() { return db; }, requests, missing };
+  return { root, reopen, get db() { return db; }, requests, missing };
 }
 
 function assertImage(record, name) {
@@ -136,7 +137,7 @@ for (const legacy of [true, false]) {
     }
     const before = row();
     scenario.db.exec("CREATE TRIGGER fail_publish BEFORE INSERT ON offline_articles BEGIN SELECT RAISE(ABORT,'last write failed'); END");
-    await assert.rejects(store.save(content, newBody, JSON.stringify(newBody)), /last write failed/);
+    await assert.rejects(store.save(content, newBody, JSON.stringify(newBody), undefined, true), /last write failed/);
     store = scenario.reopen();
     assert.deepEqual(row(), before);
     const saved = await store.loadDocument(content);
@@ -146,7 +147,7 @@ for (const legacy of [true, false]) {
     assertImage(saved, 'a');
 
     scenario.db.exec('DROP TRIGGER fail_publish');
-    await store.save(content, newBody, JSON.stringify(newBody));
+    await store.save(content, newBody, JSON.stringify(newBody), undefined, true);
     store = scenario.reopen();
     const updated = await store.loadDocument(content);
     assert.deepEqual(updated.document, newBody);
@@ -190,4 +191,124 @@ test('repair copies the saved image and downloads only the missing one', async t
   assert.deepEqual(scenario.requests, [imageUrl('b')]);
   assertImage(saved, 'a');
   assertImage(saved, 'b');
+});
+
+const navigation = loadArkTs('domain/ArticleNavigation', ['isNoiseArticleAnchor', 'normalizeArticleAnchor'], documents);
+const { ScpNativeHtmlParser } = loadArkTs('data/ScpNativeHtmlParser', ['ScpNativeHtmlParser'], { ...documents, ...navigation });
+const { ScpDocumentMapper } = loadArkTs('data/ScpDocumentMapper', ['ScpDocumentMapper'], { ...documents, ...navigation });
+const { createArticleDocumentParser } = loadArkTs('composition/ArticleFeatureFactory', ['createArticleDocumentParser'], {
+  ...documents, ScpDocumentMapper, parseNativeArticleHtml: async html => JSON.stringify(ScpNativeHtmlParser.parse(html))
+});
+const receipts = loadArkTs('domain/ArticleContracts', ['ArticleHtmlSource', 'ArticleContentSource', 'ArticleLoadResult', 'PendingExtraction']);
+const { ContentGateway } = loadArkTs('data/ContentGateway', ['ContentGateway'], receipts);
+const { ArticleContentUseCase } = loadArkTs('application/ArticleContentUseCase', ['ArticleContentUseCase'], receipts);
+
+test('embedded body timeout and stale fallback keep v1; confirmed nested retry publishes v2', async t => {
+  const parser = createArticleDocumentParser();
+  const scenario = createScenario(t, parser);
+  const cache = { get: async () => undefined, put: async () => {} };
+  let revision = 'v1';
+  let frameSource = receipts.ArticleHtmlSource.NETWORK;
+  let failFrame = false;
+  const requests = [];
+  const frame = path => `<iframe class="html-block-iframe" src="${path}"></iframe>`;
+  const html = { async load(url, forceNetwork) {
+    requests.push({ url, forceNetwork });
+    const source = receipts.ArticleHtmlSource.NETWORK;
+    if (url === sourceUrl) {
+      return { source, fetchedAt: 100, html: `<div id="page-title">SCP-2521</div><div id="page-content"><p>outer-${revision}</p>${frame(`${sourceUrl}/html/list`)}</div>` };
+    }
+    if (url === `${sourceUrl}/html/list`) {
+      const listSource = revision === 'v1' ? source : receipts.ArticleHtmlSource.FRESH_CACHE;
+      return { source: listSource, fetchedAt: 100, html: frame(`${sourceUrl}/html/body`) };
+    }
+    assert.equal(url, `${sourceUrl}/html/body`);
+    if (failFrame) throw new Error('body timed out');
+    const body = frameSource === receipts.ArticleHtmlSource.STALE_CACHE ? 'v1' : revision;
+    return { source: frameSource, fetchedAt: 100, html: `<p>inner-${body}</p><img src="${imageUrl(body)}">` };
+  } };
+  const gateway = new ContentGateway(html, cache, parser);
+  const reader = new ArticleContentUseCase(gateway);
+  const saveUpdate = async () => {
+    const result = await reader.checkOfflineUpdate(content, 1);
+    return scenario.reopen().save(content, result.document, result.rawPayloadJson, undefined, true);
+  };
+  const assertReopened = async expected => {
+    const saved = await scenario.reopen().loadDocument(content);
+    assert.ok(saved.rawPayloadJson.includes(`outer-${expected}`));
+    assert.ok(saved.rawPayloadJson.includes(`inner-${expected}`));
+    assertImage(saved, expected);
+  };
+  await saveUpdate();
+  await assertReopened('v1');
+  revision = 'v2';
+  for (const mode of ['timeout', 'stale']) {
+    failFrame = mode === 'timeout';
+    frameSource = receipts.ArticleHtmlSource.STALE_CACHE;
+    requests.length = 0;
+    await assert.rejects(saveUpdate(), /已保留原离线副本/);
+    assert.deepEqual(requests.map(r => r.forceNetwork), [true, true, true]);
+    await assertReopened('v1');
+    const partial = await reader.load(content, 2);
+    assert.equal(partial.stale, true);
+    assert.ok(partial.rawPayloadJson.includes('outer-v2'));
+    assert.ok(partial.rawPayloadJson.includes(failFrame ? '/html/body' : 'inner-v1'));
+  }
+  frameSource = receipts.ArticleHtmlSource.NETWORK;
+  await saveUpdate();
+  await assertReopened('v2');
+});
+
+test('a same-URL image refresh bypasses both caches and publishes current GIF bytes after retry', async t => {
+  const scenario = createScenario(t);
+  const red = Buffer.from('47494638396101000100800000ff00000000002c00000000010001000002024401003b', 'hex');
+  const blue = Buffer.from(red);
+  blue.set([0, 0, 255], 13);
+  let response = red;
+  let statusCode = 200;
+  const requests = [];
+  const { ScpImageCacheService } = loadArkTs('../../../../catalog/src/main/ets/data/ScpImageCacheService', ['ScpImageCacheService'], {
+    fs: { ...fileIo, accessSync: fs.existsSync, mkdirSync: path => fs.mkdirSync(path, { recursive: true }) },
+    Queue: Array, hilog: { warn() {} }, url: { URL: { parseURL: (value, base) => new URL(value, base) } },
+    buffer: Buffer, util: { TextEncoder: { create: () => ({ encodeInto: value => new TextEncoder().encode(value) }) } },
+    cryptoFramework: { createMd() {
+      const hash = createHash('sha256');
+      return { updateSync: ({ data }) => hash.update(data), digestSync: () => ({ data: hash.digest() }) };
+    } },
+    image: { createImageSource(bytes) {
+      const gif = typeof bytes === 'number' ? fs.readFileSync(bytes) : Buffer.from(bytes);
+      assert.equal(gif.toString('ascii', 0, 6), 'GIF89a');
+      return { getImageInfo: () => ({ size: { width: gif.readUInt16LE(6), height: gif.readUInt16LE(8) }, mimeType: 'image/gif' }),
+        createPixelMap: () => ({ release() {} }), release() {} };
+    } },
+    rcp: { Request: class { constructor(url) { this.url = url; } }, createSession: () => ({ fetch(request) {
+      requests.push(request.url);
+      if (statusCode === 200) request.destination(Uint8Array.from(response).buffer);
+      return { statusCode, headers: { 'content-type': 'image/gif' } };
+    } }) }
+  });
+  const service = new ScpImageCacheService();
+  service.initialize({ cacheDir: scenario.root });
+  const open = () => scenario.reopen({ fetchToLocalFile: (url, forceNetwork) => service.load(url, forceNetwork) });
+  const url = imageUrl('diagram');
+  const original = document('v1', ['diagram']);
+  const updated = document('v2', ['diagram']);
+  const assertReopened = async (body, bytes) => {
+    const saved = await open().loadDocument(content);
+    assert.deepEqual(saved.document, body);
+    assert.equal(saved.snapshot.savedImages, 1);
+    assert.deepEqual(fs.readFileSync(fileURLToPath(saved.snapshot.localImageUris.get(url))), bytes);
+  };
+  await open().save(content, original, JSON.stringify(original));
+  await assertReopened(original, red);
+  response = blue;
+  statusCode = 404;
+  assert.deepEqual(fs.readFileSync(await service.load(url)), red);
+  assert.deepEqual(requests, [url]);
+  await assert.rejects(open().save(content, updated, JSON.stringify(updated), undefined, true), /仍缺 1 张图/);
+  await assertReopened(original, red);
+  statusCode = 200;
+  await open().save(content, updated, JSON.stringify(updated), undefined, true);
+  assert.deepEqual(requests, [url, url, url]);
+  await assertReopened(updated, blue);
 });

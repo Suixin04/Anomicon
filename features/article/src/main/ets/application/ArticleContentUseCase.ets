@@ -89,13 +89,13 @@ export class ArticleContentUseCase {
     document: ScpArticleDocument,
     rawPayloadJson: string,
     onProgress?: (progress: ArticleOfflineSaveProgress) => void,
-    requireAllImages: boolean = false
+    refreshAllImages: boolean = false
   ): Promise<ArticleOfflineSnapshot | undefined> {
     if (this.offlineStore === undefined) {
       return Promise.resolve(undefined);
     }
     return Promise.resolve().then(() =>
-      this.offlineStore!.save(content, document, rawPayloadJson, onProgress, requireAllImages));
+      this.offlineStore!.save(content, document, rawPayloadJson, onProgress, refreshAllImages));
   }
 
   /** Remove one article's permanent offline files and metadata. */

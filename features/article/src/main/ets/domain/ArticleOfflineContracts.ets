@@ -156,7 +156,7 @@ export interface ArticleOfflineDocumentRecord {
 
 /** Narrow port for downloading one validated image into cache before copying to offline vault. */
 export interface ArticleOfflineImageFetcher {
-  fetchToLocalFile(url: string): Promise<string>;
+  fetchToLocalFile(url: string, forceNetwork: boolean): Promise<string>;
 }
 
 export type ArticleOfflineStoreListener = () => void;
@@ -166,12 +166,13 @@ export interface ArticleOfflineStoragePort {
   initialize(): Promise<void>;
   inspect(content: LibraryContentRef): Promise<ArticleOfflineSnapshot | undefined>;
   loadDocument(content: LibraryContentRef): Promise<ArticleOfflineDocumentRecord | undefined>;
+  /** An explicit refresh fetches every image and only publishes the complete set. */
   save(
     content: LibraryContentRef,
     document: ScpArticleDocument,
     rawPayloadJson: string,
     onProgress?: (progress: ArticleOfflineSaveProgress) => void,
-    requireAllImages?: boolean
+    refreshAllImages?: boolean
   ): Promise<ArticleOfflineSnapshot>;
   remove(contentKey: string): Promise<void>;
   listSummaries(): Promise<ArticleOfflineSummary[]>;

@@ -107,8 +107,8 @@ class CatalogOfflineImageFetcher implements ArticleOfflineImageFetcher {
     this.catalogGraph = catalogGraph;
   }
 
-  fetchToLocalFile(url: string): Promise<string> {
-    return this.catalogGraph.downloadImageToCache(url);
+  fetchToLocalFile(url: string, forceNetwork: boolean): Promise<string> {
+    return this.catalogGraph.downloadImageToCache(url, forceNetwork);
   }
 }
 
