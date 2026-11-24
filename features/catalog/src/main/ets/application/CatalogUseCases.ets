@@ -12,7 +12,7 @@ import {
   TaleRepository
 } from '../domain/CatalogRepositories';
 import { ScpHtmlRequestPriority } from '../domain/ArticleHtmlRepository';
-import { ScpSeriesDescriptor } from '../domain/ScpSeriesItem';
+import { ScpSeriesDescriptor, isCnScpItemId } from '../domain/ScpSeriesItem';
 
 /** 图鉴读取用例：快照读取与后台重验分开，明确 stale-while-revalidate 边界。 */
 export class CatalogContentUseCase {
@@ -200,8 +200,38 @@ export class CatalogSearchUseCase {
     this.history.clear();
   }
 
-  /** 使用 Fisher-Yates 保留旧搜索页的随机发现语义。 */
+  /** 使用 Fisher-Yates 抽样；混合池同时包含主站与中文原创时保证两侧分支都有露面机会。 */
   pickRandom(entries: CatalogEntry[], count: number): CatalogEntry[] {
+    const target = Math.min(Math.max(0, count), entries.length);
+    if (target === 0) {
+      return [];
+    }
+    const mainEntries: CatalogEntry[] = [];
+    const cnEntries: CatalogEntry[] = [];
+    for (let index: number = 0; index < entries.length; index++) {
+      const entry = entries[index];
+      if (isCnScpItemId(entry.itemId)) {
+        cnEntries.push(entry);
+      } else {
+        mainEntries.push(entry);
+      }
+    }
+    if (mainEntries.length === 0 || cnEntries.length === 0 || target === 1) {
+      return this.shuffleSlice(entries, target);
+    }
+    const desiredCn = Math.max(1, Math.round(target * 0.35));
+    let cnTarget = Math.min(cnEntries.length, desiredCn);
+    let mainTarget = Math.min(mainEntries.length, target - cnTarget);
+    const shortfall = target - cnTarget - mainTarget;
+    if (shortfall > 0 && cnTarget < cnEntries.length) {
+      cnTarget += Math.min(shortfall, cnEntries.length - cnTarget);
+    }
+    const picked = this.shuffleSlice(mainEntries, mainTarget)
+      .concat(this.shuffleSlice(cnEntries, cnTarget));
+    return this.shuffleSlice(picked, picked.length);
+  }
+
+  private shuffleSlice(entries: CatalogEntry[], count: number): CatalogEntry[] {
     const copy = entries.slice();
     for (let index = copy.length - 1; index > 0; index--) {
       const swap = Math.floor(Math.random() * (index + 1));

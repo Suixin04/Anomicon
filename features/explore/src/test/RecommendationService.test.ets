@@ -70,7 +70,7 @@ async function drainMicrotasks(count: number = 24): Promise<void> {
 
 export default function exploreRecommendationServiceTest(): void {
   describe('RecommendationService', () => {
-    it('pads one and two digit candidate ids without changing larger ids', 0, async () => {
+    it('pads one and two digit candidate ids and interleaves Main with CN originals', 0, async () => {
       const gateway = new MissingPageGateway();
       const service = new RecommendationService(gateway, new EmptyPreviewRepository());
 
@@ -78,10 +78,37 @@ export default function exploreRecommendationServiceTest(): void {
 
       expect(recommendations.length).assertEqual(0);
       expect(gateway.urls.length).assertEqual(24);
-      expect(gateway.urls.indexOf('https://scp-wiki-cn.wikidot.com/scp-007') >= 0).assertTrue();
-      expect(gateway.urls.indexOf('https://scp-wiki-cn.wikidot.com/scp-062') >= 0).assertTrue();
-      expect(gateway.urls.indexOf('https://scp-wiki-cn.wikidot.com/scp-117') >= 0).assertTrue();
-      expect(gateway.urls.indexOf('https://scp-wiki-cn.wikidot.com/scp-2713') >= 0).assertTrue();
+      const mainCount = gateway.urls.filter((itemUrl: string): boolean => /\/scp-\d+$/.test(itemUrl)).length;
+      const cnCount = gateway.urls.filter((itemUrl: string): boolean => /\/scp-cn-\d+$/.test(itemUrl)).length;
+      expect(mainCount).assertEqual(16);
+      expect(cnCount).assertEqual(8);
+      // 验证 2:1 交错：下标 2、5 为中文原创，下标 0、1 为主站。
+      expect(gateway.urls[0].indexOf('/scp-cn-') < 0).assertTrue();
+      expect(gateway.urls[1].indexOf('/scp-cn-') < 0).assertTrue();
+      expect(gateway.urls[2].indexOf('/scp-cn-') >= 0).assertTrue();
+      expect(gateway.urls[5].indexOf('/scp-cn-') >= 0).assertTrue();
+      // 验证至少有一条三位补零后的短编号与四位编号格式正确。
+      const hasThreeDigitPadded = gateway.urls.some((itemUrl: string): boolean => /\/scp-(?:cn-)?0\d{2}$/.test(itemUrl));
+      const hasFourDigitId = gateway.urls.some((itemUrl: string): boolean => /\/scp-(?:cn-)?[1-9]\d{3}$/.test(itemUrl));
+      expect(hasThreeDigitPadded).assertTrue();
+      expect(hasFourDigitId).assertTrue();
+    });
+
+    it('returns both Main and CN original cards in one daily batch', 0, async () => {
+      const service = new RecommendationService(
+        new RecommendationPageGateway(),
+        new EmptyPreviewRepository()
+      );
+      const recommendations = await service.loadDaily(0, '2020-01-03');
+      expect(recommendations.length).assertEqual(6);
+      const mainCards = recommendations.filter(
+        (item: ExploreRecommendation): boolean => !item.entry.itemId.startsWith('SCP-CN-')
+      ).length;
+      const cnCards = recommendations.filter(
+        (item: ExploreRecommendation): boolean => item.entry.itemId.startsWith('SCP-CN-')
+      ).length;
+      expect(mainCards).assertEqual(4);
+      expect(cnCards).assertEqual(2);
     });
 
     it('resolves a human title when the article shell only contains its SCP id', 0, async () => {

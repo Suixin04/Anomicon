@@ -89,6 +89,42 @@ class PlaceholderExploreRepository implements ExploreListRepository {
   }
 }
 
+class MixedJokesRepository implements ExploreListRepository {
+  read(_source: ExploreSource): Promise<ExploreStoredSnapshot | undefined> {
+    return Promise.resolve(undefined);
+  }
+
+  isFresh(_snapshot: ExploreStoredSnapshot, _now?: number): boolean {
+    return false;
+  }
+
+  load(source: ExploreSource, _forceNetwork?: boolean): Promise<ExploreLoadedPayload> {
+    if (source === ExploreSource.JOKE_SCPS) {
+      return Promise.resolve(new ExploreLoadedPayload({
+        ok: true,
+        error: '',
+        entries: [{ url: '/scp-173-j', title: 'SCP-173-J 派对雕塑', score: '' }]
+      }, ExploreDataOrigin.NETWORK, 100));
+    }
+    if (source === ExploreSource.JOKE_SCPS_CN) {
+      return Promise.resolve(new ExploreLoadedPayload({
+        ok: true,
+        error: '',
+        entries: [{ url: '/scp-cn-963-j', title: 'SCP-CN-963-J', score: '' }]
+      }, ExploreDataOrigin.NETWORK, 200));
+    }
+    return Promise.resolve(new ExploreLoadedPayload({
+      ok: true,
+      error: '',
+      entries: [{ url: '/why-not-joke', title: '搞笑故事示例', score: '' }]
+    }, ExploreDataOrigin.NETWORK, 300));
+  }
+
+  put(_source: ExploreSource, _payload: ExplorePayload, _fetchedAt?: number): Promise<void> {
+    return Promise.resolve();
+  }
+}
+
 export default function exploreCollectionSnapshotTest(): void {
   describe('ExploreCollectionSnapshotContract', () => {
     it('publishes revisioned partial and route-error snapshots', 0, async () => {
@@ -153,6 +189,24 @@ export default function exploreCollectionSnapshotTest(): void {
       const snapshot = await useCase.loadTopRated();
       expect(snapshot.entries.length).assertEqual(1);
       expect(snapshot.entries[0].title).assertEqual('神烦代码');
+    });
+
+    it('combines Main jokes, CN original jokes, and joke tales with title enrichment', 0, async () => {
+      const useCase = new ExploreContentUseCase(
+        new MixedJokesRepository(),
+        (itemId: string): Promise<string> => Promise.resolve(
+          itemId.toLowerCase() === 'scp-cn-963-j' ? '神烦代码' : ''
+        )
+      );
+      const snapshot = await useCase.loadJokes('2026-11-24');
+      expect(snapshot.error).assertEqual('');
+      expect(snapshot.items.length).assertEqual(3);
+      const labels = snapshot.items.map((item) => item.sourceLabel);
+      expect(labels.indexOf('搞笑 SCP') >= 0).assertTrue();
+      expect(labels.indexOf('原创搞笑 SCP') >= 0).assertTrue();
+      expect(labels.indexOf('搞笑故事') >= 0).assertTrue();
+      const cnItem = snapshot.items.find((item) => item.entry.id === 'scp-cn-963-j');
+      expect(cnItem?.entry.title).assertEqual('神烦代码');
     });
   });
 }

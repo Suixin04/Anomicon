@@ -22,6 +22,17 @@ export default function exploreHtmlParseTaskTest(): void {
       expect(largePayload.ok).assertTrue();
       expect(largePayload.entries.length).assertEqual(1);
       expect(largePayload.entries[0].url).assertEqual('/scp-049');
+
+      const cnJokesHtml = '<div id="page-content">' +
+        '<div class="content-panel standalone series">' +
+        '<ul><li><a href="/scp-cn-001-j">SCP-CN-001-J</a> - 原创搞笑档案</li>' +
+        '<li><a href="/scp-cn-963-j">SCP-CN-963-J</a> - 神烦代码</li></ul>' +
+        '</div></div><div class="page-tags"></div>';
+      const cnJokesPayload = await parseExploreHtmlOffThread(ExploreSource.JOKE_SCPS_CN, cnJokesHtml);
+      expect(cnJokesPayload.ok).assertTrue();
+      expect(cnJokesPayload.entries.length).assertEqual(2);
+      expect(cnJokesPayload.entries[0].url).assertEqual('/scp-cn-001-j');
+      expect(cnJokesPayload.entries[1].url).assertEqual('/scp-cn-963-j');
     });
   });
 }

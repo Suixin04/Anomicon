@@ -12,12 +12,16 @@ import {
 } from '../domain/ExploreRepositories';
 
 const RECOMMENDATION_COUNT: number = 6;
-const MAX_CANDIDATE_ATTEMPTS: number = 24;
+const MAIN_CANDIDATE_COUNT: number = 16;
+const CN_CANDIDATE_COUNT: number = 8;
+const MAX_CANDIDATE_ATTEMPTS: number = MAIN_CANDIDATE_COUNT + CN_CANDIDATE_COUNT;
 const CANDIDATE_CONCURRENCY: number = 6;
 const TITLE_CONCURRENCY: number = 2;
 const WIKI_BASE: string = 'https://scp-wiki-cn.wikidot.com/';
 /** 主站已接入 I–X 系列；编号以 001–9999 为随机空间，实际存在性由官网响应确认。 */
 const SCP_NUMBER_SPACE: number = 9999;
+/** 中文原创已接入 CN-I–CN-V 系列；编号以 001–4999 为随机空间。 */
+const SCP_CN_NUMBER_SPACE: number = 4999;
 
 /** Internal candidate outcome; distinguishes a valid missing page from I/O failure. */
 class RecommendationResolution {
@@ -144,16 +148,31 @@ export class RecommendationService {
   }
 
   private generateCandidateIds(batchIndex: number, dayKey: string): string[] {
-    const indexes = selectExploreIndexes(
+    const mainIndexes = selectExploreIndexes(
       SCP_NUMBER_SPACE,
-      MAX_CANDIDATE_ATTEMPTS,
+      MAIN_CANDIDATE_COUNT,
       `wiki-random-recommendations:${batchIndex}`,
       dayKey
     );
+    const cnIndexes = selectExploreIndexes(
+      SCP_CN_NUMBER_SPACE,
+      CN_CANDIDATE_COUNT,
+      `wiki-random-recommendations-cn:${batchIndex}`,
+      dayKey
+    );
     const ids: string[] = [];
-    for (let index = 0; index < indexes.length; index++) {
-      const numberText = `${indexes[index] + 1}`.padStart(3, '0');
-      ids.push(`SCP-${numberText}`);
+    let mainCursor: number = 0;
+    let cnCursor: number = 0;
+    // 以 2:1 交错放入主站与中文原创候选，使首轮 6 张卡兼顾两条分支。
+    while (mainCursor < mainIndexes.length || cnCursor < cnIndexes.length) {
+      for (let slot: number = 0; slot < 2 && mainCursor < mainIndexes.length; slot++) {
+        const numberText = `${mainIndexes[mainCursor++] + 1}`.padStart(3, '0');
+        ids.push(`SCP-${numberText}`);
+      }
+      if (cnCursor < cnIndexes.length) {
+        const cnNumberText = `${cnIndexes[cnCursor++] + 1}`.padStart(3, '0');
+        ids.push(`SCP-CN-${cnNumberText}`);
+      }
     }
     return ids;
   }

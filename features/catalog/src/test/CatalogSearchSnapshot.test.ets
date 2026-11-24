@@ -549,5 +549,76 @@ export default function catalogSearchSnapshotTest(): void {
       expect(viewModel.snapshot.data?.directTarget?.anchor).assertEqual('alpha-1');
       viewModel.dispose();
     });
+
+    it('balances Main and CN entries in random discovery and refreshes when CN arrives', 0, async () => {
+      const searchUseCase = new CatalogSearchUseCase(
+        new CatalogContentUseCase(new ColdCatalogRepository()),
+        new SearchHistoryUseCase(new MemorySearchHistoryRepository())
+      );
+      const mixedPool: CatalogEntry[] = [];
+      for (let index = 1; index <= 20; index++) {
+        mixedPool.push(new CatalogEntry(`SCP-${index}`, `主站档案 ${index}`));
+      }
+      mixedPool.push(new CatalogEntry('SCP-CN-100', '中文原创档案 A'));
+      mixedPool.push(new CatalogEntry('SCP-CN-200', '中文原创档案 B'));
+      const sampled = searchUseCase.pickRandom(mixedPool, 6);
+      expect(sampled.length).assertEqual(6);
+      const hasMain = sampled.some((item: CatalogEntry): boolean => !item.itemId.startsWith('SCP-CN-'));
+      const hasCn = sampled.some((item: CatalogEntry): boolean => item.itemId.startsWith('SCP-CN-'));
+      expect(hasMain).assertTrue();
+      expect(hasCn).assertTrue();
+
+      class DeferredCnCatalogRepository extends MultiSeriesCatalogRepository {
+        private releaseCnFn: ((snapshot: CatalogSnapshot) => void) | undefined = undefined;
+
+        load(series: ScpSeriesDescriptor): Promise<CatalogSnapshot> {
+          if (series.id === SCP_CN_SERIES[0].id) {
+            return new Promise<CatalogSnapshot>((resolve: (snapshot: CatalogSnapshot) => void): void => {
+              this.releaseCnFn = resolve;
+            });
+          }
+          return super.load(series);
+        }
+
+        resolveCn(snapshot: CatalogSnapshot): void {
+          this.releaseCnFn?.(snapshot);
+        }
+      }
+      const deferredRepo = new DeferredCnCatalogRepository();
+      deferredRepo.setCached(new CatalogSnapshot(
+        SCP_SERIES[0].id,
+        [new CatalogEntry('SCP-173', '雕像'), new CatalogEntry('SCP-049', '疫医')],
+        CatalogSnapshotSource.CACHE,
+        100
+      ));
+      const timeout = new ManualCatalogSearchTimeout();
+      const viewModel = new CatalogSearchViewModel(
+        new CatalogSearchUseCase(
+          new CatalogContentUseCase(deferredRepo),
+          new SearchHistoryUseCase(new MemorySearchHistoryRepository())
+        ),
+        4,
+        (callback: () => void): () => void => timeout.schedule(callback),
+        ALL_SERIES_ID
+      );
+      viewModel.activate();
+      await drainMicrotasks(40);
+      const beforeCn = viewModel.snapshot.data?.random ?? [];
+      expect(beforeCn.length).assertEqual(2);
+      expect(beforeCn.some((item: CatalogEntry): boolean => item.itemId.startsWith('SCP-CN-'))).assertFalse();
+
+      deferredRepo.resolveCn(new CatalogSnapshot(
+        SCP_CN_SERIES[0].id,
+        [new CatalogEntry('SCP-CN-100', '中文原创档案 A'), new CatalogEntry('SCP-CN-200', '中文原创档案 B')],
+        CatalogSnapshotSource.NETWORK,
+        200
+      ));
+      await drainMicrotasks(40);
+      const afterCn = viewModel.snapshot.data?.random ?? [];
+      expect(afterCn.length).assertEqual(4);
+      expect(afterCn.some((item: CatalogEntry): boolean => !item.itemId.startsWith('SCP-CN-'))).assertTrue();
+      expect(afterCn.some((item: CatalogEntry): boolean => item.itemId.startsWith('SCP-CN-'))).assertTrue();
+      viewModel.dispose();
+    });
   });
 }

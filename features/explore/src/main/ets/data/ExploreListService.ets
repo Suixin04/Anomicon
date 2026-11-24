@@ -100,6 +100,7 @@ const SOURCE_URLS: Map<ExploreSource, string> = new Map([
   [ExploreSource.RECENT_TRANSLATED, 'https://scp-wiki-cn.wikidot.com/most-recently-created-translated'],
   [ExploreSource.RECENT_ORIGINAL, 'https://scp-wiki-cn.wikidot.com/most-recently-created-cn'],
   [ExploreSource.JOKE_SCPS, 'https://scp-wiki-cn.wikidot.com/joke-scps'],
+  [ExploreSource.JOKE_SCPS_CN, 'https://scp-wiki-cn.wikidot.com/joke-scps-cn'],
   [ExploreSource.JOKE_TALES, 'https://scp-wiki-cn.wikidot.com/joke-scps-tales-edition']
 ]);
 

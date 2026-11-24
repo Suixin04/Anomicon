@@ -123,7 +123,7 @@ export class ExploreHtmlParser {
     // page variants without these markers still fall back to the full content.
     const listContent = ExploreHtmlParser.jokeListContent(content, source);
     const seen: Set<string> = new Set();
-    const maxEntries = source === 'joke-scps' ? 240 : 180;
+    const maxEntries = (source === 'joke-scps' || source === 'joke-scps-cn') ? 240 : 180;
     const linkPattern: RegExp = /<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
     let match: RegExpExecArray | null = linkPattern.exec(listContent);
     while (match !== null && entries.length < maxEntries) {
@@ -159,7 +159,7 @@ export class ExploreHtmlParser {
     const slug = url.substring(1).toLowerCase();
     const isScpPage = slug.startsWith('scp-') || slug.startsWith('spc-');
     const isJokePage = isScpPage && (slug.indexOf('-j') >= 0 || title.toLowerCase().indexOf('-j') >= 0);
-    if (source === 'joke-scps') {
+    if (source === 'joke-scps' || source === 'joke-scps-cn') {
       return isJokePage;
     }
     // 故事版页面的一级项目链接与二级故事链接混排。故事源排除 SCP/SPC

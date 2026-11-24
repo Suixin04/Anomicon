@@ -393,10 +393,22 @@ struct ExploreRecommendationCard {
   @Builder
   private textPane() {
     Column({ space: 6 }) {
-      Text(this.row.recommendation.entry.itemId)
-        .fontSize(AppTypography.BODY_S)
-        .fontWeight(FontWeight.Medium)
-        .fontColor($r('sys.color.font_emphasize'))
+      Row({ space: 6 }) {
+        Text(this.row.recommendation.entry.itemId)
+          .fontSize(AppTypography.BODY_S)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font_emphasize'))
+        if (this.row.recommendation.entry.itemId.toUpperCase().startsWith('SCP-CN-')) {
+          Text('中文原创')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_secondary'))
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .borderRadius(6)
+        }
+      }
+      .alignItems(VerticalAlign.Center)
       Text(this.row.recommendation.entry.title.length > 0 ?
         this.row.recommendation.entry.title : this.row.recommendation.entry.itemId)
         .fontSize(AppTypography.TITLE_S)
@@ -951,7 +963,7 @@ export struct ExploreRecommendationDeck {
             .fontSize(AppTypography.TITLE_S)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('sys.color.font'))
-          Text('每日从主站档案库随机调阅一组条目')
+          Text('每日从主站与中文原创档案库随机调阅一组条目')
             .fontSize(AppTypography.CAPTION_L)
             .fontColor($r('sys.color.font_secondary'))
         }

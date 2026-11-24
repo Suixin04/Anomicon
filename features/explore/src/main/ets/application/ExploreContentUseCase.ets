@@ -44,9 +44,14 @@ export class ExploreContentUseCase {
     force: boolean = false,
     onProgress?: (snapshot: ExploreCombinedSnapshot) => void
   ): Promise<ExploreCombinedSnapshot> {
-    return this.loadPair(ExploreSource.RECENT_TRANSLATED, ExploreSource.RECENT_ORIGINAL, force, true,
-      (first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreCombinedSnapshot =>
-        this.mergeRecent(first, second), onProgress);
+    return this.loadSources(
+      [ExploreSource.RECENT_TRANSLATED, ExploreSource.RECENT_ORIGINAL],
+      force,
+      [true, true],
+      (snapshots: ExploreSourceSnapshot[]): ExploreCombinedSnapshot =>
+        this.mergeRecent(snapshots[0], snapshots[1]),
+      onProgress
+    );
   }
 
   private mergeRecent(first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreCombinedSnapshot {
@@ -60,11 +65,12 @@ export class ExploreContentUseCase {
       }
       return left.key.localeCompare(right.key);
     });
+    const pair: ExploreSourceSnapshot[] = [first, second];
     return new ExploreCombinedSnapshot(
       items,
-      this.combinedError(first, second),
-      this.combinedOrigin(first, second),
-      this.latestFetchedAt(first, second)
+      this.combinedError(pair),
+      this.combinedOrigin(pair),
+      this.latestFetchedAt(pair)
     );
   }
 
@@ -73,61 +79,70 @@ export class ExploreContentUseCase {
     force: boolean = false,
     onProgress?: (snapshot: ExploreCombinedSnapshot) => void
   ): Promise<ExploreCombinedSnapshot> {
-    return this.loadPair(ExploreSource.JOKE_SCPS, ExploreSource.JOKE_TALES, force, false,
-      (first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreCombinedSnapshot =>
-        this.mergeJokes(dayKey, first, second), onProgress);
+    return this.loadSources(
+      [ExploreSource.JOKE_SCPS, ExploreSource.JOKE_SCPS_CN, ExploreSource.JOKE_TALES],
+      force,
+      [true, true, false],
+      (snapshots: ExploreSourceSnapshot[]): ExploreCombinedSnapshot =>
+        this.mergeJokes(dayKey, snapshots[0], snapshots[1], snapshots[2]),
+      onProgress
+    );
   }
 
   private mergeJokes(
-    dayKey: string, first: ExploreSourceSnapshot, second: ExploreSourceSnapshot
+    dayKey: string,
+    mainJokes: ExploreSourceSnapshot,
+    cnJokes: ExploreSourceSnapshot,
+    jokeTales: ExploreSourceSnapshot
   ): ExploreCombinedSnapshot {
     const pool: ExploreContentItem[] = [];
     const seen: Set<string> = new Set();
-    this.appendJokes(pool, seen, first.entries, LibraryContentKind.SCP, '搞笑 SCP');
-    this.appendJokes(pool, seen, second.entries, LibraryContentKind.TALE, '搞笑故事');
+    this.appendJokes(pool, seen, mainJokes.entries, LibraryContentKind.SCP, '搞笑 SCP');
+    this.appendJokes(pool, seen, cnJokes.entries, LibraryContentKind.SCP, '原创搞笑 SCP');
+    this.appendJokes(pool, seen, jokeTales.entries, LibraryContentKind.TALE, '搞笑故事');
     const indexes = selectExploreIndexes(pool.length, pool.length, 'combined-jokes', dayKey);
     const items: ExploreContentItem[] = [];
     for (let index = 0; index < indexes.length; index++) {
       items.push(pool[indexes[index]]);
     }
+    const all: ExploreSourceSnapshot[] = [mainJokes, cnJokes, jokeTales];
     return new ExploreCombinedSnapshot(
       items,
-      this.combinedError(first, second),
-      this.combinedOrigin(first, second),
-      this.latestFetchedAt(first, second)
+      this.combinedError(all),
+      this.combinedOrigin(all),
+      this.latestFetchedAt(all)
     );
   }
 
-  /** Publish parsed sources first; optional title enrichment never gates the first rows. */
-  private async loadPair(
-    firstSource: ExploreSource,
-    secondSource: ExploreSource,
+  /** Publish parsed sources as they settle; optional title enrichment never gates initial items. */
+  private async loadSources(
+    sources: ExploreSource[],
     force: boolean,
-    resolveSecondTitles: boolean,
-    merge: (first: ExploreSourceSnapshot, second: ExploreSourceSnapshot) => ExploreCombinedSnapshot,
+    resolveFlags: boolean[],
+    merge: (snapshots: ExploreSourceSnapshot[]) => ExploreCombinedSnapshot,
     onProgress?: (snapshot: ExploreCombinedSnapshot) => void
   ): Promise<ExploreCombinedSnapshot> {
-    let first = new ExploreSourceSnapshot([]);
-    let second = new ExploreSourceSnapshot([]);
+    const snapshots: ExploreSourceSnapshot[] = sources.map((): ExploreSourceSnapshot => new ExploreSourceSnapshot([]));
     const publish = (): void => {
-      if (onProgress !== undefined && (first.entries.length > 0 || second.entries.length > 0)) {
-        onProgress(merge(first, second));
+      if (onProgress === undefined) {
+        return;
+      }
+      const hasAny = snapshots.some((item: ExploreSourceSnapshot): boolean => item.entries.length > 0);
+      if (hasAny) {
+        onProgress(merge(snapshots));
       }
     };
-    const firstTask = this.loadSource(firstSource, force).then(async (snapshot: ExploreSourceSnapshot): Promise<void> => {
-      first = snapshot;
-      publish();
-      first = await this.withResolvedTitles(snapshot);
-    });
-    const secondTask = this.loadSource(secondSource, force).then(async (snapshot: ExploreSourceSnapshot): Promise<void> => {
-      second = snapshot;
-      publish();
-      if (resolveSecondTitles) {
-        second = await this.withResolvedTitles(snapshot);
-      }
-    });
-    await Promise.all([firstTask, secondTask]);
-    return merge(first, second);
+    const tasks: Promise<void>[] = sources.map((source: ExploreSource, index: number): Promise<void> =>
+      this.loadSource(source, force).then(async (snapshot: ExploreSourceSnapshot): Promise<void> => {
+        snapshots[index] = snapshot;
+        publish();
+        if (resolveFlags[index]) {
+          snapshots[index] = await this.withResolvedTitles(snapshot);
+        }
+      })
+    );
+    await Promise.all(tasks);
+    return merge(snapshots);
   }
 
   /**
@@ -256,31 +271,49 @@ export class ExploreContentUseCase {
     }
   }
 
-  private combinedError(first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): string {
-    if (first.entries.length === 0 && second.entries.length === 0) {
-      return first.error.length > 0 ? first.error : second.error;
+  private combinedError(snapshots: ExploreSourceSnapshot[]): string {
+    let hasAnyEntries: boolean = false;
+    let firstError: string = '';
+    for (let index = 0; index < snapshots.length; index++) {
+      const current = snapshots[index];
+      if (current.entries.length > 0) {
+        hasAnyEntries = true;
+      }
+      if (firstError.length === 0 && current.error.length > 0) {
+        firstError = current.error;
+      }
     }
-    if (first.error.length > 0 || second.error.length > 0) {
-      return '正在显示已载入的部分内容';
+    if (!hasAnyEntries) {
+      return firstError;
     }
-    return '';
+    return firstError.length > 0 ? '正在显示已载入的部分内容' : '';
   }
 
-  private combinedOrigin(first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): ExploreDataOrigin {
+  private combinedOrigin(snapshots: ExploreSourceSnapshot[]): ExploreDataOrigin {
     // A mixed snapshot is only as fresh as its stalest source.  Giving NETWORK
-    // precedence used to mark a network+stale pair as fresh, so the collection
+    // precedence used to mark a stale pair/triple as fresh, so the collection
     // VM skipped revalidation and the UI hid the partial warning.
-    if (first.origin === ExploreDataOrigin.STALE_CACHE || second.origin === ExploreDataOrigin.STALE_CACHE) {
-      return ExploreDataOrigin.STALE_CACHE;
+    let hasNetwork: boolean = false;
+    for (let index = 0; index < snapshots.length; index++) {
+      const origin = snapshots[index].origin;
+      if (origin === ExploreDataOrigin.STALE_CACHE) {
+        return ExploreDataOrigin.STALE_CACHE;
+      }
+      if (origin === ExploreDataOrigin.NETWORK) {
+        hasNetwork = true;
+      }
     }
-    if (first.origin === ExploreDataOrigin.NETWORK || second.origin === ExploreDataOrigin.NETWORK) {
-      return ExploreDataOrigin.NETWORK;
-    }
-    return ExploreDataOrigin.FRESH_CACHE;
+    return hasNetwork ? ExploreDataOrigin.NETWORK : ExploreDataOrigin.FRESH_CACHE;
   }
 
-  private latestFetchedAt(first: ExploreSourceSnapshot, second: ExploreSourceSnapshot): number {
-    return Math.max(first.fetchedAt, second.fetchedAt);
+  private latestFetchedAt(snapshots: ExploreSourceSnapshot[]): number {
+    let latest: number = 0;
+    for (let index = 0; index < snapshots.length; index++) {
+      if (snapshots[index].fetchedAt > latest) {
+        latest = snapshots[index].fetchedAt;
+      }
+    }
+    return latest;
   }
 
   private appendRecent(

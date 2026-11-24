@@ -16,6 +16,7 @@ export enum ExploreSource {
   RECENT_TRANSLATED = 'recent-translated',
   RECENT_ORIGINAL = 'recent-original',
   JOKE_SCPS = 'joke-scps',
+  JOKE_SCPS_CN = 'joke-scps-cn',
   JOKE_TALES = 'joke-tales'
 }
 

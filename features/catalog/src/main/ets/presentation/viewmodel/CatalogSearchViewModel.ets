@@ -28,6 +28,7 @@ import {
   ALL_SERIES_ID,
   DEFAULT_SERIES_ID,
   findCatalogSeriesById,
+  isCnScpItemId,
   SCP_SERIES,
   ScpCatalogBranch,
   ScpSeriesDescriptor
@@ -643,7 +644,8 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
     }
 
     this.entries = merged;
-    if (this.randomItems.length === 0 && merged.length > 0) {
+    if (merged.length > 0 && (this.randomItems.length === 0 ||
+      (this.query.trim().length === 0 && !this.hasCnEntries(this.randomItems) && this.hasCnEntries(merged)))) {
       this.randomItems = this.search.pickRandom(merged, this.randomCount);
     }
     this.loadedSeriesCount = loadedCount;
@@ -759,6 +761,15 @@ export class CatalogSearchViewModel implements ViewModelLifecycle {
       this.status === ViewModelLoadState.PARTIAL,
       this.snapshotRevision
     );
+  }
+
+  private hasCnEntries(items: CatalogEntry[]): boolean {
+    for (let index: number = 0; index < items.length; index++) {
+      if (isCnScpItemId(items[index].itemId)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   private descriptor(id: string): ScpSeriesDescriptor {
