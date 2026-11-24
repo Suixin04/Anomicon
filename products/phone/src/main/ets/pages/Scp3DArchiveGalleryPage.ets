@@ -17,14 +17,18 @@ import {
   badgeWarningBackgroundColor,
   badgeWarningForegroundColor,
   BREAKPOINT_MD_MIN_WIDTH,
+  captureWindowRectById,
   CARD_PRESS_MODIFIER,
+  CardHeroRect,
   createAppBackIcon,
   createAppTitleBarStyle,
   DestinationMotionState,
+  isReduceMotionEnabled,
   NavigationTransitionRegistry,
   pageContentTop,
   popNavigationDestination,
   pressAnimation,
+  supportsSplitNavigation,
   WIDE_CONTENT_MAX_WIDTH,
   windowWidthVp
 } from 'anomiconbasic';
@@ -280,6 +284,20 @@ struct Scp3DArchiveGalleryPage {
       entry.contentId,
       entry.contentId.toUpperCase()
     );
+    const isSplit: boolean = supportsSplitNavigation(windowWidthVp());
+    const sourceId: string = `archive3d-card:${entry.assetId}`;
+    if (!isReduceMotionEnabled() && !isSplit) {
+      const rect: CardHeroRect | undefined =
+        captureWindowRectById(this.getUIContext(), sourceId);
+      if (rect !== undefined) {
+        NavigationTransitionRegistry.armPendingHero({
+          routeName: AppRoutes.ARCHIVE_3D,
+          sourceId: sourceId,
+          sourceRect: rect,
+          sourceRadius: 18
+        });
+      }
+    }
     const params: Scp3DArchiveRouteParams = { content: content };
     AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARCHIVE_3D, params);
   }
@@ -484,6 +502,7 @@ struct Scp3DArchiveGalleryPage {
     .padding(16)
     .backgroundColor($r('sys.color.comp_background_primary'))
     .borderRadius(18)
+    .id(`archive3d-card:${entry.assetId}`)
     .onClick(() => this.openAsset(entry))
     .accessibilityText(`${entry.contentId.toUpperCase()}，${this.statusLabel(entry)}`);
   }
@@ -608,7 +627,10 @@ struct Scp3DArchiveGalleryPage {
       NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
     })
     .opacity(this.navMotion.opacity)
-    .translate({ x: this.navMotion.translateX })
+    .translate({ x: this.navMotion.translateX, y: this.navMotion.translateY })
+    .scale({ x: this.navMotion.scaleX, y: this.navMotion.scaleY })
+    .borderRadius(this.navMotion.radius)
+    .clip(this.navMotion.clipActive)
     .ignoreLayoutSafeArea(
       [LayoutSafeAreaType.SYSTEM],
       [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]

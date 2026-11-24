@@ -51,6 +51,8 @@ export {
 } from './presentation/viewmodel/Index';
 export {
   ExploreHeroAnchor,
+  ExploreHeroPreviewPayload,
+  exploreHeroCardId,
   ExploreCollectionViewContract,
   ExploreHomeViewContract,
   ExploreNavigationEvent

@@ -5,6 +5,7 @@ import {
   CARD_PRESS_MODIFIER,
   PHONE_PAGE_MARGIN,
   pageContentTop,
+  pressAnimation,
   SkeletonBlock,
   ViewModelLoadState,
   WIDE_CONTENT_MAX_WIDTH,
@@ -302,7 +303,7 @@ struct LibraryCollectionContent {
         .fontColor([$r('sys.color.icon_secondary')])
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .constraintSize({ minHeight: 82 })
     .alignItems(VerticalAlign.Center)

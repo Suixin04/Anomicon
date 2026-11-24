@@ -6,6 +6,7 @@ import {
   LibraryContentRef
 } from 'library';
 import {
+  ArticleHeroPreview,
   ExploreCollectionRouteParams,
   LibraryCollectionRouteParams,
   ScpArticleRouteParams,
@@ -80,4 +81,42 @@ export function parseScp3DArchiveRoute(
     return undefined;
   }
   return { content: content };
+}
+
+interface ArticleHeroPreviewCandidate {
+  imageSource?: string;
+  description?: string;
+}
+
+interface ArticleRouteHeroCandidate {
+  heroPreview?: ArticleHeroPreviewCandidate;
+}
+
+/** Extracts optional hero cover/summary passed from Explore for synchronous Frame-0 landing. */
+export function parseArticleRouteHeroPreview(
+  param: Object | null | undefined
+): ArticleHeroPreview | undefined {
+  if (param === undefined || param === null || typeof param !== 'object') {
+    return undefined;
+  }
+  const candidate = param as ArticleRouteHeroCandidate;
+  const preview = candidate.heroPreview;
+  if (preview === undefined || preview === null || typeof preview !== 'object') {
+    return undefined;
+  }
+  const imageSource: string | undefined =
+    typeof preview.imageSource === 'string' && preview.imageSource.length > 0
+      ? preview.imageSource
+      : undefined;
+  const description: string | undefined =
+    typeof preview.description === 'string' && preview.description.length > 0
+      ? preview.description
+      : undefined;
+  if (imageSource === undefined && description === undefined) {
+    return undefined;
+  }
+  return {
+    imageSource: imageSource,
+    description: description
+  };
 }

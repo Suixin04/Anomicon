@@ -21,7 +21,9 @@ import {
   badgeWarningForegroundColor,
   createAppBackIcon,
   createAppTitleBarStyle,
+  DestinationMotionState,
   isDetailFullscreen,
+  NavigationTransitionRegistry,
   pageContentTop,
   popNavigationDestination,
   READING_CONTENT_MAX_WIDTH,
@@ -98,6 +100,8 @@ export function Scp3DArchivePageBuilder(
 struct Scp3DArchivePage {
   private readonly scroller: Scroller = new Scroller();
   private pageStack: NavPathStack | undefined = undefined;
+  private navDestinationId: string = '';
+  @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
   /** GLB parsing and Scene construction are local-file processing work. */
   private readonly sceneLoadHint: FastPerformanceHintScope =
     new FastPerformanceHintScope(
@@ -251,6 +255,7 @@ struct Scp3DArchivePage {
   }
 
   aboutToDisappear(): void {
+    NavigationTransitionRegistry.unregister(this.navDestinationId);
     this.pageActive = false;
     this.pageShown = false;
     this.invalidateLoad();
@@ -849,6 +854,7 @@ struct Scp3DArchivePage {
           // keeping the mobile frame budget below the full surface size.
           .renderWidth('90%')
           .renderHeight('90%')
+          .transition(AppMotion.fadeTransition(AppMotion.STANDARD_DURATION))
           .onAppear(() => this.requestRender());
       }
 
@@ -1157,8 +1163,15 @@ struct Scp3DArchivePage {
     })
     .onReady((context: NavDestinationContext) => {
       this.pageStack = context.pathStack;
+      this.navDestinationId = context.navDestinationId ?? '';
+      NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
       this.applyRouteParam(context.pathInfo.param as Object | null | undefined);
     })
+    .opacity(this.navMotion.opacity)
+    .translate({ x: this.navMotion.translateX, y: this.navMotion.translateY })
+    .scale({ x: this.navMotion.scaleX, y: this.navMotion.scaleY })
+    .borderRadius(this.navMotion.radius)
+    .clip(this.navMotion.clipActive)
     .onShown(() => {
       this.pageShown = true;
       this.requestLoadIfNeeded();

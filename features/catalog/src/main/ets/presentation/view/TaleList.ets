@@ -11,6 +11,7 @@ import {
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_BOTTOM_SPACE,
   PHONE_TAB_CONTENT_TOP_GAP,
+  pressAnimation,
   SkeletonBlock,
   WIDE_CONTENT_MAX_WIDTH,
   windowWidthVp
@@ -229,7 +230,7 @@ export struct TaleList {
         .fontColor([$r('sys.color.icon_secondary')])
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .constraintSize({ minHeight: 76 })
     .alignItems(VerticalAlign.Center)

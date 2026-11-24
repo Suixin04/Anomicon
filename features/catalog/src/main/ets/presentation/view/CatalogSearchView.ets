@@ -2,12 +2,14 @@ import { LengthMetrics, uiMaterial } from '@kit.ArkUI';
 import {
   adaptiveListLanesForWidth,
   adaptivePageMarginForWidth,
+  AppMotion,
   AppTypography,
   CARD_PRESS_MODIFIER,
   materialCardBorderColor,
   materialCardSurfaceColor,
   PHONE_PAGE_MARGIN,
   pageContentTop,
+  pressAnimation,
   ViewModelLoadState,
   WIDE_CONTENT_MAX_WIDTH,
   windowWidthVp
@@ -95,6 +97,7 @@ export struct CatalogSearchHeader {
       .width('100%')
       .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
       .padding({ top: 4, bottom: 8 })
+      .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
@@ -290,7 +293,7 @@ struct CatalogSearchContent {
       }
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .constraintSize({ minHeight: 62 })
     .justifyContent(FlexAlign.Center)

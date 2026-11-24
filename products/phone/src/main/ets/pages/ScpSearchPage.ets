@@ -149,7 +149,8 @@ struct ScpSearchPage {
       NavigationTransitionRegistry.register(this.navDestinationId, this.navMotion);
     })
     .opacity(this.navMotion.opacity)
-    .translate({ x: this.navMotion.translateX })
+    .translate({ x: this.navMotion.translateX, y: this.navMotion.translateY })
+    .scale({ x: this.navMotion.scaleX, y: this.navMotion.scaleY })
     .onActive(() => {
       this.viewModel.activate();
       this.syncSearchLoadHint(this.viewModel.allSeriesLoading);

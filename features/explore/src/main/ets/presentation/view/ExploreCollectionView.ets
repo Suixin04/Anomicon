@@ -5,6 +5,7 @@ import {
   CARD_PRESS_MODIFIER,
   PHONE_PAGE_MARGIN,
   pageContentTop,
+  pressAnimation,
   SkeletonBlock,
   ViewModelLoadState,
   WIDE_CONTENT_MAX_WIDTH,
@@ -177,7 +178,7 @@ struct ExploreCollectionContent {
         .fontColor([$r('sys.color.icon_secondary')])
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .constraintSize({ minHeight: 68 })
     .padding({ left: 16, right: 16, top: 12, bottom: 12 })

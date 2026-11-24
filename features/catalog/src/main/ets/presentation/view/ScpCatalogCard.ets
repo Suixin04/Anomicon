@@ -1,6 +1,6 @@
 import { CatalogPreviewState, ScpCatalogEntry } from '../ScpCatalogItem';
 import { CatalogPreview } from '../../domain/CatalogContracts';
-import { AppTypography, CARD_PRESS_MODIFIER } from 'anomiconbasic';
+import { AppTypography, CARD_PRESS_MODIFIER, pressAnimation } from 'anomiconbasic';
 
 /** Preview loading is supplied by the screen ViewModel; no service singleton crosses this View. */
 export type CatalogPreviewLoader = (
@@ -285,7 +285,7 @@ export struct ScpCatalogCard {
       .padding(12)
     }
     .attributeModifier(CARD_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .clip(true)
     .backgroundColor($r('sys.color.comp_background_primary'))

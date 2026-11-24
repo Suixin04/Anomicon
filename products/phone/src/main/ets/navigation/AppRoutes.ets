@@ -36,9 +36,16 @@ export interface Scp3DArchiveRouteParams {
   readonly content: LibraryContentRef;
 }
 
+/** Lightweight cover/summary carried across Article route for single-screen hero landing. */
+export interface ArticleHeroPreview {
+  readonly imageSource?: string;
+  readonly description?: string;
+}
+
 /** Unified article route payload. Every article route carries one content ref. */
 export interface ScpArticleRouteParams {
   readonly content: LibraryContentRef;
+  readonly heroPreview?: ArticleHeroPreview;
 }
 
 interface SerializedArticleRouteContent {

@@ -17,9 +17,10 @@ import {
   SymbolGlyphModifier
 } from '@kit.ArkUI';
 import {
+  ExploreHeroAnchor,
+  ExploreHeroPreviewPayload,
   ExploreHome,
-  ExploreHomeViewModel,
-  ExploreHeroAnchor
+  ExploreHomeViewModel
 } from 'explore';
 import {
   ScpCatalogHome,
@@ -49,6 +50,7 @@ import { HomeTabId, TabItem } from '../navigation/TabItem';
 import { TabsViewModel } from '../navigation/TabsViewModel';
 import {
   AppRoutes,
+  ArticleHeroPreview,
   ExploreCollectionMode,
   ExploreCollectionRouteParams,
   LibraryCollectionMode,
@@ -59,8 +61,15 @@ import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator
 import {
   adaptivePageMarginForWidth,
   AppMotion,
+  captureWindowRectById,
+  CardHeroRect,
+  CardHeroTransform,
+  CardHeroTransitionSpec,
+  computeCardHeroTransform,
   createAppTitleBarStyle,
+  DestinationMotionState,
   immersiveMaterialSupported,
+  isCardHeroRectVisible,
   isDetailFullscreen,
   isLargeWindow,
   isPreviewFullscreen,
@@ -75,6 +84,7 @@ import {
   SPLIT_NAV_BAR_MIN_WIDTH,
   SPLIT_NAV_BAR_WIDTH,
   supportsSplitNavigation,
+  windowHeightVp,
   windowWidthVp
 } from 'anomiconbasic';
 import { HapticFeedbackPort } from 'anomiconbasic';
@@ -106,6 +116,7 @@ export struct MainTabIndex {
   @Local private titleTabIndex: number = HomeTabId.EXPLORE;
   @Local private tabContentOpacity: number = 1;
   @Local private tabContentOffsetY: number = 0;
+  @Local private readonly navBarMotion: DestinationMotionState = new DestinationMotionState();
   @Local private stackDepth: number = 0;
   @Local private navPaneWidth: number = 0;
   private readingHistoryUnsubscribe: (() => void) | undefined = undefined;
@@ -232,15 +243,353 @@ export struct MainTabIndex {
     );
   }
 
-  private openContent(content: LibraryContentRef): void {
+  private openContent(
+    content: LibraryContentRef,
+    heroPreview?: ExploreHeroPreviewPayload
+  ): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    const params: ScpArticleRouteParams = { content: content };
+    let articleHeroPreview: ArticleHeroPreview | undefined = undefined;
+    if (heroPreview !== undefined) {
+      if (!isReduceMotionEnabled() && !supportsSplitNavigation(windowWidthVp())) {
+        const rect: CardHeroRect | undefined =
+          captureWindowRectById(this.getUIContext(), heroPreview.sourceId);
+        if (rect !== undefined) {
+          NavigationTransitionRegistry.armPendingHero({
+            routeName: AppRoutes.ARTICLE,
+            sourceId: heroPreview.sourceId,
+            sourceRect: rect,
+            sourceRadius: 24
+          });
+        }
+      }
+      const hasImage: boolean =
+        heroPreview.imageSource !== undefined && heroPreview.imageSource.length > 0;
+      const hasDescription: boolean =
+        heroPreview.description !== undefined && heroPreview.description.length > 0;
+      if (hasImage || hasDescription) {
+        articleHeroPreview = {
+          imageSource: heroPreview.imageSource,
+          description: heroPreview.description
+        };
+      }
+    }
+    const params: ScpArticleRouteParams = {
+      content: content,
+      heroPreview: articleHeroPreview
+    };
     AppNavigationCoordinator.openFromMaster(
       this.pageStack,
       AppRoutes.ARTICLE,
       params,
       this.shouldUseSplitMode()
     );
+  }
+
+  private resolveMotionState(info: NavContentInfo): DestinationMotionState | undefined {
+    if (info.index < 0) {
+      return this.navBarMotion;
+    }
+    return NavigationTransitionRegistry.get(info.navDestinationId);
+  }
+
+  private resetTransitionParticipants(
+    fromInfo: NavContentInfo,
+    toInfo: NavContentInfo
+  ): void {
+    this.resolveMotionState(fromInfo)?.reset();
+    this.resolveMotionState(toInfo)?.reset();
+    this.navBarMotion.reset();
+  }
+
+  private buildAnimatedTransition(
+    from: NavContentInfo,
+    to: NavContentInfo,
+    timeout: number,
+    animateParamFactory: (onFinish: () => void) => AnimateParam,
+    onSetupFrameZero: (
+      fromState: DestinationMotionState | undefined,
+      toState: DestinationMotionState,
+      toInfo: NavContentInfo
+    ) => boolean,
+    onAnimateTarget: (
+      fromState: DestinationMotionState | undefined,
+      toState: DestinationMotionState
+    ) => void,
+    onCleanup?: (fromInfo: NavContentInfo, toInfo: NavContentInfo) => void
+  ): NavigationAnimatedTransition {
+    let activeFrom: NavContentInfo = from;
+    let activeTo: NavContentInfo = to;
+    return {
+      timeout: timeout,
+      onTransitionEnd: (_success: boolean): void => {
+        this.resetTransitionParticipants(activeFrom, activeTo);
+        if (onCleanup !== undefined) {
+          onCleanup(activeFrom, activeTo);
+        }
+      },
+      transition: (transitionProxy: NavigationTransitionProxy): void => {
+        activeFrom = transitionProxy.from;
+        activeTo = transitionProxy.to;
+        const fromState = this.resolveMotionState(activeFrom);
+        const toState = this.resolveMotionState(activeTo);
+        if (toState === undefined || !onSetupFrameZero(fromState, toState, activeTo)) {
+          this.resetTransitionParticipants(activeFrom, activeTo);
+          if (onCleanup !== undefined) {
+            onCleanup(activeFrom, activeTo);
+          }
+          transitionProxy.finishTransition();
+          return;
+        }
+        let finished: boolean = false;
+        const complete = (): void => {
+          if (finished) {
+            return;
+          }
+          finished = true;
+          this.resetTransitionParticipants(activeFrom, activeTo);
+          if (onCleanup !== undefined) {
+            onCleanup(activeFrom, activeTo);
+          }
+          transitionProxy.finishTransition();
+        };
+        this.getUIContext().animateTo(animateParamFactory(complete), (): void => {
+          onAnimateTarget(fromState, toState);
+        });
+      }
+    };
+  }
+
+  private resolveHeroPopTransition(
+    from: NavContentInfo,
+    to: NavContentInfo
+  ): NavigationAnimatedTransition | undefined {
+    const boundHero: CardHeroTransitionSpec | undefined =
+      NavigationTransitionRegistry.getBoundHero(from.navDestinationId);
+    if (boundHero === undefined) {
+      return undefined;
+    }
+    const validHost: boolean =
+      (boundHero.routeName === AppRoutes.ARTICLE && to.index < 0) ||
+      (boundHero.routeName === AppRoutes.ARCHIVE_3D && to.name === AppRoutes.ARCHIVE_3D_GALLERY);
+    if (!validHost) {
+      NavigationTransitionRegistry.unbindHero(from.navDestinationId);
+      return undefined;
+    }
+    const targetRect: CardHeroRect =
+      captureWindowRectById(this.getUIContext(), boundHero.sourceId) ?? boundHero.sourceRect;
+    if (!isCardHeroRectVisible(targetRect, windowHeightVp(), windowWidthVp())) {
+      NavigationTransitionRegistry.unbindHero(from.navDestinationId);
+      return undefined;
+    }
+    const transform: CardHeroTransform = computeCardHeroTransform(
+      targetRect,
+      windowWidthVp(),
+      windowHeightVp(),
+      boundHero.sourceRadius
+    );
+    return this.buildAnimatedTransition(
+      from,
+      to,
+      380,
+      (onFinish: () => void): AnimateParam => AppMotion.springAnimateParam(false, onFinish),
+      (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): boolean => {
+        if (fromState === undefined) {
+          return false;
+        }
+        fromState.reset();
+        fromState.clipActive = true;
+        toState.opacity = 0.92;
+        toState.scaleX = 0.97;
+        toState.scaleY = 0.97;
+        return true;
+      },
+      (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): void => {
+        if (fromState !== undefined) {
+          fromState.translateX = transform.translateX;
+          fromState.translateY = transform.translateY;
+          fromState.scaleX = transform.scaleX;
+          fromState.scaleY = transform.scaleY;
+          fromState.radius = transform.startRadius;
+          fromState.opacity = 0;
+        }
+        toState.opacity = 1;
+        toState.scaleX = 1;
+        toState.scaleY = 1;
+      },
+      (fromInfo: NavContentInfo): void => {
+        NavigationTransitionRegistry.unbindHero(fromInfo.navDestinationId);
+      }
+    );
+  }
+
+  private resolveNavTransition(
+    from: NavContentInfo,
+    to: NavContentInfo,
+    operation: NavigationOperation
+  ): NavigationAnimatedTransition | undefined {
+    if (isReduceMotionEnabled()) {
+      NavigationTransitionRegistry.clearPendingHero();
+      return undefined;
+    }
+    // Case A: Split mode master replacement cross-slide/fade.
+    if (operation === NavigationOperation.REPLACE && from.index >= 0 && to.index >= 0) {
+      NavigationTransitionRegistry.clearPendingHero();
+      return this.buildAnimatedTransition(
+        from,
+        to,
+        360,
+        (onFinish: () => void): AnimateParam => AppMotion.springAnimateParam(true, onFinish),
+        (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): boolean => {
+          toState.opacity = 0;
+          toState.translateX = 16;
+          if (fromState !== undefined) {
+            fromState.opacity = 1;
+            fromState.translateX = 0;
+          }
+          return true;
+        },
+        (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): void => {
+          toState.opacity = 1;
+          toState.translateX = 0;
+          if (fromState !== undefined) {
+            fromState.opacity = 0;
+            fromState.translateX = -8;
+          }
+        }
+      );
+    }
+
+    if (supportsSplitNavigation(windowWidthVp())) {
+      NavigationTransitionRegistry.clearPendingHero();
+      return undefined;
+    }
+
+    // Case B: Single-screen card-hero PUSH (S1 Explore recommendation & S2 3D archive).
+    if (operation === NavigationOperation.PUSH) {
+      if (to.name !== undefined && NavigationTransitionRegistry.peekPendingHero(to.name) !== undefined) {
+        const spec: CardHeroTransitionSpec | undefined =
+          NavigationTransitionRegistry.consumePendingHero(to.name);
+        if (spec === undefined) {
+          return undefined;
+        }
+        const transform: CardHeroTransform = computeCardHeroTransform(
+          spec.sourceRect,
+          windowWidthVp(),
+          windowHeightVp(),
+          spec.sourceRadius
+        );
+        return this.buildAnimatedTransition(
+          from,
+          to,
+          420,
+          (onFinish: () => void): AnimateParam => AppMotion.springAnimateParam(true, onFinish),
+          (
+            fromState: DestinationMotionState | undefined,
+            toState: DestinationMotionState,
+            toInfo: NavContentInfo
+          ): boolean => {
+            NavigationTransitionRegistry.bindHero(toInfo.navDestinationId, spec);
+            toState.translateX = transform.translateX;
+            toState.translateY = transform.translateY;
+            toState.scaleX = transform.scaleX;
+            toState.scaleY = transform.scaleY;
+            toState.radius = transform.startRadius;
+            toState.clipActive = true;
+            toState.opacity = 0.85;
+            if (fromState !== undefined) {
+              fromState.opacity = 1;
+              fromState.scaleX = 1;
+              fromState.scaleY = 1;
+            }
+            return true;
+          },
+          (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): void => {
+            toState.translateX = 0;
+            toState.translateY = 0;
+            toState.scaleX = 1;
+            toState.scaleY = 1;
+            toState.radius = 0;
+            toState.opacity = 1;
+            if (fromState !== undefined) {
+              fromState.opacity = 0.92;
+              fromState.scaleX = 0.97;
+              fromState.scaleY = 0.97;
+            }
+          }
+        );
+      }
+      if (NavigationTransitionRegistry.peekPendingHero() !== undefined) {
+        NavigationTransitionRegistry.clearPendingHero();
+      }
+      // Case D (PUSH): Single-screen Search light rise-fade (S3).
+      if (to.name === AppRoutes.SEARCH) {
+        return this.buildAnimatedTransition(
+          from,
+          to,
+          320,
+          (onFinish: () => void): AnimateParam => AppMotion.springAnimateParam(false, onFinish),
+          (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): boolean => {
+            toState.opacity = 0;
+            toState.translateY = 18;
+            toState.scaleX = 0.985;
+            toState.scaleY = 0.985;
+            if (fromState !== undefined) {
+              fromState.opacity = 1;
+            }
+            return true;
+          },
+          (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): void => {
+            toState.opacity = 1;
+            toState.translateY = 0;
+            toState.scaleX = 1;
+            toState.scaleY = 1;
+            if (fromState !== undefined) {
+              fromState.opacity = 0.94;
+            }
+          }
+        );
+      }
+      return undefined;
+    }
+
+    if (operation === NavigationOperation.POP) {
+      // Case C: Single-screen card-hero reverse POP when source card remains visible.
+      const heroPop = this.resolveHeroPopTransition(from, to);
+      if (heroPop !== undefined) {
+        return heroPop;
+      }
+      // Case D (POP): Single-screen Search light rise-fade exit (S3).
+      if (from.name === AppRoutes.SEARCH) {
+        return this.buildAnimatedTransition(
+          from,
+          to,
+          280,
+          (onFinish: () => void): AnimateParam => ({
+            duration: AppMotion.MICRO_DURATION,
+            curve: Curve.FastOutSlowIn,
+            onFinish: onFinish
+          }),
+          (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): boolean => {
+            if (fromState === undefined) {
+              return false;
+            }
+            fromState.reset();
+            toState.opacity = 0.94;
+            return true;
+          },
+          (fromState: DestinationMotionState | undefined, toState: DestinationMotionState): void => {
+            if (fromState !== undefined) {
+              fromState.opacity = 0;
+              fromState.translateY = 14;
+              fromState.scaleX = 0.985;
+              fromState.scaleY = 0.985;
+            }
+            toState.opacity = 1;
+          }
+        );
+      }
+    }
+    return undefined;
   }
 
   private isReadCompleted(contentId: string): boolean {
@@ -355,7 +704,10 @@ export struct MainTabIndex {
                   materialEnabled: this.settings.immersiveMaterialEnabled,
                   active: this.tabsViewModel.currentIndex === HomeTabId.EXPLORE,
                   recommendationSkeletonAnimated: this.exploreSkeletonAnimated,
-                  onOpenContent: (content: LibraryContentRef) => this.openContent(content),
+                  onOpenContent: (
+                    content: LibraryContentRef,
+                    heroPreview?: ExploreHeroPreviewPayload
+                  ) => this.openContent(content, heroPreview),
                   onOpenCollection: (mode: ExploreCollectionMode) => this.openExploreCollection(mode),
                   onSelection: () => this.hapticService.playSelection(this.settings.hapticEnabled),
                   onHeroAnchorChange: (anchor: ExploreHeroAnchor): void =>
@@ -459,52 +811,15 @@ export struct MainTabIndex {
           });
         }
       })
+      .opacity(this.navBarMotion.opacity)
+      .scale({ x: this.navBarMotion.scaleX, y: this.navBarMotion.scaleY })
     }
     .customNavContentTransition((
       from: NavContentInfo,
       to: NavContentInfo,
       operation: NavigationOperation
-    ): NavigationAnimatedTransition | undefined => {
-      if (operation !== NavigationOperation.REPLACE || isReduceMotionEnabled() ||
-        from.index < 0 || to.index < 0) {
-        return undefined;
-      }
-      const fromId = from.navDestinationId;
-      const toId = to.navDestinationId;
-      return {
-        timeout: 360,
-        onTransitionEnd: (_success: boolean): void => {
-          NavigationTransitionRegistry.get(fromId)?.reset();
-          NavigationTransitionRegistry.get(toId)?.reset();
-        },
-        transition: (transitionProxy: NavigationTransitionProxy): void => {
-          const fromState = NavigationTransitionRegistry.get(transitionProxy.from.navDestinationId);
-          const toState = NavigationTransitionRegistry.get(transitionProxy.to.navDestinationId);
-          if (toState === undefined) {
-            transitionProxy.finishTransition();
-            return;
-          }
-          toState.opacity = 0;
-          toState.translateX = 16;
-          if (fromState !== undefined) {
-            fromState.opacity = 1;
-            fromState.translateX = 0;
-          }
-          this.getUIContext().animateTo(AppMotion.springAnimateParam(true, (): void => {
-            fromState?.reset();
-            toState.reset();
-            transitionProxy.finishTransition();
-          }), (): void => {
-            toState.opacity = 1;
-            toState.translateX = 0;
-            if (fromState !== undefined) {
-              fromState.opacity = 0;
-              fromState.translateX = -8;
-            }
-          });
-        }
-      };
-    })
+    ): NavigationAnimatedTransition | undefined =>
+      this.resolveNavTransition(from, to, operation))
     // Full-screen tabs at home; Switch to Split when a detail page is pushed on LG+ windows.
     .mode(this.shouldUseSplitMode() ? NavigationMode.Split : NavigationMode.Stack)
     .hideNavBar(this.shouldHideNavBar())

@@ -25,7 +25,13 @@ export {
   AppMotion,
   isReduceMotionEnabled,
   DestinationMotionState,
-  NavigationTransitionRegistry
+  NavigationTransitionRegistry,
+  CardHeroRect,
+  CardHeroTransform,
+  CardHeroTransitionSpec,
+  computeCardHeroTransform,
+  isCardHeroRectVisible,
+  captureWindowRectById
 } from './AppMotion';
 export {
   AppWidthBreakpoint,

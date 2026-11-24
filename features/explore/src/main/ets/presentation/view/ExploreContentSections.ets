@@ -9,6 +9,7 @@ import { ExploreCollectionMode } from '../../domain/ExploreContracts';
 import {
   AppTypography,
   ContentUpdateNotice,
+  pressAnimation,
   ROW_PRESS_MODIFIER,
   SkeletonBlock
 } from 'anomiconbasic';
@@ -177,7 +178,7 @@ export struct ExploreTopRatedSection {
         .fontColor([$r('sys.color.icon_secondary')])
     }
     .attributeModifier(ROW_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .constraintSize({ minHeight: 60 })
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
@@ -305,7 +306,7 @@ export struct ExploreMixedSection {
         .fontColor([$r('sys.color.icon_secondary')])
     }
     .attributeModifier(ROW_PRESS_MODIFIER)
-    .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+    .animation(pressAnimation())
     .width('100%')
     .constraintSize({ minHeight: 60 })
     .padding({ left: 16, right: 16, top: 10, bottom: 10 })
@@ -369,7 +370,7 @@ export struct ExploreMixedSection {
               .fontColor([$r('sys.color.icon_emphasize')])
           }
           .attributeModifier(ROW_PRESS_MODIFIER)
-          .animation({ duration: 120, curve: Curve.FastOutSlowIn })
+          .animation(pressAnimation())
           .width('100%')
           .height(48)
           .justifyContent(FlexAlign.Center)
