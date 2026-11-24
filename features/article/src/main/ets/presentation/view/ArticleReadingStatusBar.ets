@@ -23,6 +23,7 @@ export struct ArticleReadingStatusBar {
   @Require @Param level: number;
   @Require @Param experience: number;
   @Require @Param contentReady: boolean;
+  @Param completed: boolean = false;
   @Param compactProfile: boolean = false;
   @Param materialEnabled: boolean = true;
   @Param sidePanelAvailable: boolean = false;
@@ -85,6 +86,10 @@ export struct ArticleReadingStatusBar {
     return (this.sidePanelAvailable && !this.webModeActive) || this.showCompactTools();
   }
 
+  private isCompletedLocked(): boolean {
+    return this.contentReady && this.completed && !this.webModeActive;
+  }
+
   build() {
     Row() {
       Row({ space: 6 }) {
@@ -100,13 +105,13 @@ export struct ArticleReadingStatusBar {
             .maxLines(1)
         } else {
           Progress({
-            value: this.contentReady ? this.normalizedProgress() : 0,
+            value: this.isCompletedLocked() ? 100 : (this.contentReady ? this.normalizedProgress() : 0),
             total: 100,
             type: ProgressType.Ring
           })
             .width(24)
             .height(24)
-            .color($r('sys.color.icon_emphasize'))
+            .color(this.isCompletedLocked() ? '#16A34A' : $r('sys.color.icon_emphasize'))
             .backgroundColor($r('sys.color.comp_background_tertiary'))
             .style({
               strokeWidth: 3,
@@ -114,10 +119,14 @@ export struct ArticleReadingStatusBar {
               shadow: false
             })
 
-          Text(this.contentReady ? `已读 ${this.normalizedProgress()}%` : '正在准备正文')
+          Text(
+            this.isCompletedLocked() ?
+              '已读完' :
+              (this.contentReady ? `已读 ${this.normalizedProgress()}%` : '正在准备正文')
+          )
             .fontSize(AppTypography.CAPTION_L)
             .fontWeight(FontWeight.Medium)
-            .fontColor($r('sys.color.font'))
+            .fontColor(this.isCompletedLocked() ? '#16A34A' : $r('sys.color.font'))
             .maxLines(1)
         }
 
@@ -258,10 +267,13 @@ export struct ArticleReadingStatusBar {
         this.webModeActive ?
           `正在浏览原版网页模式，等级${this.normalizedInteger(this.level, 1)}，` +
             `总经验${this.normalizedInteger(this.experience)}` :
-          (this.contentReady ?
-            `本文已读${this.normalizedProgress()}%，等级${this.normalizedInteger(this.level, 1)}，` +
+          (this.isCompletedLocked() ?
+            `本文已读完，进度已锁定，等级${this.normalizedInteger(this.level, 1)}，` +
               `总经验${this.normalizedInteger(this.experience)}` :
-            '正在准备正文阅读状态')
+            (this.contentReady ?
+              `本文已读${this.normalizedProgress()}%，等级${this.normalizedInteger(this.level, 1)}，` +
+                `总经验${this.normalizedInteger(this.experience)}` :
+              '正在准备正文阅读状态'))
       )
     }
     .width('100%')

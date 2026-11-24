@@ -378,7 +378,7 @@ export class ReadingHistoryViewModel {
         this.completedIds.add(state.content.id);
         completedTotal++;
       }
-      if (state.scrollOffset > 0) {
+      if (state.scrollOffset > 0 && !state.completed) {
         const recent = historyByKey.get(state.content.key);
         if (recent !== undefined) {
           resumable.push(recent);

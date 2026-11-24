@@ -30,10 +30,7 @@ import {
 } from '../../domain/ArticleContracts';
 import {
   ArticleOfflineSnapshot,
-  ArticleOfflineStatus,
-  formatOfflineBytes,
-  normalizeOfflineImageUrl,
-  requiresNetworkForInteractiveDocument
+  normalizeOfflineImageUrl
 } from '../../domain/ArticleOfflineContracts';
 import {
   ScpArticleDocument,
@@ -547,11 +544,8 @@ export struct ArticleNativeRenderer {
   @Param targetAnchorEpoch: number = 0;
   @Param tocOpenEpoch: number = 0;
   @Param searchBarOpen: boolean = false;
-  @Param offlineEnabled: boolean = false;
+  @Param completed: boolean = false;
   @Param offlineSnapshot: ArticleOfflineSnapshot | undefined = undefined;
-  @Param offlineSaving: boolean = false;
-  @Param offlineProgressCompleted: number = 0;
-  @Param offlineProgressTotal: number = 0;
   @Param offlineRevision: number = 0;
   @Param seriesContext: StorySeriesArticleContext | undefined = undefined;
   @Param seriesRevision: number = 0;
@@ -565,8 +559,8 @@ export struct ArticleNativeRenderer {
     (_hubId: string, _title: string): void => {};
 
   @Event onRetryPartial: () => void = () => {};
-  @Event onSaveOffline: () => void = () => {};
-  @Event onRemoveOffline: () => void = () => {};
+  @Event onToggleCompleted: () => void = () => {};
+  @Event onBottomPullHaptic: () => void = () => {};
   @Event onHiddenRevealInteraction: () => void = () => {};
   @Event onSwitchToWebMode: () => void = () => {};
   @Event onReadingProgressChange: (percent: number) => void = (_percent: number) => {};
@@ -610,6 +604,8 @@ export struct ArticleNativeRenderer {
   @Local private userClosedSidePanel: boolean = false;
   @Local private revealedHiddenKeys: string[] = [];
   @Local private expandAllRelatedTales: boolean = false;
+  @Local private bottomPullProgress: number = 0;
+  @Local private bottomPullReady: boolean = false;
   private readonly galleryController: SwiperController = new SwiperController();
   private readonly footnoteSheetScroller: Scroller = new Scroller();
   private readonly tocSheetScroller: Scroller = new Scroller();
@@ -644,6 +640,10 @@ export struct ArticleNativeRenderer {
   private pendingAnchorTimer: number = -1;
   private pendingRouteAnchor: string = '';
   private hasLaidOutCurrentDoc: boolean = false;
+  private readonly bottomPullTriggerVp: number = 72;
+  private bottomPullTracking: boolean = false;
+  private bottomPullAnchorY: number = 0;
+  private bottomPullLastY: number = 0;
 
   aboutToAppear(): void {
     this.syncDocumentAndSections();
@@ -688,6 +688,7 @@ export struct ArticleNativeRenderer {
     this.visibleStartIndex = -1;
     this.visibleEndIndex = -1;
     this.lastReportedPercent = -1;
+    this.resetBottomPullState();
     this.syncDocumentAndSections();
     this.lastDocumentItemId = this.document.itemId;
     if (this.searchBarOpen && this.searchQuery.trim().length > 0) {
@@ -722,7 +723,7 @@ export struct ArticleNativeRenderer {
     this.tryFlushPendingRouteAnchor();
   }
 
-  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint', 'offlineEnabled', 'seriesContext', 'seriesRevision')
+  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint', 'seriesContext', 'seriesRevision')
   onLayoutInputsChange(): void {
     this.syncDocumentAndSections();
     this.syncWorkbenchTabDefault();
@@ -1111,18 +1112,16 @@ export struct ArticleNativeRenderer {
       );
     }
 
-    if (this.document.pageVersion.length > 0) {
-      pushSection(
-        '__footer__',
-        ArticleSectionKind.FOOTER,
-        60,
-        undefined,
-        undefined,
-        false,
-        false,
-        0
-      );
-    }
+    pushSection(
+      '__footer__',
+      ArticleSectionKind.FOOTER,
+      60,
+      undefined,
+      undefined,
+      false,
+      false,
+      0
+    );
 
     const prefixSums: number[] = [0];
     let running: number = 0;
@@ -1151,6 +1150,88 @@ export struct ArticleNativeRenderer {
 
   private clampValue(value: number, min: number, max: number): number {
     return value < min ? min : (value > max ? max : value);
+  }
+
+  private isScrollerAtBottom(): boolean {
+    try {
+      return this.scroller.isAtEnd();
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  private resetBottomPullState(): void {
+    this.bottomPullTracking = false;
+    this.bottomPullProgress = 0;
+    this.bottomPullReady = false;
+  }
+
+  private handleListTouch(event: TouchEvent): void {
+    const touches = event.touches;
+    const changed = event.changedTouches;
+    const touch = touches.length > 0 ? touches[0] : (changed.length > 0 ? changed[0] : undefined);
+    if (event.type === TouchType.Down) {
+      if (touch === undefined) {
+        this.resetBottomPullState();
+        return;
+      }
+      const touchY = touch.windowY;
+      this.bottomPullLastY = touchY;
+      this.bottomPullProgress = 0;
+      this.bottomPullReady = false;
+      if (this.isScrollerAtBottom()) {
+        this.bottomPullTracking = true;
+        this.bottomPullAnchorY = touchY;
+      } else {
+        this.bottomPullTracking = false;
+      }
+      return;
+    }
+    if (event.type === TouchType.Move) {
+      if (touch === undefined) {
+        return;
+      }
+      const touchY = touch.windowY;
+      if (!this.bottomPullTracking) {
+        if (this.isScrollerAtBottom() && touchY < this.bottomPullLastY) {
+          this.bottomPullTracking = true;
+          this.bottomPullAnchorY = touchY;
+        }
+        this.bottomPullLastY = touchY;
+        return;
+      }
+      this.bottomPullLastY = touchY;
+      const pullDelta = this.bottomPullAnchorY - touchY;
+      if (pullDelta <= 0 || !this.isScrollerAtBottom()) {
+        this.bottomPullProgress = 0;
+        this.bottomPullReady = false;
+        if (!this.isScrollerAtBottom()) {
+          this.bottomPullTracking = false;
+        } else {
+          this.bottomPullAnchorY = touchY;
+        }
+        return;
+      }
+      this.bottomPullProgress = this.clampValue(pullDelta / this.bottomPullTriggerVp, 0, 1);
+      if (!this.bottomPullReady && pullDelta >= this.bottomPullTriggerVp) {
+        this.bottomPullReady = true;
+        this.onBottomPullHaptic();
+      } else if (this.bottomPullReady && pullDelta < this.bottomPullTriggerVp * 0.85) {
+        this.bottomPullReady = false;
+      }
+      return;
+    }
+    if (event.type === TouchType.Up) {
+      const shouldToggle = this.bottomPullTracking && this.bottomPullReady;
+      this.resetBottomPullState();
+      if (shouldToggle) {
+        this.onToggleCompleted();
+      }
+      return;
+    }
+    if (event.type === TouchType.Cancel) {
+      this.resetBottomPullState();
+    }
   }
 
   private publishReadingProgress(): void {
@@ -2932,56 +3013,6 @@ export struct ArticleNativeRenderer {
     }
   }
 
-  @Builder
-  private offlineStatusRow() {
-    Row({ space: 10 }) {
-      if (this.offlineSaving) {
-        LoadingProgress()
-          .width(18)
-          .height(18)
-          .color($r('sys.color.icon_emphasize'))
-      } else {
-        SymbolGlyph(this.offlineStatusIcon())
-          .fontSize(18)
-          .fontColor([this.offlineStatusIconColor()])
-      }
-
-      Column({ space: 2 }) {
-        Text(this.offlinePrimaryTitle())
-          .fontSize(AppTypography.BODY_S)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('sys.color.font'))
-          .maxLines(1)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-        Text(this.offlineSecondaryText())
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_secondary'))
-          .maxLines(2)
-          .textOverflow({ overflow: TextOverflow.Ellipsis })
-      }
-      .alignItems(HorizontalAlign.Start)
-      .layoutWeight(1)
-
-      if (!this.offlineSaving && this.offlinePrimaryActionLabel().length > 0) {
-        Button(this.offlinePrimaryActionLabel(), { stateEffect: false })
-          .id('articleOfflineActionButton')
-          .fontSize(AppTypography.CAPTION_L)
-          .fontWeight(FontWeight.Medium)
-          .height(30)
-          .padding({ left: 10, right: 10 })
-          .backgroundColor(this.offlinePrimaryActionIsAccent() ?
-            accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
-          .fontColor(this.offlinePrimaryActionIsAccent() ?
-            accentPillForegroundColor() : $r('sys.color.font'))
-          .borderRadius(15)
-          .onClick(() => this.handleOfflinePrimaryAction())
-      }
-    }
-    .width('100%')
-    .alignItems(VerticalAlign.Center)
-    .padding({ top: 2, bottom: 2 })
-  }
-
   private openSeriesChecklist(): void {
     if (this.seriesContext === undefined) {
       return;
@@ -3398,16 +3429,6 @@ export struct ArticleNativeRenderer {
           }
           .width('100%')
         }
-
-        if (this.offlineEnabled && this.hasArticleMetadataChips()) {
-          Divider()
-            .strokeWidth(0.5)
-            .color($r('sys.color.comp_divider'))
-        }
-
-        if (this.offlineEnabled) {
-          this.offlineStatusRow()
-        }
       }
       .width('100%')
       .padding(14)
@@ -3609,18 +3630,109 @@ export struct ArticleNativeRenderer {
     }
   }
 
+  private bottomPullPrimaryIcon(): Resource {
+    if (!this.completed) {
+      return this.bottomPullReady ?
+        $r('sys.symbol.checkmark_circle_fill') :
+        $r('sys.symbol.arrow_up');
+    }
+    if (this.bottomPullReady) {
+      return $r('sys.symbol.arrow_counterclockwise');
+    }
+    return this.bottomPullProgress > 0 ?
+      $r('sys.symbol.arrow_up') :
+      $r('sys.symbol.checkmark_circle_fill');
+  }
+
+  private bottomPullPrimaryColor(): Resource | string {
+    if (!this.completed) {
+      if (this.bottomPullReady) {
+        return '#16A34A';
+      }
+      return this.bottomPullProgress > 0 ?
+        $r('sys.color.font_secondary') :
+        $r('sys.color.font_tertiary');
+    }
+    return this.bottomPullProgress > 0 ?
+      $r('sys.color.font_secondary') :
+      '#16A34A';
+  }
+
+  private bottomPullPrimaryText(): string {
+    if (!this.completed) {
+      return this.bottomPullReady ? '松手标为已读并锁定进度' : '继续上滑标记已读完';
+    }
+    if (this.bottomPullReady) {
+      return '松手取消已读并解锁进度';
+    }
+    return this.bottomPullProgress > 0 ?
+      '继续上滑取消已读标记' :
+      '已读完 · 进度已锁定';
+  }
+
+  private bottomPullPrimaryWeight(): FontWeight {
+    if (this.bottomPullReady || (this.completed && this.bottomPullProgress === 0)) {
+      return FontWeight.Medium;
+    }
+    return FontWeight.Regular;
+  }
+
+  private bottomPullBarFillColor(): Resource | string {
+    return this.completed ? $r('sys.color.icon_secondary') : '#16A34A';
+  }
+
+  private bottomPullBarWidth(): number {
+    return Math.round(48 * this.clampValue(this.bottomPullProgress, 0, 1));
+  }
+
   @Builder
   private licenseFooter() {
     Column({ space: 6 }) {
+      if (this.bottomPullProgress > 0) {
+        Stack({ alignContent: Alignment.Start }) {
+          Row()
+            .width(48)
+            .height(2)
+            .borderRadius(1)
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+          Row()
+            .width(this.bottomPullBarWidth())
+            .height(2)
+            .borderRadius(1)
+            .backgroundColor(this.bottomPullBarFillColor())
+        }
+        .width(48)
+        .height(2)
+      }
+
+      Row({ space: 5 }) {
+        SymbolGlyph(this.bottomPullPrimaryIcon())
+          .fontSize(12)
+          .fontColor([this.bottomPullPrimaryColor()])
+        Text(this.bottomPullPrimaryText())
+          .fontSize(AppTypography.CAPTION_L)
+          .fontWeight(this.bottomPullPrimaryWeight())
+          .fontColor(this.bottomPullPrimaryColor())
+      }
+      .alignItems(VerticalAlign.Center)
+
+      if (this.completed && this.bottomPullProgress === 0) {
+        Text('继续上滑可取消已读')
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_tertiary'))
+      }
+
       if (this.document.pageVersion.length > 0) {
         Text(this.document.pageVersion)
           .fontSize(AppTypography.CAPTION_M)
           .fontColor($r('sys.color.font_tertiary'))
+          .margin({ top: 4 })
       }
     }
+    .id('articleCompletionFooter')
     .width('100%')
     .alignItems(HorizontalAlign.Center)
-    .padding({ top: 16, bottom: 12 })
+    .padding({ top: 18, bottom: 16 })
   }
 
   private hasArticleMetadataChips(): boolean {
@@ -3630,7 +3742,7 @@ export struct ArticleNativeRenderer {
   }
 
   private hasHeaderCardContent(): boolean {
-    return this.offlineEnabled || this.hasArticleMetadataChips();
+    return this.hasArticleMetadataChips();
   }
 
   private currentOfflineSnapshot(): ArticleOfflineSnapshot | undefined {
@@ -3651,93 +3763,6 @@ export struct ArticleNativeRenderer {
       return '';
     }
     return snapshot.localImageUris.get(normalized) ?? '';
-  }
-
-  private offlineStatusIcon(): Resource {
-    if (this.offlineSaving) {
-      return $r('sys.symbol.archivebox_fill');
-    }
-    const snapshot = this.currentOfflineSnapshot();
-    if (snapshot === undefined) {
-      return $r('sys.symbol.archivebox_fill');
-    }
-    if (snapshot.status === ArticleOfflineStatus.READY) {
-      return $r('sys.symbol.checkmark_circle_fill');
-    }
-    return $r('sys.symbol.exclamationmark_circle');
-  }
-
-  private offlineStatusIconColor(): Resource | string {
-    if (this.offlineSaving) {
-      return $r('sys.color.icon_emphasize');
-    }
-    const snapshot = this.currentOfflineSnapshot();
-    if (snapshot === undefined) {
-      return $r('sys.color.icon_secondary');
-    }
-    if (snapshot.status === ArticleOfflineStatus.READY) {
-      return '#16A34A';
-    }
-    return $r('sys.color.warning');
-  }
-
-  private offlinePrimaryTitle(): string {
-    if (this.offlineSaving) {
-      return this.offlineProgressTotal > 0 ?
-        `正在保存离线副本（${this.offlineProgressCompleted}/${this.offlineProgressTotal} 张图）…` :
-        '正在保存离线正文…';
-    }
-    const snapshot = this.currentOfflineSnapshot();
-    if (snapshot !== undefined) {
-      return snapshot.badgeText;
-    }
-    return '离线阅读';
-  }
-
-  private offlineSecondaryText(): string {
-    if (this.offlineSaving) {
-      return '正在将正文与配图存入永久离线存储…';
-    }
-    const snapshot = this.currentOfflineSnapshot();
-    if (snapshot !== undefined) {
-      return `${snapshot.detailText} · ${formatOfflineBytes(snapshot.totalBytes)}`;
-    }
-    return requiresNetworkForInteractiveDocument(this.document) ?
-      '保存正文后可离线阅读（互动部分需联网）' :
-      '保存正文与配图，清理临时缓存不受影响';
-  }
-
-  private offlinePrimaryActionLabel(): string {
-    if (this.offlineSaving) {
-      return '';
-    }
-    const snapshot = this.currentOfflineSnapshot();
-    if (snapshot === undefined) {
-      return '保存供离线阅读';
-    }
-    if (snapshot.missingImages > 0) {
-      return '补齐图片';
-    }
-    if (snapshot.requiresNetworkInteractive) {
-      return '原版网页';
-    }
-    return '';
-  }
-
-  private offlinePrimaryActionIsAccent(): boolean {
-    const snapshot = this.currentOfflineSnapshot();
-    return snapshot === undefined || snapshot.missingImages > 0;
-  }
-
-  private handleOfflinePrimaryAction(): void {
-    const snapshot = this.currentOfflineSnapshot();
-    if (snapshot === undefined || snapshot.missingImages > 0) {
-      this.onSaveOffline();
-      return;
-    }
-    if (snapshot.requiresNetworkInteractive) {
-      this.onSwitchToWebMode();
-    }
   }
 
   @Builder
@@ -4741,6 +4766,9 @@ export struct ArticleNativeRenderer {
         .onScrollStop(() => {
           this.publishReadingProgress();
           this.onScrollStop();
+        })
+        .onTouch((event: TouchEvent): void => {
+          this.handleListTouch(event);
         })
         .bindSheet(
           this.sheetMode !== ArticleSheetMode.NONE,

@@ -20,12 +20,12 @@ export enum ResearchSessionState {
 }
 
 export enum ResearchRankTitle {
-  VISITOR = '初访者',
-  RETRIEVER = '检索者',
-  READER = '研读者',
-  CATALOGER = '编目者',
-  RESEARCHER = '考据者',
-  ARCHIVIST = '典藏者'
+  VISITOR = '见习档案员',
+  RETRIEVER = '档案助理',
+  READER = '档案员',
+  CATALOGER = '高级档案员',
+  RESEARCHER = '档案编审',
+  ARCHIVIST = '首席档案编审'
 }
 
 /** 开始一次 provisional 阅读段所需的稳定值。 */

@@ -32,15 +32,18 @@ class ImmediateDocumentGateway implements ArticleContentGateway {
 
 class TestHistorySnapshot implements ArticleHistorySnapshot {
   readonly scrollOffset: number;
+  readonly completed: boolean;
 
-  constructor(scrollOffset: number) {
+  constructor(scrollOffset: number, completed: boolean = false) {
     this.scrollOffset = scrollOffset;
+    this.completed = completed;
   }
 }
 
 class DeferredArticleHistory implements ArticleHistoryPort {
   findCalls: number = 0;
   readonly progressOffsets: number[] = [];
+  readonly completedStates: boolean[] = [];
   private findResolver:
     ((snapshot: ArticleHistorySnapshot | undefined) => void) | undefined = undefined;
 
@@ -66,11 +69,16 @@ class DeferredArticleHistory implements ArticleHistoryPort {
     return Promise.resolve();
   }
 
-  resolveFind(offset: number): void {
+  setCompleted(_content: LibraryContentRef, completed: boolean): Promise<void> {
+    this.completedStates.push(completed);
+    return Promise.resolve();
+  }
+
+  resolveFind(offset: number, completed: boolean = false): void {
     const resolve = this.findResolver;
     if (resolve !== undefined) {
       this.findResolver = undefined;
-      resolve(new TestHistorySnapshot(offset));
+      resolve(new TestHistorySnapshot(offset, completed));
     }
   }
 }
@@ -177,6 +185,32 @@ export default function articleReadingRestoreTest(): void {
       expect(viewModel.readingPercent).assertEqual(51);
 
       unsubscribe();
+      viewModel.dispose();
+    });
+
+    it('locks progress persistence when completed and resumes saving when unmarked', 0, async () => {
+      const history = new DeferredArticleHistory();
+      const viewModel = createRestoreViewModel(history);
+      openArticle(viewModel);
+      await drainMicrotasks();
+
+      history.resolveFind(480, true);
+      await drainMicrotasks();
+      expect(viewModel.completed).assertTrue();
+      expect(viewModel.restoredScrollOffset).assertEqual(0);
+
+      await viewModel.updateProgress(320);
+      await viewModel.updateProgress(0);
+      expect(history.progressOffsets.length).assertEqual(0);
+
+      await viewModel.setCompleted(false);
+      expect(viewModel.completed).assertFalse();
+      expect(history.completedStates.length).assertEqual(1);
+      expect(history.completedStates[0]).assertFalse();
+
+      await viewModel.updateProgress(320);
+      expect(history.progressOffsets.length).assertEqual(1);
+      expect(history.progressOffsets[0]).assertEqual(320);
       viewModel.dispose();
     });
   });

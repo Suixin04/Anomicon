@@ -360,7 +360,7 @@ export default function terminalViewModelTest(): void {
       );
       const history = new InMemoryReadingHistory(
         [new ReadingHistoryEntry(recentContent, 200, 400, 0, false)],
-        [new ReadingHistoryEntry(prunedResumeContent, 100, 300, 420, true)]
+        [new ReadingHistoryEntry(prunedResumeContent, 100, 300, 420, false)]
       );
       const resolver = new ControlledTitleResolver();
       const viewModel = new TerminalViewModel(
@@ -376,7 +376,7 @@ export default function terminalViewModelTest(): void {
       expect(viewModel.resumeEntries.length).assertEqual(1);
       expect(viewModel.resumeEntries[0].content.key).assertEqual('main:scp-173');
       expect(viewModel.resumeEntries[0].scrollOffset).assertEqual(420);
-      expect(viewModel.resumeEntries[0].completed).assertTrue();
+      expect(viewModel.resumeEntries[0].completed).assertFalse();
       expect(viewModel.recentEntries.length).assertEqual(1);
       expect(resolver.requests.length).assertEqual(1);
       expect(resolver.requests[0][0]).assertEqual('scp-173');
@@ -385,6 +385,40 @@ export default function terminalViewModelTest(): void {
       await drainMicrotasks();
 
       expect(viewModel.resumeEntries[0].content.title).assertEqual('雕像');
+      viewModel.dispose();
+    });
+
+    it('excludes completed entries from resumeEntries while retaining them in recentEntries', 0, async () => {
+      const completedContent = createLibraryContentRef(
+        LibraryContentKind.SCP,
+        'SCP-055',
+        '逆模因'
+      );
+      const unfinishedContent = createLibraryContentRef(
+        LibraryContentKind.SCP,
+        'SCP-096',
+        '羞涩的人'
+      );
+      const completedEntry = new ReadingHistoryEntry(completedContent, 200, 500, 900, true);
+      const unfinishedEntry = new ReadingHistoryEntry(unfinishedContent, 100, 350, 260, false);
+      const history = new InMemoryReadingHistory(
+        [completedEntry, unfinishedEntry],
+        [completedEntry, unfinishedEntry]
+      );
+      const viewModel = new TerminalViewModel(
+        new InMemoryFavorites([]),
+        history,
+        new InMemoryResearchProfile(emptyResearchProgress())
+      );
+
+      viewModel.activate();
+      await drainMicrotasks();
+
+      expect(viewModel.resumeEntries.length).assertEqual(1);
+      expect(viewModel.resumeEntries[0].content.key).assertEqual('main:scp-096');
+      expect(viewModel.recentEntries.length).assertEqual(1);
+      expect(viewModel.recentEntries[0].content.key).assertEqual('main:scp-055');
+      expect(viewModel.recentEntries[0].completed).assertTrue();
       viewModel.dispose();
     });
 

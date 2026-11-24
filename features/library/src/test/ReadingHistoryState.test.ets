@@ -22,6 +22,10 @@ import {
 import { FavoritesViewModel } from '../main/ets/presentation/viewmodel/FavoritesViewModel';
 import { LibraryCollectionVM } from '../main/ets/presentation/viewmodel/LibraryCollectionVM';
 import { ReadingHistoryViewModel } from '../main/ets/presentation/viewmodel/ReadingHistoryViewModel';
+import {
+  ResearchRankTitle,
+  researchRankTitleForLevel
+} from '../main/ets/domain/ResearchProgress';
 
 class EmptyFavoritesRepo implements FavoriteRepository {
   list(): Promise<LibraryFavorite[]> {
@@ -207,7 +211,7 @@ export default function readingHistoryStateTest(): void {
       const restored3 = await viewModel.find('main:scp-003');
       expect(restored3 === undefined).assertTrue();
 
-      expect(containsKey(viewModel.resumableItems, 'main:scp-001')).assertTrue();
+      expect(containsKey(viewModel.resumableItems, 'main:scp-001')).assertFalse();
       expect(containsKey(viewModel.resumableItems, 'main:scp-002')).assertTrue();
       expect(containsKey(viewModel.resumableItems, 'main:scp-003')).assertFalse();
     });
@@ -406,11 +410,27 @@ export default function readingHistoryStateTest(): void {
       expect(coldVm.items.length).assertEqual(READING_HISTORY_LIMIT);
       expect(coldVm.isCompleted('SCP-001')).assertTrue();
       expect(coldVm.completedCount).assertEqual(1);
-      expect(containsKey(coldVm.resumableItems, 'main:scp-001')).assertTrue();
+      expect(containsKey(coldVm.resumableItems, 'main:scp-001')).assertFalse();
       const restored = await coldVm.find('main:scp-001');
       expect(restored !== undefined).assertTrue();
       expect(restored!.scrollOffset).assertEqual(777);
       expect(restored!.completed).assertTrue();
+    });
+
+    it('maps archivist rank titles across all level thresholds', 0, () => {
+      expect(researchRankTitleForLevel(1)).assertEqual(ResearchRankTitle.VISITOR);
+      expect(researchRankTitleForLevel(1)).assertEqual('见习档案员');
+      expect(researchRankTitleForLevel(4)).assertEqual('见习档案员');
+      expect(researchRankTitleForLevel(5)).assertEqual('档案助理');
+      expect(researchRankTitleForLevel(9)).assertEqual('档案助理');
+      expect(researchRankTitleForLevel(10)).assertEqual('档案员');
+      expect(researchRankTitleForLevel(19)).assertEqual('档案员');
+      expect(researchRankTitleForLevel(20)).assertEqual('高级档案员');
+      expect(researchRankTitleForLevel(34)).assertEqual('高级档案员');
+      expect(researchRankTitleForLevel(35)).assertEqual('档案编审');
+      expect(researchRankTitleForLevel(49)).assertEqual('档案编审');
+      expect(researchRankTitleForLevel(50)).assertEqual('首席档案编审');
+      expect(researchRankTitleForLevel(80)).assertEqual('首席档案编审');
     });
   });
 }

@@ -453,6 +453,11 @@ export class ArticleViewModel implements ViewModelLifecycle {
       !this.isContentCurrent(content)) {
       return;
     }
+    // Completed articles lock their reading progress so re-reading from the top
+    // or scrolling back up never overwrites progress or re-enters "继续阅读".
+    if (this.completed) {
+      return;
+    }
     const normalized = this.normalizeReadingOffset(offset);
     // Until find() resolves, zero is only the renderer's provisional default.
     // Do not let an early lifecycle callback overwrite a saved positive
@@ -1188,8 +1193,10 @@ export class ArticleViewModel implements ViewModelLifecycle {
 
     let offset: number = 0;
     if (snapshot !== undefined) {
-      offset = this.normalizeReadingOffset(snapshot.scrollOffset);
       this.completed = snapshot.completed === true;
+      // Re-opening a completed article starts cleanly at the top while the
+      // status bar remains locked at "已读完".
+      offset = this.completed ? 0 : this.normalizeReadingOffset(snapshot.scrollOffset);
     } else {
       this.completed = false;
     }

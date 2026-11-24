@@ -990,10 +990,43 @@ struct ScpArticlePage {
       const next = !this.completed;
       await this.viewModel.setCompleted(next);
       this.completed = next;
-      this.showToast(next ? '已标为已读' : '已取消已读标记');
+      if (!next && this.acceptsProgressEvents) {
+        this.viewModel.updateProgress(this.currentReadingOffset()).catch((): void => {
+        });
+      }
+      this.showToast(next ? '已标为已读，进度已锁定' : '已取消已读，进度已解锁');
     } catch (error) {
       this.showToast(error instanceof Error ? error.message : '保存完成标记失败');
     }
+  }
+
+  private offlineMenuLabel(): string {
+    if (this.offlineSaving) {
+      return this.offlineProgressTotal > 0 ?
+        `正在离线保存（${this.offlineProgressCompleted}/${this.offlineProgressTotal}）…` :
+        '正在离线保存…';
+    }
+    const snapshot = this.offlineSnapshot;
+    if (snapshot === undefined) {
+      return '保存供离线阅读';
+    }
+    if (snapshot.missingImages > 0) {
+      return `补齐离线图片（缺 ${snapshot.missingImages} 张）`;
+    }
+    if (snapshot.requiresNetworkInteractive) {
+      return '离线已保存 · 更新副本';
+    }
+    return '离线已就绪 · 更新副本';
+  }
+
+  private offlineMenuIcon(): Resource {
+    if (this.offlineSaving || this.offlineSnapshot === undefined) {
+      return $r('sys.symbol.archivebox_fill');
+    }
+    if (this.offlineSnapshot.missingImages > 0) {
+      return $r('sys.symbol.arrow_clockwise');
+    }
+    return $r('sys.symbol.checkmark_circle_fill');
   }
 
   /** Product navigation effect emitted by the feature-owned related-tale list. */
@@ -1030,10 +1063,11 @@ struct ScpArticlePage {
    * for More and keep only the primary actions outside it.
    */
   private articleMenuMaxCount(): number {
-    // Every article keeps 收藏 and the explicit completion annotation as
-    // first-level actions. Browser and reading settings remain in More.
-    const baseCount = this.canOpenArchive3D() ? 4 : 3;
-    return baseCount + (supportsSplitNavigation(windowWidthVp()) ? 1 : 0);
+    // Native mode surfaces 收藏 + 反白透视 (+ 三维档案 when available) + More.
+    // Web mode omits 反白透视, so it surfaces 收藏 (+ 三维档案) + More.
+    const primaryActions = 1 + (this.webModeActive ? 0 : 1) + (this.canOpenArchive3D() ? 1 : 0);
+    const splitExtra = supportsSplitNavigation(windowWidthVp()) ? 1 : 0;
+    return primaryActions + 1 + splitExtra;
   }
 
   private articleMenuItems(): HdsNavigationMenuItemOptions[] {
@@ -1049,16 +1083,18 @@ struct ScpArticlePage {
         }
       }
     }];
-    items.push({
-      content: {
-        icon: this.completed ? $r('sys.symbol.checkmark_circle_fill') :
-          $r('sys.symbol.checkmark_circle'),
-        label: this.completed ? '取消已读标记' : '标为已读',
-        action: () => {
-          this.toggleCompleted();
+    if (!this.webModeActive) {
+      items.push({
+        content: {
+          icon: this.revealHiddenText ? $r('sys.symbol.eye_slash') : $r('sys.symbol.eye'),
+          label: this.revealHiddenText ? '关闭反白透视' : '反白透视',
+          isEnabled: this.document !== undefined,
+          action: () => {
+            this.toggleRevealHiddenText();
+          }
         }
-      }
-    });
+      });
+    }
     if (this.canOpenArchive3D()) {
       items.push({
         content: {
@@ -1111,6 +1147,16 @@ struct ScpArticlePage {
           }
         }
       });
+      items.push({
+        content: {
+          icon: this.completed ? $r('sys.symbol.checkmark_circle_fill') :
+            $r('sys.symbol.checkmark_circle'),
+          label: this.completed ? '取消已读标记' : '标为已读',
+          action: () => {
+            this.toggleCompleted();
+          }
+        }
+      });
     } else {
       items.push({
         content: {
@@ -1133,40 +1179,6 @@ struct ScpArticlePage {
           action: () => {
             this.hapticService.playSelection(this.settings.hapticEnabled);
             this.searchBarOpen = !this.searchBarOpen;
-          }
-        }
-      });
-      items.push({
-        content: {
-          icon: this.revealHiddenText ? $r('sys.symbol.eye_slash') : $r('sys.symbol.eye'),
-          label: this.revealHiddenText ? '关闭反白透视' : '反白透视',
-          isEnabled: this.document !== undefined,
-          action: () => {
-            this.toggleRevealHiddenText();
-          }
-        }
-      });
-    }
-    items.push({
-      content: {
-        icon: this.offlineSnapshot !== undefined ?
-          $r('sys.symbol.arrow_clockwise') : $r('sys.symbol.archivebox_fill'),
-        label: this.offlineSnapshot === undefined ? '保存供离线阅读' :
-          (this.offlineSnapshot.missingImages > 0 ? '补齐离线图片' : '更新离线副本'),
-        isEnabled: this.document !== undefined && !this.offlineSaving,
-        action: () => {
-          this.saveArticleForOffline();
-        }
-      }
-    });
-    if (this.offlineSnapshot !== undefined) {
-      items.push({
-        content: {
-          icon: $r('sys.symbol.trash'),
-          label: '移除离线保存',
-          isEnabled: !this.offlineSaving,
-          action: () => {
-            this.removeOfflineArticle();
           }
         }
       });
@@ -1201,6 +1213,28 @@ struct ScpArticlePage {
         action: () => AppNavigationCoordinator.push(this.pageStack, AppRoutes.SETTINGS)
       }
     });
+    items.push({
+      content: {
+        icon: this.offlineMenuIcon(),
+        label: this.offlineMenuLabel(),
+        isEnabled: this.document !== undefined && !this.offlineSaving,
+        action: () => {
+          this.saveArticleForOffline();
+        }
+      }
+    });
+    if (this.offlineSnapshot !== undefined) {
+      items.push({
+        content: {
+          icon: $r('sys.symbol.trash'),
+          label: '移除离线保存',
+          isEnabled: !this.offlineSaving,
+          action: () => {
+            this.removeOfflineArticle();
+          }
+        }
+      });
+    }
     return items;
   }
 
@@ -1211,6 +1245,7 @@ struct ScpArticlePage {
       level: this.research.profile.level,
       experience: this.research.profile.experience,
       contentReady: this.document !== undefined && !this.loading,
+      completed: this.completed,
       compactProfile: this.isStoryDetail(),
       materialEnabled: this.settings.immersiveMaterialEnabled,
       sidePanelAvailable: this.sidePanelAvailable,
@@ -1324,11 +1359,8 @@ struct ScpArticlePage {
             targetAnchorEpoch: this.targetAnchorEpoch,
             tocOpenEpoch: this.tocOpenEpoch,
             searchBarOpen: this.searchBarOpen,
-            offlineEnabled: true,
+            completed: this.completed,
             offlineSnapshot: this.offlineSnapshot,
-            offlineSaving: this.offlineSaving,
-            offlineProgressCompleted: this.offlineProgressCompleted,
-            offlineProgressTotal: this.offlineProgressTotal,
             offlineRevision: this.offlineRevision,
             seriesContext: this.seriesContext,
             seriesRevision: this.seriesRevision,
@@ -1343,11 +1375,11 @@ struct ScpArticlePage {
             onOpenSeriesHub: (hubId: string, title: string): void => {
               this.openSeriesHubFromPage(hubId, title);
             },
-            onSaveOffline: (): void => {
-              this.saveArticleForOffline();
+            onToggleCompleted: (): void => {
+              this.toggleCompleted();
             },
-            onRemoveOffline: (): void => {
-              this.removeOfflineArticle();
+            onBottomPullHaptic: (): void => {
+              this.hapticService.playSelection(this.settings.hapticEnabled);
             },
             onSwitchToWebMode: (): void => {
               this.hapticService.playSelection(this.settings.hapticEnabled);

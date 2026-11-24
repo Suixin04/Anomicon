@@ -327,9 +327,10 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.historyLoading = this.history.loading;
     this.historyError = this.history.error;
     this.historyInitialized = this.history.initialized;
-    const resumable = this.history.resumableItems !== undefined ?
+    const resumable = (this.history.resumableItems !== undefined ?
       this.history.resumableItems :
-      this.history.items.filter((entry: ReadingHistoryEntry): boolean => entry.scrollOffset > 0);
+      this.history.items.filter((entry: ReadingHistoryEntry): boolean => entry.scrollOffset > 0))
+      .filter((entry: ReadingHistoryEntry): boolean => !entry.completed);
     this.resumeEntries = resumable.slice(0, 1);
     this.enrolledSeries = this.storySeries !== undefined ?
       this.storySeries.listEnrolled().slice() : [];

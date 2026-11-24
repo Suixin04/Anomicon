@@ -135,7 +135,7 @@ export struct ResearchProfileCard {
 
   private displayTitle(): string {
     const value = this.title.trim();
-    return value.length > 0 ? value : '初访者';
+    return value.length > 0 ? value : '见习档案员';
   }
 
   private experienceInLevel(): number {
