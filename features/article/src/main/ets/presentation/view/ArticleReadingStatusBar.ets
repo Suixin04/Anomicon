@@ -26,7 +26,11 @@ export struct ArticleReadingStatusBar {
   @Param sidePanelAvailable: boolean = false;
   @Param sidePanelOpen: boolean = false;
   @Param sidePanelLabel: string = '';
+  @Param revealHiddenActive: boolean = false;
+  @Param webModeActive: boolean = false;
   @Event onToggleSidePanel: () => void = () => {};
+  @Event onDisableRevealHidden: () => void = () => {};
+  @Event onExitWebMode: () => void = () => {};
 
   @Local private barContainerWidth: number = 0;
 
@@ -58,28 +62,76 @@ export struct ArticleReadingStatusBar {
   build() {
     Row() {
       Row({ space: 8 }) {
-        Progress({
-          value: this.contentReady ? this.normalizedProgress() : 0,
-          total: 100,
-          type: ProgressType.Ring
-        })
-          .width(24)
-          .height(24)
-          .color($r('sys.color.icon_emphasize'))
-          .backgroundColor($r('sys.color.comp_background_tertiary'))
-          .style({
-            strokeWidth: 3,
-            enableSmoothEffect: true,
-            shadow: false
-          })
+        if (this.webModeActive) {
+          SymbolGlyph($r('sys.symbol.website'))
+            .fontSize(16)
+            .fontColor([$r('sys.color.icon_emphasize')])
 
-        Text(this.contentReady ? `已读 ${this.normalizedProgress()}%` : '正在准备正文')
-          .fontSize(AppTypography.CAPTION_L)
-          .fontWeight(FontWeight.Medium)
-          .fontColor($r('sys.color.font'))
-          .maxLines(1)
+          Text('原版网页模式')
+            .fontSize(AppTypography.CAPTION_L)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font'))
+            .maxLines(1)
+        } else {
+          Progress({
+            value: this.contentReady ? this.normalizedProgress() : 0,
+            total: 100,
+            type: ProgressType.Ring
+          })
+            .width(24)
+            .height(24)
+            .color($r('sys.color.icon_emphasize'))
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .style({
+              strokeWidth: 3,
+              enableSmoothEffect: true,
+              shadow: false
+            })
+
+          Text(this.contentReady ? `已读 ${this.normalizedProgress()}%` : '正在准备正文')
+            .fontSize(AppTypography.CAPTION_L)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font'))
+            .maxLines(1)
+        }
 
         Blank()
+
+        if (this.webModeActive) {
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.doc_text'))
+              .fontSize(13)
+              .fontColor([accentPillForegroundColor()])
+            Text('返回原生')
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(accentPillForegroundColor())
+              .maxLines(1)
+          }
+          .height(24)
+          .padding({ left: 8, right: 8 })
+          .borderRadius(12)
+          .backgroundColor(accentPillBackgroundColor())
+          .onClick(() => this.onExitWebMode())
+          .accessibilityText('返回原生阅读模式')
+        } else if (this.revealHiddenActive) {
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.eye'))
+              .fontSize(13)
+              .fontColor(['#B45309'])
+            Text('透视中')
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(FontWeight.Medium)
+              .fontColor('#B45309')
+              .maxLines(1)
+          }
+          .height(24)
+          .padding({ left: 8, right: 8 })
+          .borderRadius(12)
+          .backgroundColor('#22F59E0B')
+          .onClick(() => this.onDisableRevealHidden())
+          .accessibilityText('关闭反白透视')
+        }
 
         if (this.compactProfile) {
           Text(`Lv.${this.normalizedInteger(this.level, 1)} · ${this.normalizedInteger(this.experience)} XP`)
@@ -99,7 +151,7 @@ export struct ArticleReadingStatusBar {
             .maxLines(1)
         }
 
-        if (this.sidePanelAvailable) {
+        if (this.sidePanelAvailable && !this.webModeActive) {
           Divider()
             .vertical(true)
             .height(14)
@@ -129,16 +181,19 @@ export struct ArticleReadingStatusBar {
       .width('100%')
       .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
       .height(32)
-      .padding({ left: 12, right: this.sidePanelAvailable ? 4 : 12 })
+      .padding({ left: 12, right: (this.sidePanelAvailable && !this.webModeActive) ? 4 : 12 })
       .borderRadius(16)
       .backgroundColor(this.materialEnabled ?
         Color.Transparent : $r('sys.color.comp_background_primary'))
       .systemMaterial(this.materialEnabled ? this.material : undefined)
       .accessibilityText(
-        this.contentReady ?
-          `本文已读${this.normalizedProgress()}%，等级${this.normalizedInteger(this.level, 1)}，` +
+        this.webModeActive ?
+          `正在浏览原版网页模式，等级${this.normalizedInteger(this.level, 1)}，` +
             `总经验${this.normalizedInteger(this.experience)}` :
-          '正在准备正文阅读状态'
+          (this.contentReady ?
+            `本文已读${this.normalizedProgress()}%，等级${this.normalizedInteger(this.level, 1)}，` +
+              `总经验${this.normalizedInteger(this.experience)}` :
+            '正在准备正文阅读状态')
       )
     }
     .width('100%')

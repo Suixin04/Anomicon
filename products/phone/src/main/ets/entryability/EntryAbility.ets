@@ -1,10 +1,11 @@
 import { AbilityConstant, Configuration, ConfigurationConstant, UIAbility, Want } from '@kit.AbilityKit';
 import { hilog } from '@kit.PerformanceAnalysisKit';
 import { FrameCallback, window } from '@kit.ArkUI';
+import { webview } from '@kit.ArkWeb';
 import { ThemeMode } from 'settings';
 import { AppLifecycleCoordinator } from '../composition/AppLifecycleCoordinator';
 import { notifyStartingWindowReleased } from '../startup/StartupCoordinator';
-import { updateWindowAvoidArea, updateWindowLayoutSize } from 'anomiconbasic';
+import { setDarkModeActive, updateWindowAvoidArea, updateWindowLayoutSize } from 'anomiconbasic';
 
 const DOMAIN: number = 0x0000;
 const TAG: string = 'AnomiconAbility';
@@ -117,6 +118,12 @@ export default class EntryAbility extends UIAbility {
       uiContext.postDelayedFrameCallback(new StartupWarmUpFrameCallback((): void => {
         if (lifecycle.isCurrentAbility(this.context)) {
           lifecycle.warmUp(this.context);
+          try {
+            webview.WebviewController.initializeWebEngine();
+          } catch (error) {
+            const businessError = error as BusinessError;
+            hilog.warn(DOMAIN, TAG, 'Initialize web engine failed: %{public}s', businessError.message);
+          }
         }
       }), STARTUP_WARM_UP_DELAY_MS);
     } catch (error) {
@@ -216,13 +223,10 @@ export default class EntryAbility extends UIAbility {
     mode: ThemeMode,
     colorMode: ConfigurationConstant.ColorMode | undefined
   ): string {
-    if (mode === ThemeMode.DARK) {
-      return '#000000';
-    }
-    if (mode === ThemeMode.LIGHT) {
-      return '#F1F3F5';
-    }
-    return colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK ? '#000000' : '#F1F3F5';
+    const dark = mode === ThemeMode.DARK ||
+      (mode !== ThemeMode.LIGHT && colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK);
+    setDarkModeActive(dark);
+    return dark ? '#000000' : '#F1F3F5';
   }
 
   private applyWindowBackground(mainWindow: window.Window, color: string): void {

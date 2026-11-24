@@ -8,6 +8,7 @@ import {
   badgeInfoBackgroundColor,
   CARD_PRESS_MODIFIER,
   ContentUpdateNotice,
+  isDarkModeActive,
   materialCardBorderColor,
   materialCardSurfaceColor,
   objectClassColor,
@@ -24,8 +25,11 @@ import { ArticleRelatedTale } from '../../domain/ArticleContracts';
 import {
   ScpArticleDocument,
   ScpBlockType,
+  ScpCalloutTone,
   ScpContentBlock,
   ScpFootnote,
+  ScpHiddenTextKind,
+  ScpTextAlign,
   ScpTextSpan,
   ScpTextStyle
 } from '../../domain/ScpDocument';
@@ -63,6 +67,7 @@ class ArticleBlockRowState {
   readonly key: string;
   @Trace block: ScpContentBlock;
   @Trace index: number;
+  @Trace activeTabIndex: number = 0;
   @Trace spans: ArticleSpanRowState[] = [];
   @Trace children: ArticleBlockRowState[] = [];
 
@@ -88,6 +93,9 @@ class ArticleBlockRowState {
     const nextChildren = syncArticleBlockRows(this.children, block.children);
     if (!sameArticleBlockRows(this.children, nextChildren)) {
       this.children = nextChildren;
+    }
+    if (this.children.length > 0 && this.activeTabIndex >= this.children.length) {
+      this.activeTabIndex = 0;
     }
   }
 }
@@ -289,7 +297,8 @@ enum ArticleSectionKind {
   FOOTNOTES_HEADER = 5,
   FOOTNOTE = 6,
   RELATED_TALES = 7,
-  FOOTER = 8
+  FOOTER = 8,
+  WEB_RECOMMEND_BANNER = 9
 }
 
 @ObservedV2
@@ -360,12 +369,30 @@ function sameArticleSectionRows(before: ArticleSectionRow[], after: ArticleSecti
   return true;
 }
 
+function hasInlineImages(blocks: ScpContentBlock[]): boolean {
+  for (let index: number = 0; index < blocks.length; index++) {
+    if (blocks[index].type === ScpBlockType.IMAGE) {
+      return true;
+    }
+    if (hasInlineImages(blocks[index].children)) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function measureBlockWeight(block: ScpContentBlock): number {
   if (block.type === ScpBlockType.IMAGE) {
-    return 260;
+    return 240;
+  }
+  if (block.type === ScpBlockType.ACS_HEADER) {
+    return 150;
   }
   if (block.type === ScpBlockType.EMBED) {
     return 120;
+  }
+  if (block.type === ScpBlockType.TABS && block.children.length > 0) {
+    return measureBlockWeight(block.children[0]) + 48;
   }
   let textLen: number = block.caption.length;
   for (let index: number = 0; index < block.spans.length; index++) {
@@ -425,8 +452,12 @@ export struct ArticleNativeRenderer {
   @Param galleryReturnEpoch: number = 0;
   @Param materialEnabled: boolean = true;
   @Param sidePanelOpen: boolean = false;
+  @Param revealHiddenText: boolean = false;
+  @Param webModeHint: string = '';
 
   @Event onRetryPartial: () => void = () => {};
+  @Event onHiddenRevealInteraction: () => void = () => {};
+  @Event onSwitchToWebMode: () => void = () => {};
   @Event onReadingProgressChange: (percent: number) => void = (_percent: number) => {};
   @Event onAnchorJump: () => void = () => {};
   @Event onScrollDidScroll: () => void = () => {};
@@ -456,6 +487,7 @@ export struct ArticleNativeRenderer {
   @Local private containerWidth: number = 0;
   @Local private activeWorkbenchTab: number = 0;
   @Local private userClosedSidePanel: boolean = false;
+  @Local private revealedHiddenKeys: string[] = [];
   private readonly galleryController: SwiperController = new SwiperController();
   private readonly footnoteSheetScroller: Scroller = new Scroller();
   private readonly sidePanelScroller: Scroller = new Scroller();
@@ -499,6 +531,7 @@ export struct ArticleNativeRenderer {
 
     if (!sameItem) {
       this.userClosedSidePanel = false;
+      this.revealedHiddenKeys = [];
     }
     this.clearHighlightTimer();
     this.highlightedAnchorKey = '';
@@ -509,7 +542,12 @@ export struct ArticleNativeRenderer {
     this.lastReportedPercent = -1;
     this.syncDocumentAndSections();
     this.lastDocumentItemId = this.document.itemId;
-    this.galleryController.changeIndex(0, false);
+    if (this.shouldRenderGallerySection()) {
+      try {
+        this.galleryController.changeIndex(0, false);
+      } catch (_error) {
+      }
+    }
     this.syncWorkbenchTabDefault();
 
     if (sameItem && (this.footnoteSheetVisible || this.sidePanelOpen) && this.footnoteRows.length > 0) {
@@ -529,7 +567,7 @@ export struct ArticleNativeRenderer {
     this.syncSidePanelAvailability();
   }
 
-  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody')
+  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint')
   onLayoutInputsChange(): void {
     this.syncDocumentAndSections();
     this.syncWorkbenchTabDefault();
@@ -548,16 +586,50 @@ export struct ArticleNativeRenderer {
 
   @Monitor('galleryReturnEpoch')
   onGalleryReturn(): void {
-    if (this.document.images.length === 0) {
+    if (this.document.images.length === 0 || !this.shouldRenderGallerySection()) {
       return;
     }
     const next = Math.max(0, Math.min(this.galleryReturnIndex, this.document.images.length - 1));
     this.galleryIndex = next;
-    this.galleryController.changeIndex(next, false);
+    try {
+      this.galleryController.changeIndex(next, false);
+    } catch (_error) {
+    }
+  }
+
+  private shouldRenderGallerySection(): boolean {
+    return !hasInlineImages(this.document.blocks) && this.document.images.length > 0;
+  }
+
+  private imageIndexOf(url: string): number {
+    const trimmed = url.trim();
+    if (trimmed.length === 0) {
+      return -1;
+    }
+    for (let index: number = 0; index < this.document.images.length; index++) {
+      if (this.document.images[index].source.trim() === trimmed) {
+        return index;
+      }
+    }
+    return -1;
   }
 
   private syncDocumentAndSections(): void {
-    const nextBlocks = syncArticleBlockRows(this.blockRows, this.document.blocks);
+    const baseBlocks = this.document.blocks.slice();
+    if (this.document.creditBlocks.length > 0) {
+      baseBlocks.push(new ScpContentBlock(
+        `${this.document.itemId}:__credits__`,
+        ScpBlockType.COLLAPSIBLE,
+        [],
+        '',
+        '著作信息',
+        0,
+        this.document.creditBlocks,
+        '收起著作信息',
+        false
+      ));
+    }
+    const nextBlocks = syncArticleBlockRows(this.blockRows, baseBlocks);
     if (!sameArticleBlockRows(this.blockRows, nextBlocks)) {
       this.blockRows = nextBlocks;
     }
@@ -623,6 +695,18 @@ export struct ArticleNativeRenderer {
         12
       );
     }
+    if (this.webModeHint.length > 0) {
+      pushSection(
+        '__web_recommend__',
+        ArticleSectionKind.WEB_RECOMMEND_BANNER,
+        68,
+        undefined,
+        undefined,
+        false,
+        false,
+        12
+      );
+    }
     if (this.hasHeaderCardContent()) {
       pushSection(
         '__header__',
@@ -635,7 +719,7 @@ export struct ArticleNativeRenderer {
         16
       );
     }
-    if (!this.galleryAfterBody && this.document.images.length > 0) {
+    if (!this.galleryAfterBody && this.shouldRenderGallerySection()) {
       pushSection(
         '__gallery_top__',
         ArticleSectionKind.GALLERY,
@@ -723,7 +807,7 @@ export struct ArticleNativeRenderer {
       }
     }
 
-    if (this.galleryAfterBody && this.document.images.length > 0) {
+    if (this.galleryAfterBody && this.shouldRenderGallerySection()) {
       pushSection(
         '__gallery_bottom__',
         ArticleSectionKind.GALLERY,
@@ -1164,7 +1248,8 @@ export struct ArticleNativeRenderer {
   }
 
   private isExpanded(block: ScpContentBlock): boolean {
-    return ArticleRenderer.isExpanded(this.expandedKeys, block.key);
+    const toggled = ArticleRenderer.isExpanded(this.expandedKeys, block.key);
+    return block.initiallyExpanded ? !toggled : toggled;
   }
 
   private footnoteRefIds(block: ScpContentBlock): string[] {
@@ -1175,39 +1260,317 @@ export struct ArticleNativeRenderer {
     return ArticleRenderer.textOf(block);
   }
 
+  private maxTableColumnCount(tableRow: ArticleBlockRowState): number {
+    let maxCols: number = 0;
+    for (let index: number = 0; index < tableRow.children.length; index++) {
+      const count = tableRow.children[index].children.length;
+      if (count > maxCols) {
+        maxCols = count;
+      }
+    }
+    return maxCols;
+  }
+
+  private tableColumnWidth(maxCols: number): number {
+    if (maxCols <= 0) {
+      return 120;
+    }
+    return Math.max(115, Math.min(180, Math.floor(540 / maxCols)));
+  }
+
+  private effectiveDarkSurface(inTerminal: boolean): boolean {
+    return inTerminal || isDarkModeActive();
+  }
+
+  private isHiddenKeyRevealed(key: string): boolean {
+    return this.revealHiddenText || this.revealedHiddenKeys.indexOf(key) >= 0;
+  }
+
+  private toggleLocalHiddenKey(key: string): void {
+    const next = this.revealedHiddenKeys.slice();
+    const index = next.indexOf(key);
+    if (index >= 0) {
+      next.splice(index, 1);
+    } else {
+      next.push(key);
+    }
+    this.revealedHiddenKeys = next;
+    this.onHiddenRevealInteraction();
+  }
+
+  private resolveBlockTextAlign(align: ScpTextAlign, fallbackStart: boolean): TextAlign {
+    switch (align) {
+      case ScpTextAlign.START:
+        return TextAlign.Start;
+      case ScpTextAlign.CENTER:
+        return TextAlign.Center;
+      case ScpTextAlign.END:
+        return TextAlign.End;
+      case ScpTextAlign.JUSTIFY:
+        return TextAlign.JUSTIFY;
+      default:
+        return fallbackStart ? TextAlign.Start : TextAlign.JUSTIFY;
+    }
+  }
+
+  private resolvedSpanFontSize(span: ScpTextSpan, baseSize: number): number {
+    let size = baseSize * (Number.isFinite(span.fontScale) && span.fontScale > 0 ? span.fontScale : 1);
+    if (span.superscript || span.subscript) {
+      size *= 0.76;
+    } else if (span.monospace) {
+      size *= 0.94;
+    }
+    return Math.max(10, Math.min(this.fontSize * 2.0, size));
+  }
+
+  private resolvedSpanBaseline(span: ScpTextSpan, baseSize: number): LengthMetrics {
+    if (span.superscript) {
+      return LengthMetrics.fp(baseSize * 0.28);
+    }
+    if (span.subscript) {
+      return LengthMetrics.fp(-baseSize * 0.16);
+    }
+    return LengthMetrics.fp(0);
+  }
+
+  private resolvedVisibleSpanColor(span: ScpTextSpan, inTerminal: boolean): ResourceColor {
+    const darkSurface = this.effectiveDarkSurface(inTerminal);
+    if (span.color.length > 0) {
+      const adapted = ArticleRenderer.resolveAdaptiveSpanColor(span.color, darkSurface);
+      if (adapted.length > 0) {
+        return adapted;
+      }
+    }
+    if (inTerminal) {
+      return span.style === ScpTextStyle.CODE || span.style === ScpTextStyle.LINK ? '#67E8F9' : '#E2E8F0';
+    }
+    return span.style === ScpTextStyle.CODE || span.style === ScpTextStyle.LINK ?
+      $r('sys.color.font_emphasize') : $r('sys.color.font');
+  }
+
+  private resolvedSpanDecoration(
+    span: ScpTextSpan,
+    inTerminal: boolean
+  ): DecorationStyleInterface {
+    if (span.deleted) {
+      return {
+        type: TextDecorationType.LineThrough,
+        color: this.resolvedVisibleSpanColor(span, inTerminal)
+      };
+    }
+    if (span.underline || span.style === ScpTextStyle.LINK) {
+      return {
+        type: TextDecorationType.Underline,
+        color: inTerminal ? '#94A3B8' : $r('sys.color.font_secondary')
+      };
+    }
+    return { type: TextDecorationType.None };
+  }
+
+  private resolvedSpanBackground(span: ScpTextSpan, inTerminal: boolean): TextBackgroundStyle {
+    const darkSurface = this.effectiveDarkSurface(inTerminal);
+    if (span.style === ScpTextStyle.CODE) {
+      return { color: darkSurface ? '#253040' : '#12000000', radius: 4 };
+    }
+    return { color: Color.Transparent, radius: 0 };
+  }
+
+  private resolvedHiddenForeground(
+    span: ScpTextSpan,
+    key: string,
+    inTerminal: boolean,
+    forceReveal: boolean
+  ): ResourceColor {
+    const revealed = forceReveal || this.isHiddenKeyRevealed(key);
+    const darkSurface = this.effectiveDarkSurface(inTerminal);
+    if (span.hiddenKind === ScpHiddenTextKind.WHITE_EASTER_EGG) {
+      if (!revealed) {
+        return Color.Transparent;
+      }
+      return darkSurface ? '#FCD34D' : '#92400E';
+    }
+    if (span.hiddenKind === ScpHiddenTextKind.BLACKBOX) {
+      if (!revealed) {
+        return darkSurface ? '#2D333B' : '#141414';
+      }
+      return '#FDE68A';
+    }
+    if (!revealed) {
+      return inTerminal ? '#94A3B8' : $r('sys.color.font_tertiary');
+    }
+    return darkSurface ? '#C4B5FD' : '#6D28D9';
+  }
+
+  private resolvedHiddenBackground(
+    span: ScpTextSpan,
+    key: string,
+    inTerminal: boolean,
+    forceReveal: boolean
+  ): TextBackgroundStyle {
+    const revealed = forceReveal || this.isHiddenKeyRevealed(key);
+    const darkSurface = this.effectiveDarkSurface(inTerminal);
+    if (span.hiddenKind === ScpHiddenTextKind.WHITE_EASTER_EGG) {
+      return {
+        color: revealed ?
+          (darkSurface ? '#2AF59E0B' : '#22F59E0B') :
+          (darkSurface ? '#16FFFFFF' : '#0C000000'),
+        radius: 4
+      };
+    }
+    if (span.hiddenKind === ScpHiddenTextKind.BLACKBOX) {
+      return {
+        color: revealed ?
+          (darkSurface ? '#3F3F46' : '#27272A') :
+          (darkSurface ? '#2D333B' : '#141414'),
+        radius: 3
+      };
+    }
+    return {
+      color: revealed ?
+        (darkSurface ? '#268B5CF6' : '#1A8B5CF6') :
+        (darkSurface ? '#1F334155' : '#12000000'),
+      radius: 4
+    };
+  }
+
+  private resolvedHiddenDecoration(
+    span: ScpTextSpan,
+    key: string,
+    inTerminal: boolean,
+    forceReveal: boolean
+  ): DecorationStyleInterface {
+    const revealed = forceReveal || this.isHiddenKeyRevealed(key);
+    const darkSurface = this.effectiveDarkSurface(inTerminal);
+    if (span.hiddenKind === ScpHiddenTextKind.WHITE_EASTER_EGG && !revealed) {
+      return {
+        type: TextDecorationType.Underline,
+        color: darkSurface ? '#2EFFFFFF' : '#24000000',
+        style: TextDecorationStyle.DOTTED
+      };
+    }
+    if (revealed && span.deleted) {
+      return {
+        type: TextDecorationType.LineThrough,
+        color: this.resolvedHiddenForeground(span, key, inTerminal, forceReveal)
+      };
+    }
+    if (revealed && (span.underline || span.style === ScpTextStyle.LINK)) {
+      return {
+        type: TextDecorationType.Underline,
+        color: this.resolvedHiddenForeground(span, key, inTerminal, forceReveal)
+      };
+    }
+    return { type: TextDecorationType.None };
+  }
+
+  private handleHiddenSpanClick(span: ScpTextSpan, key: string, forceReveal: boolean): void {
+    const revealed = forceReveal || this.isHiddenKeyRevealed(key);
+    if (!revealed) {
+      this.toggleLocalHiddenKey(key);
+      return;
+    }
+    if (span.style === ScpTextStyle.LINK && span.target.length > 0) {
+      this.handleOpenArticleLink(span.target, span.text);
+      return;
+    }
+    if (!forceReveal && !this.revealHiddenText) {
+      this.toggleLocalHiddenKey(key);
+    }
+  }
+
+  private acsDisruptionColor(level: string): string {
+    const lower = level.trim().toLowerCase();
+    if (lower === 'amida' || lower === 'ekhi') {
+      return '#D9383A';
+    }
+    if (lower === 'keneq') {
+      return '#D97706';
+    }
+    if (lower === 'vlam') {
+      return '#2563EB';
+    }
+    return '#475569';
+  }
+
+  private acsRiskColor(level: string): string {
+    const lower = level.trim().toLowerCase();
+    if (lower === '危急' || lower === 'critical' || lower === '危险' || lower === 'danger') {
+      return '#D9383A';
+    }
+    if (lower === '警告' || lower === 'warning') {
+      return '#D97706';
+    }
+    if (lower === '需谨慎' || lower === 'caution') {
+      return '#0284C7';
+    }
+    return '#475569';
+  }
+
   @Builder
-  private spanText(row: ArticleBlockRowState) {
+  private spanText(
+    row: ArticleBlockRowState,
+    inTerminal: boolean = false,
+    boldAll: boolean = false,
+    startAlign: boolean = false,
+    baseSizeOverride: number = 0,
+    forceReveal: boolean = false
+  ) {
     Text() {
       ForEach(row.spans, (spanRow: ArticleSpanRowState) => {
         if (spanRow.span.style === ScpTextStyle.FOOTNOTE_REFERENCE) {
           Span(`[${spanRow.span.text}]`)
-            .fontSize(this.fontSize * 0.75)
+            .fontSize((baseSizeOverride > 0 ? baseSizeOverride : this.fontSize) * 0.75)
             .fontWeight(FontWeight.Medium)
-            .fontColor($r('sys.color.font_emphasize'))
+            .fontColor(inTerminal ? '#67E8F9' : $r('sys.color.font_emphasize'))
+            .baselineOffset(LengthMetrics.fp((baseSizeOverride > 0 ? baseSizeOverride : this.fontSize) * 0.24))
             .onClick(() => this.openFootnoteSheet(spanRow.span.referenceId, spanRow.span.text))
-        } else {
+        } else if (spanRow.span.hiddenKind === ScpHiddenTextKind.NONE) {
           Span(spanRow.span.text)
-            .fontWeight(spanRow.span.style === ScpTextStyle.STRONG ? FontWeight.Bold : FontWeight.Regular)
-            .fontStyle(spanRow.span.style === ScpTextStyle.EMPHASIS ? FontStyle.Italic : FontStyle.Normal)
-            .decoration({
-              type: spanRow.span.style === ScpTextStyle.DELETED ?
-                TextDecorationType.LineThrough :
-                (spanRow.span.style === ScpTextStyle.LINK ?
-                  TextDecorationType.Underline : TextDecorationType.None),
-              color: $r('sys.color.font_secondary')
-            })
-            .fontColor(spanRow.span.style === ScpTextStyle.CODE || spanRow.span.style === ScpTextStyle.LINK ?
-              $r('sys.color.font_emphasize') : $r('sys.color.font'))
+            .fontSize(this.resolvedSpanFontSize(
+              spanRow.span,
+              baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
+            ))
+            .fontWeight(boldAll || spanRow.span.bold ? FontWeight.Bold : FontWeight.Regular)
+            .fontStyle(spanRow.span.italic ? FontStyle.Italic : FontStyle.Normal)
+            .fontFamily(spanRow.span.monospace ? 'monospace' : 'HarmonyOS Sans')
+            .baselineOffset(this.resolvedSpanBaseline(
+              spanRow.span,
+              baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
+            ))
+            .decoration(this.resolvedSpanDecoration(spanRow.span, inTerminal))
+            .fontColor(this.resolvedVisibleSpanColor(spanRow.span, inTerminal))
+            .textBackgroundStyle(this.resolvedSpanBackground(spanRow.span, inTerminal))
             .onClick(spanRow.span.style === ScpTextStyle.LINK ?
               () => this.handleOpenArticleLink(spanRow.span.target, spanRow.span.text) : () => {
               })
+        } else {
+          Span((spanRow.span.hiddenKind !== ScpHiddenTextKind.ZERO_SIZE_WHISPER ||
+            forceReveal || this.isHiddenKeyRevealed(spanRow.key)) ? spanRow.span.text : ' [···] ')
+            .fontSize((spanRow.span.hiddenKind === ScpHiddenTextKind.ZERO_SIZE_WHISPER &&
+              !forceReveal && !this.isHiddenKeyRevealed(spanRow.key)) ?
+              Math.max(11, (baseSizeOverride > 0 ? baseSizeOverride : this.fontSize) * 0.78) :
+              this.resolvedSpanFontSize(
+                spanRow.span,
+                baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
+              ))
+            .fontWeight(boldAll || spanRow.span.bold ? FontWeight.Bold : FontWeight.Regular)
+            .fontStyle(spanRow.span.italic ? FontStyle.Italic : FontStyle.Normal)
+            .fontFamily(spanRow.span.monospace ? 'monospace' : 'HarmonyOS Sans')
+            .baselineOffset(this.resolvedSpanBaseline(
+              spanRow.span,
+              baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
+            ))
+            .decoration(this.resolvedHiddenDecoration(spanRow.span, spanRow.key, inTerminal, forceReveal))
+            .fontColor(this.resolvedHiddenForeground(spanRow.span, spanRow.key, inTerminal, forceReveal))
+            .textBackgroundStyle(this.resolvedHiddenBackground(spanRow.span, spanRow.key, inTerminal, forceReveal))
+            .onClick(() => this.handleHiddenSpanClick(spanRow.span, spanRow.key, forceReveal))
         }
       }, (spanRow: ArticleSpanRowState) => spanRow.key)
     }
-    .fontSize(this.fontSize)
+    .fontSize(baseSizeOverride > 0 ? baseSizeOverride : this.fontSize)
     .lineHeightMultiple(this.lineHeightMultiple)
-    .fontColor($r('sys.color.font'))
-    .textAlign(TextAlign.JUSTIFY)
+    .fontColor(inTerminal ? '#E2E8F0' : $r('sys.color.font'))
+    .textAlign(this.resolveBlockTextAlign(row.block.textAlign, startAlign))
     .wordBreak(WordBreak.BREAK_WORD)
     .enableAutoSpacing(true)
     .background(this.anchorHighlightBackdrop(this.isParagraphHighlighted(row.block)))
@@ -1215,50 +1578,117 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private headingBlock(row: ArticleBlockRowState) {
-    Text(this.textOf(row.block))
-      .fontSize(this.fontSize *
-        (row.block.level <= 1 ? 1.35 : (row.block.level === 2 ? 1.2 : 1.1)))
-      .fontWeight(FontWeight.Bold)
-      .fontColor($r('sys.color.font'))
+  private pureWhisperBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+    if (this.isHiddenKeyRevealed(row.key)) {
+      Column({ space: 6 }) {
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.eye'))
+            .fontSize(13)
+            .fontColor([this.effectiveDarkSurface(inTerminal) ? '#C4B5FD' : '#6D28D9'])
+          Text('隐藏低语（0px 彩蛋）')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.effectiveDarkSurface(inTerminal) ? '#C4B5FD' : '#6D28D9')
+            .layoutWeight(1)
+          if (!this.revealHiddenText) {
+            Text('收起')
+              .fontSize(AppTypography.CAPTION_M)
+              .fontColor(inTerminal ? '#94A3B8' : $r('sys.color.font_secondary'))
+              .onClick(() => this.toggleLocalHiddenKey(row.key))
+          }
+        }
+        .width('100%')
+
+        this.spanText(row, inTerminal, false, true, 0, true)
+      }
       .width('100%')
-      .margin({ top: 8 })
+      .alignItems(HorizontalAlign.Start)
+      .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+      .backgroundColor(this.effectiveDarkSurface(inTerminal) ? '#1F8B5CF6' : '#128B5CF6')
+      .border({
+        width: 0.8,
+        style: BorderStyle.Dashed,
+        color: this.effectiveDarkSurface(inTerminal) ? '#8B5CF6' : '#A78BFA'
+      })
+      .borderRadius(10)
+    } else {
+      Column() {
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.eye'))
+            .fontSize(13)
+            .fontColor([inTerminal ? '#94A3B8' : $r('sys.color.font_tertiary')])
+          Text('··· 隐藏低语 · 轻触显影')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor(inTerminal ? '#94A3B8' : $r('sys.color.font_tertiary'))
+        }
+        .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+        .backgroundColor(inTerminal ? '#1E242C' : $r('sys.color.comp_background_tertiary'))
+        .border({
+          width: 0.8,
+          style: BorderStyle.Dashed,
+          color: inTerminal ? '#475569' : $r('sys.color.comp_divider')
+        })
+        .borderRadius(14)
+        .onClick(() => this.toggleLocalHiddenKey(row.key))
+      }
+      .width('100%')
+      .alignItems(row.block.textAlign === ScpTextAlign.CENTER ?
+        HorizontalAlign.Center :
+        (row.block.textAlign === ScpTextAlign.END ? HorizontalAlign.End : HorizontalAlign.Start))
+    }
   }
 
   @Builder
-  private quoteBlock(row: ArticleBlockRowState) {
+  private headingBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+    Column() {
+      this.spanText(
+        row,
+        inTerminal,
+        true,
+        true,
+        this.fontSize * (row.block.level <= 1 ? 1.35 : (row.block.level === 2 ? 1.2 : 1.1))
+      )
+    }
+    .width('100%')
+    .margin({ top: 8 })
+  }
+
+  @Builder
+  private quoteBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     Column({ space: 8 }) {
       ForEach(row.children, (child: ArticleBlockRowState) => {
-        this.blockView(child)
+        this.blockView(child, inTerminal)
       }, (child: ArticleBlockRowState) => child.key)
     }
     .width('100%')
     .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-    .border({ width: { left: 3 }, color: $r('sys.color.comp_divider') })
-    .backgroundColor($r('sys.color.comp_background_tertiary'))
+    .border({ width: { left: 3 }, color: inTerminal ? '#475569' : $r('sys.color.comp_divider') })
+    .backgroundColor(inTerminal ? '#1E242C' : $r('sys.color.comp_background_tertiary'))
     .borderRadius(8)
   }
 
   @Builder
-  private collapsibleBlock(row: ArticleBlockRowState) {
+  private collapsibleBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     Column({ space: 8 }) {
       Row({ space: 8 }) {
         SymbolGlyph($r('sys.symbol.chevron_right'))
           .fontSize(16)
-          .fontColor([$r('sys.color.icon_secondary')])
+          .fontColor([inTerminal ? '#94A3B8' : $r('sys.color.icon_secondary')])
           .rotate({ angle: this.isExpanded(row.block) ? 90 : 0 })
           .animation({ duration: 220, curve: Curve.FastOutSlowIn })
-        Text(row.block.caption.length > 0 ? row.block.caption : '展开内容')
+        Text((this.isExpanded(row.block) && row.block.closeCaption.length > 0) ?
+          row.block.closeCaption :
+          (row.block.caption.length > 0 ? row.block.caption : '展开内容'))
           .fontSize(this.fontSize)
           .fontWeight(FontWeight.Medium)
-          .fontColor($r('sys.color.font'))
+          .fontColor(inTerminal ? '#F1F5F9' : $r('sys.color.font'))
           .layoutWeight(1)
       }
       .attributeModifier(ROW_PRESS_MODIFIER)
       .animation({ duration: 120, curve: Curve.FastOutSlowIn })
       .width('100%')
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
-      .backgroundColor($r('sys.color.comp_background_tertiary'))
+      .backgroundColor(inTerminal ? '#232A34' : $r('sys.color.comp_background_tertiary'))
       .borderRadius(10)
       .onClick(() => {
         this.getUIContext().animateTo({
@@ -1272,7 +1702,7 @@ export struct ArticleNativeRenderer {
       if (this.isExpanded(row.block)) {
         Column({ space: 12 }) {
           ForEach(row.children, (child: ArticleBlockRowState) => {
-            this.blockView(child)
+            this.blockView(child, inTerminal)
           }, (child: ArticleBlockRowState) => child.key)
         }
         .width('100%')
@@ -1288,26 +1718,319 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private tableBlock(blockRow: ArticleBlockRowState) {
+  private tableCellContent(
+    cell: ArticleBlockRowState,
+    inTerminal: boolean,
+    fixedWidth: number,
+    cellIndex: number
+  ) {
     Column() {
-      ForEach(blockRow.children, (row: ArticleBlockRowState) => {
+      if (cell.spans.length > 0) {
+        this.spanText(cell, inTerminal, cell.block.isHeader, true)
+      } else {
+        Text('')
+          .fontSize(this.fontSize)
+      }
+    }
+    .width(fixedWidth > 0 ? fixedWidth : undefined)
+    .layoutWeight(fixedWidth > 0 ? 0 : 1)
+    .padding({ left: 10, right: 10, top: 8, bottom: 8 })
+    .alignItems(HorizontalAlign.Start)
+    .backgroundColor(cell.block.isHeader ?
+      (inTerminal ? '#232A34' : $r('sys.color.comp_background_tertiary')) : Color.Transparent)
+    .border({
+      width: cellIndex > 0 ? { left: 0.5 } : 0,
+      color: inTerminal ? '#334155' : $r('sys.color.comp_divider')
+    })
+  }
+
+  @Builder
+  private tableGrid(blockRow: ArticleBlockRowState, inTerminal: boolean, fixedWidth: number) {
+    Column() {
+      ForEach(blockRow.children, (row: ArticleBlockRowState, rowIndex: number) => {
         Row() {
-          ForEach(row.children, (cell: ArticleBlockRowState) => {
-            Text(this.textOf(cell.block))
-              .fontSize(this.fontSize)
-              .fontColor($r('sys.color.font'))
-              .layoutWeight(1)
-              .padding(6)
-              .textAlign(TextAlign.Start)
+          ForEach(row.children, (cell: ArticleBlockRowState, cellIndex: number) => {
+            this.tableCellContent(cell, inTerminal, fixedWidth, cellIndex)
           }, (cell: ArticleBlockRowState) => cell.key)
         }
-        .width('100%')
+        .width(fixedWidth > 0 ? undefined : '100%')
+        .alignItems(VerticalAlign.Top)
+        .border({
+          width: rowIndex > 0 ? { top: 0.5 } : 0,
+          color: inTerminal ? '#334155' : $r('sys.color.comp_divider')
+        })
       }, (row: ArticleBlockRowState) => row.key)
     }
-    .width('100%')
-    .border({ width: 1, color: $r('sys.color.comp_divider') })
+    .width(fixedWidth > 0 ? undefined : '100%')
+    .backgroundColor(inTerminal ? '#181E27' : $r('sys.color.comp_background_primary'))
+    .border({ width: 0.8, color: inTerminal ? '#334155' : $r('sys.color.comp_divider') })
     .borderRadius(8)
     .clip(true)
+  }
+
+  @Builder
+  private tableBlock(blockRow: ArticleBlockRowState, inTerminal: boolean = false) {
+    if (this.maxTableColumnCount(blockRow) >= 3) {
+      Scroll() {
+        this.tableGrid(blockRow, inTerminal, this.tableColumnWidth(this.maxTableColumnCount(blockRow)))
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
+      .width('100%')
+      .align(Alignment.Start)
+    } else {
+      this.tableGrid(blockRow, inTerminal, 0)
+    }
+  }
+
+  @Builder
+  private acsBadgeChip(label: string, value: string, tintColor: ResourceColor) {
+    Row({ space: 6 }) {
+      Text(label)
+        .fontSize(AppTypography.CAPTION_M)
+        .fontColor($r('sys.color.font_secondary'))
+      Text(value)
+        .fontSize(AppTypography.CAPTION_L)
+        .fontWeight(FontWeight.Bold)
+        .fontColor('#FFFFFF')
+        .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+        .backgroundColor(tintColor)
+        .borderRadius(6)
+    }
+    .padding({ left: 8, right: 6, top: 4, bottom: 4 })
+    .backgroundColor($r('sys.color.comp_background_tertiary'))
+    .borderRadius(8)
+  }
+
+  @Builder
+  private acsHeaderBlock(row: ArticleBlockRowState) {
+    if (row.block.acs !== undefined) {
+      Column({ space: 10 }) {
+        Row({ space: 8 }) {
+          Text(row.block.acs.itemNumber.length > 0 ?
+            `SCP-${row.block.acs.itemNumber}` : '异常分类栏')
+            .fontSize(AppTypography.SUBTITLE_M)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('sys.color.font'))
+            .layoutWeight(1)
+          if (row.block.acs.clearanceLevel.length > 0) {
+            Text(`Level ${row.block.acs.clearanceLevel}`)
+              .fontSize(AppTypography.CAPTION_L)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('sys.color.font_emphasize'))
+              .padding({ left: 10, right: 10, top: 4, bottom: 4 })
+              .backgroundColor(badgeInfoBackgroundColor())
+              .borderRadius(8)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Flex({ wrap: FlexWrap.Wrap, space: { main: LengthMetrics.vp(8), cross: LengthMetrics.vp(8) } }) {
+          if (row.block.acs.containmentClass.length > 0) {
+            this.acsBadgeChip(
+              '收容',
+              row.block.acs.containmentClass,
+              objectClassColor(row.block.acs.containmentClass)
+            )
+          }
+          if (row.block.acs.secondaryClass.length > 0) {
+            this.acsBadgeChip('次要', row.block.acs.secondaryClass, '#64748B')
+          }
+          if (row.block.acs.disruptionClass.length > 0) {
+            this.acsBadgeChip(
+              '扰动',
+              row.block.acs.disruptionClass,
+              this.acsDisruptionColor(row.block.acs.disruptionClass)
+            )
+          }
+          if (row.block.acs.riskClass.length > 0) {
+            this.acsBadgeChip(
+              '风险',
+              row.block.acs.riskClass,
+              this.acsRiskColor(row.block.acs.riskClass)
+            )
+          }
+        }
+        .width('100%')
+
+        if (row.block.acs.memoUrl.length > 0) {
+          Text('查看分类委员会备忘录 ›')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_emphasize'))
+            .onClick(() => this.handleOpenArticleLink(row.block.acs!.memoUrl, '分类委员会备忘录'))
+        }
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(14)
+      .backgroundColor($r('sys.color.comp_background_primary'))
+      .border({ width: 0.8, color: materialCardBorderColor(this.materialEnabled) })
+      .borderRadius(12)
+    }
+  }
+
+  @Builder
+  private tabsBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+    Column({ space: 10 }) {
+      Scroll() {
+        Row({ space: 8 }) {
+          ForEach(row.children, (panel: ArticleBlockRowState, index: number) => {
+            Text(panel.block.caption.length > 0 ? panel.block.caption : `标签 ${index + 1}`)
+              .fontSize(AppTypography.CAPTION_L)
+              .fontWeight(row.activeTabIndex === index ? FontWeight.Bold : FontWeight.Medium)
+              .fontColor(row.activeTabIndex === index ?
+                accentPillForegroundColor() :
+                (inTerminal ? '#CBD5E1' : $r('sys.color.font_secondary')))
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+              .backgroundColor(row.activeTabIndex === index ?
+                accentPillBackgroundColor() :
+                (inTerminal ? '#232A34' : $r('sys.color.comp_background_tertiary')))
+              .borderRadius(16)
+              .onClick(() => {
+                row.activeTabIndex = index;
+              })
+          }, (panel: ArticleBlockRowState) => panel.key)
+        }
+      }
+      .scrollable(ScrollDirection.Horizontal)
+      .scrollBar(BarState.Off)
+      .width('100%')
+
+      if (row.children.length > 0) {
+        Column({ space: 12 }) {
+          ForEach(
+            row.children[Math.max(0, Math.min(row.activeTabIndex, row.children.length - 1))].children,
+            (child: ArticleBlockRowState) => {
+              this.blockView(child, inTerminal)
+            },
+            (child: ArticleBlockRowState) => child.key
+          )
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding(12)
+        .backgroundColor(inTerminal ? '#1B212A' : $r('sys.color.comp_background_primary'))
+        .border({ width: 0.8, color: inTerminal ? '#334155' : materialCardBorderColor(this.materialEnabled) })
+        .borderRadius(12)
+      }
+    }
+    .width('100%')
+  }
+
+  @Builder
+  private calloutBlock(row: ArticleBlockRowState, parentInTerminal: boolean = false) {
+    if (row.block.calloutTone === ScpCalloutTone.TERMINAL || parentInTerminal) {
+      Column({ space: 10 }) {
+        ForEach(row.children, (child: ArticleBlockRowState) => {
+          this.blockView(child, true)
+        }, (child: ArticleBlockRowState) => child.key)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(14)
+      .backgroundColor('#15191F')
+      .border({ width: 1, color: '#334155' })
+      .borderRadius(12)
+    } else if (row.block.calloutTone === ScpCalloutTone.WARNING) {
+      Column({ space: 10 }) {
+        ForEach(row.children, (child: ArticleBlockRowState) => {
+          this.blockView(child, false)
+        }, (child: ArticleBlockRowState) => child.key)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding({ left: 14, right: 12, top: 12, bottom: 12 })
+      .backgroundColor('#14D9383A')
+      .border({ width: { left: 3 }, color: '#D9383A' })
+      .borderRadius(10)
+    } else if (row.block.calloutTone === ScpCalloutTone.NOTE) {
+      Column({ space: 10 }) {
+        ForEach(row.children, (child: ArticleBlockRowState) => {
+          this.blockView(child, false)
+        }, (child: ArticleBlockRowState) => child.key)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(12)
+      .backgroundColor($r('sys.color.comp_background_primary'))
+      .border({
+        width: 1,
+        style: BorderStyle.Dashed,
+        color: $r('sys.color.comp_divider')
+      })
+      .borderRadius(10)
+    } else {
+      Column({ space: 10 }) {
+        ForEach(row.children, (child: ArticleBlockRowState) => {
+          this.blockView(child, false)
+        }, (child: ArticleBlockRowState) => child.key)
+      }
+      .width('100%')
+      .alignItems(HorizontalAlign.Start)
+      .padding(12)
+      .backgroundColor($r('sys.color.comp_background_primary'))
+      .border({ width: 0.8, color: materialCardBorderColor(this.materialEnabled) })
+      .borderRadius(10)
+    }
+  }
+
+  @Builder
+  private codeBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+    Scroll() {
+      Text(this.textOf(row.block))
+        .fontFamily('monospace')
+        .fontSize(Math.max(12, this.fontSize - 2))
+        .lineHeight(Math.max(18, this.fontSize * 1.35))
+        .fontColor(inTerminal ? '#67E8F9' : $r('sys.color.font'))
+        .padding(12)
+    }
+    .scrollable(ScrollDirection.Horizontal)
+    .scrollBar(BarState.Auto)
+    .edgeEffect(EdgeEffect.Spring)
+    .align(Alignment.Start)
+    .width('100%')
+    .backgroundColor(inTerminal ? '#0F141A' : $r('sys.color.comp_background_tertiary'))
+    .border({ width: 0.5, color: inTerminal ? '#334155' : $r('sys.color.comp_divider') })
+    .borderRadius(10)
+  }
+
+  @Builder
+  private listBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
+    Column({ space: 6 }) {
+      ForEach(row.children, (item: ArticleBlockRowState, itemIndex: number) => {
+        Column({ space: 6 }) {
+          if (item.spans.length > 0) {
+            Row({ space: 8 }) {
+              Text(row.block.ordered ? `${itemIndex + 1}.` : (item.block.level % 2 === 0 ? '•' : '◦'))
+                .fontSize(this.fontSize)
+                .lineHeightMultiple(this.lineHeightMultiple)
+                .fontColor(inTerminal ? '#94A3B8' : $r('sys.color.font_secondary'))
+                .fontWeight(row.block.ordered ? FontWeight.Medium : FontWeight.Bold)
+              Column() {
+                this.spanText(item, inTerminal, false, true)
+              }
+              .layoutWeight(1)
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Top)
+          }
+          if (item.children.length > 0) {
+            Column({ space: 6 }) {
+              ForEach(item.children, (nested: ArticleBlockRowState) => {
+                this.blockView(nested, inTerminal)
+              }, (nested: ArticleBlockRowState) => nested.key)
+            }
+            .width('100%')
+            .padding({ left: 16 })
+          }
+        }
+        .width('100%')
+      }, (item: ArticleBlockRowState) => item.key)
+    }
+    .width('100%')
+    .padding({ left: row.block.level > 0 ? 4 : 0 })
   }
 
   @Builder
@@ -1316,15 +2039,15 @@ export struct ArticleNativeRenderer {
       SymbolGlyph($r('sys.symbol.rectangle_on_rectangle'))
         .fontSize(20)
         .fontColor([$r('sys.color.icon_secondary')])
-      Text('嵌入网页组件')
+      Text('嵌入交互组件（建议原版网页打开）')
         .fontSize(this.fontSize)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('sys.color.font'))
         .layoutWeight(1)
-      Button('在浏览器中打开', { stateEffect: false })
+      Button('原版网页打开', { stateEffect: false })
         .fontSize(AppTypography.CAPTION_L)
         .height(32)
-        .onClick(() => this.handleOpenUrl(row.block.source))
+        .onClick(() => this.onSwitchToWebMode())
     }
     .width('100%')
     .padding(12)
@@ -1333,66 +2056,90 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private standaloneImageBlock(row: ArticleBlockRowState) {
+  private standaloneImageBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     Column({ space: 6 }) {
       ScpArticleImage({
         url: row.block.source,
-        onOpen: () => this.handleOpenUrl(row.block.source),
+        preferredWidth: row.block.preferredWidth,
+        inlineMode: true,
+        onOpen: () => {
+          const galleryIndex = this.imageIndexOf(row.block.source);
+          if (galleryIndex >= 0) {
+            this.onOpenImage(galleryIndex);
+          } else {
+            this.handleOpenUrl(row.block.source);
+          }
+        },
         onOpenInBrowser: (url: string) => this.handleOpenUrl(url)
       })
       if (row.block.caption.length > 0) {
         Text(row.block.caption)
           .fontSize(AppTypography.CAPTION_L)
-          .fontColor($r('sys.color.font_secondary'))
+          .fontColor(inTerminal ? '#94A3B8' : $r('sys.color.font_secondary'))
           .textAlign(TextAlign.Center)
           .width('100%')
       }
     }
     .width('100%')
+    .alignItems(HorizontalAlign.Center)
   }
 
   @Builder
-  private unsupportedBlock(row: ArticleBlockRowState) {
+  private unsupportedBlock(row: ArticleBlockRowState, inTerminal: boolean = false) {
     if (row.spans.length > 0) {
-      this.spanText(row)
+      this.spanText(row, inTerminal)
     } else if (row.children.length > 0) {
       Column({ space: 12 }) {
         ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child)
+          this.blockView(child, inTerminal)
         }, (child: ArticleBlockRowState) => child.key)
       }
       .width('100%')
     } else {
-      Text('该部分含特殊排版或交互，建议在浏览器中查看')
+      Text('该部分含特殊排版或交互，可切换原版网页查看')
         .fontSize(AppTypography.CAPTION_L)
-        .fontColor($r('sys.color.font_tertiary'))
+        .fontColor(inTerminal ? '#94A3B8' : $r('sys.color.font_tertiary'))
         .padding(10)
         .width('100%')
     }
   }
 
   @Builder
-  private blockView(row: ArticleBlockRowState) {
+  private blockView(row: ArticleBlockRowState, inTerminal: boolean = false) {
     if (row.block.type === ScpBlockType.PARAGRAPH) {
-      this.spanText(row)
+      if (ArticleRenderer.isPureWhisperBlock(row.block)) {
+        this.pureWhisperBlock(row, inTerminal)
+      } else {
+        this.spanText(row, inTerminal)
+      }
     } else if (row.block.type === ScpBlockType.HEADING) {
-      this.headingBlock(row)
+      this.headingBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.QUOTE) {
-      this.quoteBlock(row)
+      this.quoteBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.COLLAPSIBLE) {
-      this.collapsibleBlock(row)
+      this.collapsibleBlock(row, inTerminal)
+    } else if (row.block.type === ScpBlockType.ACS_HEADER) {
+      this.acsHeaderBlock(row)
+    } else if (row.block.type === ScpBlockType.TABS) {
+      this.tabsBlock(row, inTerminal)
+    } else if (row.block.type === ScpBlockType.CALLOUT) {
+      this.calloutBlock(row, inTerminal)
+    } else if (row.block.type === ScpBlockType.CODE_BLOCK) {
+      this.codeBlock(row, inTerminal)
+    } else if (row.block.type === ScpBlockType.LIST) {
+      this.listBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.TABLE) {
-      this.tableBlock(row)
+      this.tableBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.EMBED) {
       this.embedBlock(row)
     } else if (row.block.type === ScpBlockType.IMAGE) {
-      this.standaloneImageBlock(row)
+      this.standaloneImageBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.UNSUPPORTED) {
-      this.unsupportedBlock(row)
+      this.unsupportedBlock(row, inTerminal)
     } else if (row.block.type === ScpBlockType.DIVIDER) {
       Divider()
         .strokeWidth(0.5)
-        .color($r('sys.color.comp_divider'))
+        .color(inTerminal ? '#334155' : $r('sys.color.comp_divider'))
         .margin({ top: 8, bottom: 8 })
     }
   }
@@ -1627,6 +2374,49 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
+  private webRecommendBannerView() {
+    Row({ space: 10 }) {
+      Row() {
+        SymbolGlyph($r('sys.symbol.website'))
+          .fontSize(17)
+          .fontColor([$r('sys.color.icon_emphasize')])
+      }
+      .width(32)
+      .height(32)
+      .borderRadius(16)
+      .backgroundColor(badgeInfoBackgroundColor())
+      .justifyContent(FlexAlign.Center)
+
+      Text(this.webModeHint)
+        .fontSize(AppTypography.CAPTION_L)
+        .fontColor($r('sys.color.font'))
+        .lineHeight(18)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+
+      Text('原版网页')
+        .fontSize(AppTypography.CAPTION_M)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(accentPillForegroundColor())
+        .height(30)
+        .padding({ left: 12, right: 12 })
+        .borderRadius(15)
+        .backgroundColor(accentPillBackgroundColor())
+        .textAlign(TextAlign.Center)
+        .onClick(() => this.onSwitchToWebMode())
+        .accessibilityText('切换原版网页模式')
+    }
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 12, right: 10, top: 10, bottom: 10 })
+    .backgroundColor($r('sys.color.comp_background_primary'))
+    .border({ width: 0.8, color: materialCardBorderColor(this.materialEnabled) })
+    .borderRadius(14)
+    .margin({ top: 8 })
+  }
+
+  @Builder
   private quoteChildBlock(section: ArticleSectionRow) {
     Column() {
       if (section.blockRow !== undefined) {
@@ -1654,6 +2444,8 @@ export struct ArticleNativeRenderer {
   private sectionView(section: ArticleSectionRow) {
     if (section.kind === ArticleSectionKind.PARTIAL_NOTICE) {
       this.partialNoticeView()
+    } else if (section.kind === ArticleSectionKind.WEB_RECOMMEND_BANNER) {
+      this.webRecommendBannerView()
     } else if (section.kind === ArticleSectionKind.HEADER_CARD) {
       this.headerCard()
     } else if (section.kind === ArticleSectionKind.GALLERY) {

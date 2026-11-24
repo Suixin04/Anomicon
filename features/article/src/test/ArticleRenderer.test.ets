@@ -1,12 +1,17 @@
 import { describe, expect, it } from '@ohos/hypium';
 import {
+  ScpArticleDocument,
   ScpBlockType,
   ScpContentBlock,
   ScpFootnote,
+  ScpHiddenTextKind,
   ScpTextSpan,
   ScpTextStyle
 } from '../main/ets/domain/ScpDocument';
-import { ArticleRenderer } from '../main/ets/presentation/view/ArticleRenderer';
+import {
+  ArticleRenderer,
+  ArticleWebModeRecommendation
+} from '../main/ets/presentation/view/ArticleRenderer';
 import { createRendererDocument } from './ArticleTestFixtures';
 
 function makeFootnote(id: string, index: number): ScpFootnote {
@@ -74,6 +79,203 @@ export default function articleRendererTest(): void {
       const zeroIndexed = ArticleRenderer.footnoteSheetHeader(makeFootnote('n0', 0), 0, 3);
       expect(zeroIndexed.title).assertEqual('脚注 1 / 3');
       expect(zeroIndexed.subtitle).assertEqual('');
+    });
+
+    it('adapts inline colors across light and dark surfaces and counts hidden Easter eggs', 0, () => {
+      const darkRed = ArticleRenderer.resolveAdaptiveSpanColor('#990011', true);
+      expect(darkRed.length).assertEqual(7);
+      expect(darkRed === '#990011').assertFalse();
+
+      const darkBlue = ArticleRenderer.resolveAdaptiveSpanColor('#0000FF', true);
+      expect(darkBlue.length).assertEqual(7);
+      expect(darkBlue === '#0000FF').assertFalse();
+
+      const brightYellowOnLight = ArticleRenderer.resolveAdaptiveSpanColor('#FFFF00', false);
+      expect(brightYellowOnLight.length).assertEqual(7);
+      expect(brightYellowOnLight === '#FFFF00').assertFalse();
+
+      const whisperBlock = new ScpContentBlock(
+        'b:w',
+        ScpBlockType.PARAGRAPH,
+        [
+          new ScpTextSpan(
+            ScpTextStyle.PLAIN,
+            '低语一',
+            '',
+            '',
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            '',
+            1,
+            ScpHiddenTextKind.ZERO_SIZE_WHISPER
+          ),
+          new ScpTextSpan(
+            ScpTextStyle.PLAIN,
+            '低语二',
+            '',
+            '',
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            '',
+            1,
+            ScpHiddenTextKind.ZERO_SIZE_WHISPER
+          )
+        ]
+      );
+      expect(ArticleRenderer.isPureWhisperBlock(whisperBlock)).assertTrue();
+
+      const mixedBlock = new ScpContentBlock(
+        'b:m',
+        ScpBlockType.PARAGRAPH,
+        [
+          new ScpTextSpan(ScpTextStyle.PLAIN, '正常文本'),
+          new ScpTextSpan(
+            ScpTextStyle.PLAIN,
+            '反白A',
+            '',
+            '',
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            '',
+            1,
+            ScpHiddenTextKind.WHITE_EASTER_EGG
+          ),
+          new ScpTextSpan(
+            ScpTextStyle.PLAIN,
+            '涂黑B',
+            '',
+            '',
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            false,
+            '',
+            1,
+            ScpHiddenTextKind.BLACKBOX
+          )
+        ]
+      );
+      expect(ArticleRenderer.isPureWhisperBlock(mixedBlock)).assertFalse();
+      expect(ArticleRenderer.countHiddenTextSegments([whisperBlock, mixedBlock])).assertEqual(3);
+    });
+
+    it('evaluates original web mode recommendation across normal, recommended, and auto-direct articles', 0, () => {
+      const normalDoc = createRendererDocument();
+      expect(ArticleRenderer.evaluateWebModeRecommendation(normalDoc).level)
+        .assertEqual(ArticleWebModeRecommendation.NONE);
+
+      const imageOnlyDoc = new ScpArticleDocument(
+        'SCP-2521',
+        'SCP-2521',
+        'Keter',
+        'https://scp-wiki-cn.wikidot.com/scp-2521',
+        100,
+        [
+          new ScpContentBlock('i0', ScpBlockType.IMAGE, [], 'https://example.com/a.png', ''),
+          new ScpContentBlock('i1', ScpBlockType.IMAGE, [], 'https://example.com/b.png', '')
+        ]
+      );
+      expect(ArticleRenderer.evaluateWebModeRecommendation(imageOnlyDoc).level)
+        .assertEqual(ArticleWebModeRecommendation.NONE);
+
+      const autoDirectDoc = new ScpArticleDocument(
+        'SCP-3125',
+        'SCP-3125 - 逃亡者',
+        'Keter',
+        'https://scp-wiki-cn.wikidot.com/scp-3125',
+        100,
+        [
+          new ScpContentBlock(
+            'e0',
+            ScpBlockType.EMBED,
+            [],
+            'https://scp-wiki-cn.wdfiles.com/local--html/scp-3125/widget/scp-3125.html'
+          )
+        ],
+        [],
+        '',
+        ['interactive:html-block-iframe']
+      );
+      expect(ArticleRenderer.evaluateWebModeRecommendation(autoDirectDoc).level)
+        .assertEqual(ArticleWebModeRecommendation.AUTO_DIRECT);
+
+      const richInteractiveDoc = new ScpArticleDocument(
+        'SCP-CN-963-J',
+        'SCP-CN-963-J',
+        'Keter',
+        'https://scp-wiki-cn.wikidot.com/scp-cn-963-j',
+        100,
+        [
+          new ScpContentBlock(
+            'p0',
+            ScpBlockType.PARAGRAPH,
+            [new ScpTextSpan(ScpTextStyle.PLAIN, '这是一段足够长的幽默正文文本，包含完整的收容措施、实验记录、人员访谈和交互式广告弹窗说明，用于验证带正文的交互页面不会强制直接跳出原生视图。'.repeat(2))]
+          )
+        ],
+        [],
+        '',
+        ['interactive:html-block-iframe']
+      );
+      expect(ArticleRenderer.evaluateWebModeRecommendation(richInteractiveDoc).level)
+        .assertEqual(ArticleWebModeRecommendation.RECOMMENDED);
+
+      const offsetDoc = new ScpArticleDocument(
+        'SCP-CN-2000',
+        'SCP-CN-2000 - 混沌理论',
+        'Thaumiel',
+        'https://scp-wiki-cn.wikidot.com/scp-cn-2000',
+        100,
+        [
+          new ScpContentBlock(
+            'p0',
+            ScpBlockType.PARAGRAPH,
+            [new ScpTextSpan(ScpTextStyle.PLAIN, '混沌理论正文内容。'.repeat(20))]
+          )
+        ],
+        [],
+        '',
+        ['interactive:listpages-offset']
+      );
+      expect(ArticleRenderer.evaluateWebModeRecommendation(offsetDoc).level)
+        .assertEqual(ArticleWebModeRecommendation.RECOMMENDED);
+
+      const customCssDoc = new ScpArticleDocument(
+        'SCP-CN-1109',
+        'SCP-CN-1109',
+        'Euclid',
+        'https://scp-wiki-cn.wikidot.com/scp-cn-1109',
+        100,
+        [
+          new ScpContentBlock(
+            'p0',
+            ScpBlockType.PARAGRAPH,
+            [new ScpTextSpan(ScpTextStyle.PLAIN, '特殊视觉版式正文。'.repeat(20))]
+          )
+        ],
+        [],
+        '',
+        ['format-screw:custom-css']
+      );
+      expect(ArticleRenderer.evaluateWebModeRecommendation(customCssDoc).level)
+        .assertEqual(ArticleWebModeRecommendation.RECOMMENDED);
     });
   });
 }

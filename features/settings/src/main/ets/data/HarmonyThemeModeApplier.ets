@@ -1,4 +1,5 @@
 import { common, ConfigurationConstant } from '@kit.AbilityKit';
+import { setDarkModeActive } from 'anomiconbasic';
 import { ThemeMode } from '../domain/SettingsModels';
 import { ThemeModeApplier } from '../domain/SettingsRepository';
 
@@ -13,6 +14,11 @@ export class HarmonyThemeModeApplier implements ThemeModeApplier {
   apply(value: ThemeMode): void {
     try {
       this.applicationContext.setColorMode(this.toSystemColorMode(value));
+      if (value === ThemeMode.DARK) {
+        setDarkModeActive(true);
+      } else if (value === ThemeMode.LIGHT) {
+        setDarkModeActive(false);
+      }
     } catch (error) {
       const businessError = error as BusinessError;
       console.error(

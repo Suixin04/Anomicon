@@ -42,6 +42,7 @@ class WindowLayoutState {
   @Trace splitNavigationActive: boolean = false;
   @Trace detailFullscreen: boolean = false;
   @Trace previewFullscreen: boolean = false;
+  @Trace darkModeActive: boolean = false;
   @Trace stackRevision: number = 0;
 }
 
@@ -104,6 +105,14 @@ export function isPreviewFullscreen(): boolean {
 
 export function setPreviewFullscreen(fullscreen: boolean): void {
   windowLayoutState.previewFullscreen = fullscreen;
+}
+
+export function isDarkModeActive(): boolean {
+  return windowLayoutState.darkModeActive;
+}
+
+export function setDarkModeActive(dark: boolean): void {
+  windowLayoutState.darkModeActive = dark;
 }
 
 export function notifyNavigationStackChanged(): void {

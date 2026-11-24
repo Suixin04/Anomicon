@@ -12,7 +12,49 @@ export enum ScpBlockType {
   TABLE_CELL = 'table_cell',
   DIVIDER = 'divider',
   EMBED = 'embed',
-  UNSUPPORTED = 'unsupported'
+  UNSUPPORTED = 'unsupported',
+  ACS_HEADER = 'acs_header',
+  TABS = 'tabs',
+  TAB_PANEL = 'tab_panel',
+  CALLOUT = 'callout',
+  CODE_BLOCK = 'code_block',
+  LIST = 'list',
+  LIST_ITEM = 'list_item'
+}
+
+export enum ScpCalloutTone {
+  NEUTRAL = 'neutral',
+  TERMINAL = 'terminal',
+  WARNING = 'warning',
+  NOTE = 'note'
+}
+
+export class ScpAcsMetadata {
+  readonly itemNumber: string;
+  readonly clearanceLevel: string;
+  readonly containmentClass: string;
+  readonly secondaryClass: string;
+  readonly disruptionClass: string;
+  readonly riskClass: string;
+  readonly memoUrl: string;
+
+  constructor(
+    itemNumber: string = '',
+    clearanceLevel: string = '',
+    containmentClass: string = '',
+    secondaryClass: string = '',
+    disruptionClass: string = '',
+    riskClass: string = '',
+    memoUrl: string = ''
+  ) {
+    this.itemNumber = itemNumber;
+    this.clearanceLevel = clearanceLevel;
+    this.containmentClass = containmentClass;
+    this.secondaryClass = secondaryClass;
+    this.disruptionClass = disruptionClass;
+    this.riskClass = riskClass;
+    this.memoUrl = memoUrl;
+  }
 }
 
 export enum ScpTextStyle {
@@ -25,23 +67,68 @@ export enum ScpTextStyle {
   FOOTNOTE_REFERENCE = 'footnote_reference'
 }
 
-/** 行内结构：链接、强调与脚注引用由统一 HTML 提取协议填充。 */
+export enum ScpTextAlign {
+  DEFAULT = 'default',
+  START = 'start',
+  CENTER = 'center',
+  END = 'end',
+  JUSTIFY = 'justify'
+}
+
+export enum ScpHiddenTextKind {
+  NONE = 'none',
+  WHITE_EASTER_EGG = 'white_easter_egg',
+  ZERO_SIZE_WHISPER = 'zero_size_whisper',
+  BLACKBOX = 'blackbox'
+}
+
+/** 行内结构：链接、强调、复合样式与彩蛋状态由统一 HTML 提取协议填充。 */
 export class ScpTextSpan {
   readonly style: ScpTextStyle;
   readonly text: string;
   readonly target: string;
   readonly referenceId: string;
+  readonly bold: boolean;
+  readonly italic: boolean;
+  readonly deleted: boolean;
+  readonly underline: boolean;
+  readonly monospace: boolean;
+  readonly superscript: boolean;
+  readonly subscript: boolean;
+  readonly color: string;
+  readonly fontScale: number;
+  readonly hiddenKind: ScpHiddenTextKind;
 
   constructor(
     style: ScpTextStyle,
     text: string,
     target: string = '',
-    referenceId: string = ''
+    referenceId: string = '',
+    bold: boolean = false,
+    italic: boolean = false,
+    deleted: boolean = false,
+    underline: boolean = false,
+    monospace: boolean = false,
+    superscript: boolean = false,
+    subscript: boolean = false,
+    color: string = '',
+    fontScale: number = 1,
+    hiddenKind: ScpHiddenTextKind = ScpHiddenTextKind.NONE
   ) {
     this.style = style;
     this.text = text;
     this.target = target;
     this.referenceId = referenceId;
+    this.bold = bold || style === ScpTextStyle.STRONG;
+    this.italic = italic || style === ScpTextStyle.EMPHASIS;
+    this.deleted = deleted || style === ScpTextStyle.DELETED;
+    this.underline = underline;
+    this.monospace = monospace || style === ScpTextStyle.CODE;
+    this.superscript = superscript;
+    this.subscript = subscript;
+    this.color = color;
+    this.fontScale = Number.isFinite(fontScale) && fontScale > 0 ? fontScale : 1;
+    this.hiddenKind = hiddenKind;
   }
 }
 
@@ -54,6 +141,14 @@ export class ScpContentBlock {
   readonly caption: string;
   readonly level: number;
   readonly children: ScpContentBlock[];
+  readonly closeCaption: string;
+  readonly initiallyExpanded: boolean;
+  readonly ordered: boolean;
+  readonly isHeader: boolean;
+  readonly calloutTone: ScpCalloutTone;
+  readonly preferredWidth: number;
+  readonly acs: ScpAcsMetadata | undefined;
+  readonly textAlign: ScpTextAlign;
 
   constructor(
     key: string,
@@ -62,7 +157,15 @@ export class ScpContentBlock {
     source: string = '',
     caption: string = '',
     level: number = 0,
-    children: ScpContentBlock[] = []
+    children: ScpContentBlock[] = [],
+    closeCaption: string = '',
+    initiallyExpanded: boolean = false,
+    ordered: boolean = false,
+    isHeader: boolean = false,
+    calloutTone: ScpCalloutTone = ScpCalloutTone.NEUTRAL,
+    preferredWidth: number = 0,
+    acs: ScpAcsMetadata | undefined = undefined,
+    textAlign: ScpTextAlign = ScpTextAlign.DEFAULT
   ) {
     this.key = key;
     this.type = type;
@@ -71,6 +174,14 @@ export class ScpContentBlock {
     this.caption = caption;
     this.level = level;
     this.children = children;
+    this.closeCaption = closeCaption;
+    this.initiallyExpanded = initiallyExpanded;
+    this.ordered = ordered;
+    this.isHeader = isHeader;
+    this.calloutTone = calloutTone;
+    this.preferredWidth = preferredWidth;
+    this.acs = acs;
+    this.textAlign = textAlign;
   }
 }
 
@@ -87,9 +198,9 @@ export class ScpFootnote {
 }
 
 export class ScpArticleDocument {
-  /** v5：增加原创 CN 双语标记投影，避免隐藏的繁体分支重复进入正文。 */
-  static readonly CURRENT_SCHEMA_VERSION: number = 5;
-  static readonly CURRENT_PARSER_VERSION: number = 5;
+  /** v8：新增页面复杂度/多迭代信号检测与端内原版网页模式支持。 */
+  static readonly CURRENT_SCHEMA_VERSION: number = 8;
+  static readonly CURRENT_PARSER_VERSION: number = 8;
 
   readonly schemaVersion: number;
   readonly itemId: string;
@@ -105,6 +216,7 @@ export class ScpArticleDocument {
   readonly blocks: ScpContentBlock[];
   readonly footnotes: ScpFootnote[];
   readonly parserWarnings: string[];
+  readonly creditBlocks: ScpContentBlock[];
 
   constructor(
     itemId: string,
@@ -119,7 +231,8 @@ export class ScpArticleDocument {
     rating: string = '',
     tags: string[] = [],
     pageVersion: string = '',
-    images: ScpContentBlock[] = []
+    images: ScpContentBlock[] = [],
+    creditBlocks: ScpContentBlock[] = []
   ) {
     this.schemaVersion = ScpArticleDocument.CURRENT_SCHEMA_VERSION;
     this.itemId = itemId;
@@ -135,5 +248,6 @@ export class ScpArticleDocument {
     this.blocks = blocks;
     this.footnotes = footnotes;
     this.parserWarnings = parserWarnings;
+    this.creditBlocks = creditBlocks;
   }
 }

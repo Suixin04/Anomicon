@@ -223,9 +223,13 @@ export class ContentGateway implements ArticleContentGateway {
       }
       const lowerSource = srcMatch[2].toLowerCase();
       if (lowerSource.indexOf('interwiki.scpwikicn.com') >= 0 ||
-        lowerSource.indexOf('styleframe') >= 0) {
-        // Navigation/theme helper frames are not article content and are
-        // intentionally left untouched (they are outside the page policy).
+        lowerSource.indexOf('interwiki.scpwiki.com') >= 0 ||
+        lowerSource.indexOf('styleframe') >= 0 ||
+        lowerSource.indexOf('credit%3abackmodule') >= 0 ||
+        lowerSource.indexOf('credit%253abackmodule') >= 0 ||
+        lowerSource.indexOf('credit:backmodule') >= 0) {
+        // Navigation/theme/credit helper frames are not article content and are
+        // intentionally left untouched so the native parser strips them cleanly.
         continue;
       }
       const frameUrl = this.resolveFrameUrl(srcMatch[2], sourceUrl);
@@ -234,14 +238,9 @@ export class ContentGateway implements ArticleContentGateway {
       }
       try {
         const nested = await this.htmlPort.load(frameUrl, forceNetwork);
-        const expanded = await this.expandHtmlBlockFrames(
-          this.embeddedBody(nested.html),
-          frameUrl,
-          forceNetwork,
-          depth + 1
-        );
+        const replacement = await this.buildFrameReplacement(nested.html, frameUrl, forceNetwork, depth);
         output = output.substring(0, frame.index) +
-          `<div class="anomicon-embedded-html">${expanded}</div>` +
+          replacement +
           output.substring(frame.index + markup.length);
       } catch (error) {
         // Keep the original iframe when the generated endpoint is unavailable;
@@ -252,17 +251,47 @@ export class ContentGateway implements ArticleContentGateway {
     return output;
   }
 
-  private embeddedBody(html: string): string {
-    // Original CN interactive pages keep their real document under
-    // #realcontent and fill it with timer/ad scaffolding. Selecting that node
-    // avoids the outer login shell; the native tree parser filters presentation
-    // nodes such as ads while retaining the article text.
-    const realContent = this.elementInnerById(html, 'realcontent');
+  private async buildFrameReplacement(
+    rawHtml: string,
+    frameUrl: string,
+    forceNetwork: boolean,
+    depth: number
+  ): Promise<string> {
+    const realContent = this.elementInnerById(rawHtml, 'realcontent');
     if (realContent.length > 0) {
-      return realContent;
+      const cleaned = this.cleanEmbeddedFragment(realContent);
+      const expanded = await this.expandHtmlBlockFrames(cleaned, frameUrl, forceNetwork, depth + 1);
+      return `<div class="anomicon-embedded-html" data-interactive="true">${expanded}</div>`;
     }
-    const body = /<body\b[^>]*>([\s\S]*?)<\/body>/i.exec(html);
-    return body === null ? html : body[1];
+    if (this.isInteractiveWidgetFrame(rawHtml)) {
+      return `<iframe class="html-block-iframe anomicon-interactive-frame" data-interactive="true" src="${frameUrl}"></iframe>`;
+    }
+    const cleaned = this.cleanEmbeddedFragment(rawHtml);
+    const expanded = await this.expandHtmlBlockFrames(cleaned, frameUrl, forceNetwork, depth + 1);
+    return `<div class="anomicon-embedded-html">${expanded}</div>`;
+  }
+
+  private cleanEmbeddedFragment(rawHtml: string): string {
+    return this.stripInlineStyleAndScript(rawHtml)
+      .replace(/<head\b[\s\S]*?<\/head\s*>/gi, '')
+      .replace(/<!DOCTYPE[^>]*>/gi, '')
+      .replace(/<\/?(?:html|body)\b[^>]*>/gi, '')
+      .trim();
+  }
+
+  private isInteractiveWidgetFrame(html: string): boolean {
+    if (!/<script\b/i.test(html)) {
+      return false;
+    }
+    return /<(?:input|button|canvas|audio|video)\b/i.test(html) ||
+      /\bclass\s*=\s*["'][^"']*(?:keypad|classified-info)[^"']*["']/i.test(html) ||
+      /\bonclick\s*=|\baddEventListener\s*\(/i.test(html);
+  }
+
+  private stripInlineStyleAndScript(html: string): string {
+    return html
+      .replace(/<script\b[\s\S]*?<\/script\s*>/gi, '')
+      .replace(/<style\b[\s\S]*?<\/style\s*>/gi, '');
   }
 
   private elementInnerById(html: string, id: string): string {

@@ -64,6 +64,8 @@ export {
   setDetailFullscreen,
   isPreviewFullscreen,
   setPreviewFullscreen,
+  isDarkModeActive,
+  setDarkModeActive,
   notifyNavigationStackChanged,
   navigationStackRevision,
   popNavigationDestination,

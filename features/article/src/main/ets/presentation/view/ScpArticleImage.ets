@@ -8,12 +8,16 @@ import { ExternalUrlPolicy, SkeletonBlock } from 'anomiconbasic';
 @ComponentV2
 export struct ScpArticleImage {
   @Require @Param url: string;
+  @Param preferredWidth: number = 0;
+  @Param inlineMode: boolean = false;
   @Event onOpen: () => void;
   @Event onOpenInBrowser: (url: string) => void;
 
   @Local private resolvedUrl: string = '';
   @Local private loading: boolean = true;
   @Local private failed: boolean = false;
+  @Local private intrinsicWidth: number = 0;
+  @Local private intrinsicHeight: number = 0;
   /** Ignore Image callbacks belonging to a URL that has already changed. */
   private loadEpoch: number = 0;
   /** Keep the last safe/raw request for the failure-state browser action. */
@@ -32,6 +36,8 @@ export struct ScpArticleImage {
     this.loadEpoch += 1;
     const requestedUrl = this.url.trim();
     this.browserUrl = requestedUrl;
+    this.intrinsicWidth = 0;
+    this.intrinsicHeight = 0;
     try {
       this.resolvedUrl = ExternalUrlPolicy.resolveImageHttps(requestedUrl);
       this.browserUrl = this.resolvedUrl;
@@ -45,9 +51,38 @@ export struct ScpArticleImage {
     }
   }
 
-  private onImageComplete(epoch: number): () => void {
-    return (): void => {
+  private inlineDisplayWidth(): number | string {
+    if (!this.inlineMode) {
+      return '100%';
+    }
+    if (this.preferredWidth > 0) {
+      return Math.max(48, Math.min(560, this.preferredWidth));
+    }
+    if (this.intrinsicWidth > 0 && this.intrinsicWidth < 900) {
+      return Math.min(560, Math.max(64, Math.round(this.intrinsicWidth / 2)));
+    }
+    return '100%';
+  }
+
+  private skeletonHeight(): number {
+    if (!this.inlineMode) {
+      return 240;
+    }
+    if (this.preferredWidth > 0 && this.preferredWidth < 200) {
+      return 120;
+    }
+    return 200;
+  }
+
+  private onImageComplete(epoch: number): (width: number, height: number) => void {
+    return (width: number, height: number): void => {
       if (epoch === this.loadEpoch) {
+        if (width > 0) {
+          this.intrinsicWidth = width;
+        }
+        if (height > 0) {
+          this.intrinsicHeight = height;
+        }
         this.loading = false;
       }
     };
@@ -87,28 +122,34 @@ export struct ScpArticleImage {
         }
       }
       .width('100%')
-      .height(240)
+      .height(this.skeletonHeight())
       .justifyContent(FlexAlign.Center)
       .backgroundColor($r('sys.color.comp_background_primary'))
       .borderRadius(10)
     } else {
-      Stack() {
+      Stack({ alignContent: Alignment.Center }) {
         Image(this.resolvedUrl)
-          .width('100%')
+          .width(this.inlineDisplayWidth())
+          .constraintSize(this.inlineMode ? { maxWidth: '100%', maxHeight: 460 } : { maxWidth: '100%' })
           .objectFit(ImageFit.Contain)
           .autoResize(true)
-          .backgroundColor($r('sys.color.comp_background_primary'))
-          .borderRadius(10)
+          .backgroundColor(this.inlineMode && !this.loading ? Color.Transparent : $r('sys.color.comp_background_primary'))
+          .borderRadius(this.inlineMode ? 8 : 10)
           .opacity(this.loading ? 0 : 1)
           .animation({ duration: 180, curve: Curve.EaseOut })
-          .onComplete(this.onImageComplete(this.loadEpoch))
+          .onComplete((event) => {
+            const w = event?.loadingStatus === 1 ? (event?.width ?? 0) : 0;
+            const h = event?.loadingStatus === 1 ? (event?.height ?? 0) : 0;
+            this.onImageComplete(this.loadEpoch)(w, h);
+          })
           .onError(this.onImageError(this.loadEpoch))
           .onClick(() => this.onOpen())
 
         if (this.loading) {
           SkeletonBlock({ animated: true, radius: 10 })
-            .width('100%')
-            .height(240)
+            .width(this.preferredWidth > 0 ? this.inlineDisplayWidth() : '100%')
+            .constraintSize({ maxWidth: '100%' })
+            .height(this.skeletonHeight())
             .hitTestBehavior(HitTestMode.None)
         }
       }

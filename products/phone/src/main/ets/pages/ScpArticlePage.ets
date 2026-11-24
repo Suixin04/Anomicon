@@ -15,6 +15,9 @@ import {
   ARTICLE_READING_STATUS_HEIGHT,
   ArticleReadingStatusBar,
   ArticleNativeRenderer,
+  ArticleWebRenderer,
+  ArticleWebModeRecommendation,
+  ArticleRenderer,
   ArticleScrollRestore,
   ArticleRelatedTale,
   ArticleViewModel,
@@ -151,6 +154,14 @@ struct ScpArticlePage {
   @Local private sidePanelAvailable: boolean = false;
   @Local private sidePanelOpen: boolean = false;
   @Local private sidePanelLabel: string = '';
+  @Local private revealHiddenText: boolean = false;
+  @Local private webModeActive: boolean = false;
+  @Local private webModeUrl: string = '';
+  @Local private webModeCanGoBack: boolean = false;
+  @Local private webReloadEpoch: number = 0;
+  @Local private webBackEpoch: number = 0;
+  @Local private webModeHint: string = '';
+  private autoWebEvaluatedItemId: string = '';
 
   aboutToAppear(): void {
     this.viewModelUnsubscribe?.();
@@ -216,6 +227,18 @@ struct ScpArticlePage {
       return;
     }
     this.document = vm.document;
+    if (vm.document !== undefined) {
+      const decision = ArticleRenderer.evaluateWebModeRecommendation(vm.document);
+      this.webModeHint = decision.level === ArticleWebModeRecommendation.NONE ? '' : decision.reason;
+      if (this.autoWebEvaluatedItemId !== vm.document.itemId) {
+        this.autoWebEvaluatedItemId = vm.document.itemId;
+        if (decision.level === ArticleWebModeRecommendation.AUTO_DIRECT && this.sourceUrl.length > 0) {
+          this.enterWebMode(this.sourceUrl, '检测到交互组件，已切换至原版网页模式');
+        }
+      }
+    } else {
+      this.webModeHint = '';
+    }
     // A stale document remains visible while the VM revalidates in the
     // background; only an empty document should show the full-screen loader.
     const hasDocument = vm.document !== undefined;
@@ -287,6 +310,12 @@ struct ScpArticlePage {
     this.readingPercent = 0;
     this.previewVisible = false;
     this.previewIndex = 0;
+    this.revealHiddenText = false;
+    this.webModeActive = false;
+    this.webModeUrl = '';
+    this.webModeCanGoBack = false;
+    this.webModeHint = '';
+    this.autoWebEvaluatedItemId = '';
     this.galleryReturnEpoch++;
   }
 
@@ -454,6 +483,68 @@ struct ScpArticlePage {
     }
   }
 
+  private enterWebMode(targetUrl: string = '', toastMessage: string = ''): void {
+    const rawTarget = targetUrl.trim().length > 0 ? targetUrl.trim() : this.sourceUrl;
+    const upgraded = rawTarget.toLowerCase().indexOf('http://scp-wiki-cn.wikidot.com/') === 0 ?
+      `https://${rawTarget.substring(7)}` : rawTarget;
+    let resolved = this.sourceUrl;
+    try {
+      resolved = ExternalUrlPolicy.resolveHttps(upgraded, this.sourceUrl);
+    } catch (_error) {
+      if (this.sourceUrl.length === 0) {
+        this.showToast('当前文档网页地址不可用');
+        return;
+      }
+      resolved = this.sourceUrl;
+    }
+    this.sidePanelOpen = false;
+    this.webModeUrl = resolved;
+    this.webModeActive = true;
+    if (toastMessage.length > 0) {
+      this.showToast(toastMessage);
+    }
+  }
+
+  private exitWebMode(): void {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    this.webModeActive = false;
+    this.webModeCanGoBack = false;
+  }
+
+  private resolveSameArticleOffsetUrl(rawUrl: string): string {
+    const trimmed = rawUrl.trim();
+    if (trimmed.length === 0 || this.itemId.length === 0) {
+      return '';
+    }
+    const candidate = trimmed.toLowerCase().indexOf('http://scp-wiki-cn.wikidot.com/') === 0 ?
+      `https://${trimmed.substring(7)}` : trimmed;
+    let safeUrl: string;
+    try {
+      safeUrl = ExternalUrlPolicy.resolveHttps(candidate, this.sourceUrl);
+    } catch (_error) {
+      return '';
+    }
+    const origin = `${WIKI_BASE_URL}/`;
+    if (safeUrl.toLowerCase().indexOf(origin.toLowerCase()) !== 0) {
+      return '';
+    }
+    let path = safeUrl.substring(origin.length);
+    const queryIndex = path.indexOf('?');
+    if (queryIndex >= 0) {
+      path = path.substring(0, queryIndex);
+    }
+    const hashIndex = path.indexOf('#');
+    if (hashIndex >= 0) {
+      path = path.substring(0, hashIndex);
+    }
+    path = path.replace(/^\/+|\/+$/g, '').trim();
+    const match = /^([^/]+)\/offset\/(\d+)$/i.exec(path);
+    if (match === null) {
+      return '';
+    }
+    return match[1].toLowerCase() === this.itemId.toLowerCase() ? safeUrl : '';
+  }
+
   /**
    * Keep links to other readable main-site pages inside the app. Wikidot also
    * emits links to tag/system pages and media assets; those remain external so
@@ -467,6 +558,12 @@ struct ScpArticlePage {
     }
     if (linkTitle.trim().startsWith('[图片')) {
       this.openUrl(rawUrl);
+      return;
+    }
+    const offsetUrl = this.resolveSameArticleOffsetUrl(rawUrl);
+    if (offsetUrl.length > 0) {
+      this.hapticService.playSelection(this.settings.hapticEnabled);
+      this.enterWebMode(offsetUrl, '已切换原版网页加载迭代页面');
       return;
     }
     const content = this.resolveInternalArticle(rawUrl, linkTitle);
@@ -565,6 +662,27 @@ struct ScpArticlePage {
     } catch (error) {
       this.showToast(error instanceof Error ? error.message : '收藏操作失败');
     }
+  }
+
+  private toggleRevealHiddenText(): void {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    this.noteReadingInteraction();
+    const next = !this.revealHiddenText;
+    this.revealHiddenText = next;
+    if (!next) {
+      this.showToast('已关闭反白透视');
+      return;
+    }
+    const doc = this.document;
+    let count = doc !== undefined ? ArticleRenderer.countHiddenTextSegments(doc.blocks) : 0;
+    if (doc !== undefined) {
+      for (let index: number = 0; index < doc.footnotes.length; index++) {
+        count += ArticleRenderer.countHiddenTextSegments(doc.footnotes[index].blocks);
+      }
+    }
+    this.showToast(count > 0 ?
+      `已开启反白透视（发现 ${count} 处隐藏文本）` :
+      '已开启反白透视（本文未检测到隐藏文本）');
   }
 
   private async toggleCompleted(): Promise<void> {
@@ -667,9 +785,48 @@ struct ScpArticlePage {
     }
     items.push({
       content: {
+        icon: this.webModeActive ? $r('sys.symbol.doc_text') : $r('sys.symbol.website'),
+        label: this.webModeActive ? '切换原生阅读' : '原版网页模式',
+        isEnabled: this.sourceUrl.length > 0,
+        action: () => {
+          if (this.webModeActive) {
+            this.exitWebMode();
+          } else {
+            this.hapticService.playSelection(this.settings.hapticEnabled);
+            this.enterWebMode(this.sourceUrl);
+          }
+        }
+      }
+    });
+    if (this.webModeActive) {
+      items.push({
+        content: {
+          icon: $r('sys.symbol.arrow_clockwise'),
+          label: '刷新网页',
+          action: () => {
+            this.hapticService.playSelection(this.settings.hapticEnabled);
+            this.webReloadEpoch++;
+          }
+        }
+      });
+    } else {
+      items.push({
+        content: {
+          icon: this.revealHiddenText ? $r('sys.symbol.eye_slash') : $r('sys.symbol.eye'),
+          label: this.revealHiddenText ? '关闭反白透视' : '反白透视',
+          isEnabled: this.document !== undefined,
+          action: () => {
+            this.toggleRevealHiddenText();
+          }
+        }
+      });
+    }
+    items.push({
+      content: {
         icon: $r('sys.symbol.arrow_up_right'),
         label: '在浏览器中打开',
-        action: () => this.openUrl(this.sourceUrl)
+        action: () => this.openUrl(this.webModeActive && this.webModeUrl.length > 0 ?
+          this.webModeUrl : this.sourceUrl)
       }
     });
     items.push({
@@ -694,8 +851,18 @@ struct ScpArticlePage {
       sidePanelAvailable: this.sidePanelAvailable,
       sidePanelOpen: this.sidePanelOpen,
       sidePanelLabel: this.sidePanelLabel,
+      revealHiddenActive: this.revealHiddenText,
+      webModeActive: this.webModeActive,
       onToggleSidePanel: (): void => {
         this.sidePanelOpen = !this.sidePanelOpen;
+      },
+      onDisableRevealHidden: (): void => {
+        if (this.revealHiddenText) {
+          this.toggleRevealHiddenText();
+        }
+      },
+      onExitWebMode: (): void => {
+        this.exitWebMode();
       }
     })
   }
@@ -728,10 +895,20 @@ struct ScpArticlePage {
               .fontSize(14)
               .fontColor($r('sys.color.font_secondary'))
               .textAlign(TextAlign.Center)
-            Button('重试', { stateEffect: false })
-              .onClick(() => {
-                this.retryArticle();
-              })
+            Row({ space: 10 }) {
+              Button('重试', { stateEffect: false })
+                .onClick(() => {
+                  this.retryArticle();
+                })
+              if (this.routeResolved && this.sourceUrl.length > 0) {
+                Button('原版网页打开', { stateEffect: false })
+                  .backgroundColor($r('sys.color.comp_background_tertiary'))
+                  .fontColor($r('sys.color.font'))
+                  .onClick(() => {
+                    this.enterWebMode(this.sourceUrl);
+                  })
+              }
+            }
           }
           .width('100%')
           .height('100%')
@@ -759,6 +936,16 @@ struct ScpArticlePage {
             galleryReturnEpoch: this.galleryReturnEpoch,
             materialEnabled: this.settings.immersiveMaterialEnabled,
             sidePanelOpen: this.sidePanelOpen,
+            revealHiddenText: this.revealHiddenText,
+            webModeHint: this.webModeHint,
+            onSwitchToWebMode: (): void => {
+              this.hapticService.playSelection(this.settings.hapticEnabled);
+              this.enterWebMode(this.sourceUrl);
+            },
+            onHiddenRevealInteraction: (): void => {
+              this.hapticService.playSelection(this.settings.hapticEnabled);
+              this.noteReadingInteraction();
+            },
             onSidePanelAvailabilityChange: (available: boolean, label: string): void => {
               this.sidePanelAvailable = available;
               this.sidePanelLabel = label;
@@ -798,6 +985,24 @@ struct ScpArticlePage {
             onToggleExpanded: (block: ScpContentBlock) => this.toggleRendererBlock(block),
             onOpenRelatedTale: (tale: ArticleRelatedTale) => this.openTale(tale),
             onContentLaidOut: () => this.onRendererContentLaidOut()
+          })
+            .visibility(this.webModeActive ? Visibility.Hidden : Visibility.Visible)
+        }
+
+        // 端内原版网页阅读层：用于强交互（SCP-3125）、ListPages 迭代（SCP-CN-2000）与重度特效版式。
+        if (this.webModeActive && this.webModeUrl.length > 0) {
+          ArticleWebRenderer({
+            url: this.webModeUrl,
+            baseArticleUrl: this.sourceUrl,
+            topPadding: pageContentTop() + ARTICLE_READING_STATUS_HEIGHT,
+            reloadEpoch: this.webReloadEpoch,
+            backEpoch: this.webBackEpoch,
+            onOpenArticleLink: (url: string, title: string) => this.openArticleLink(url, title),
+            onOpenExternalUrl: (url: string) => this.openUrl(url),
+            onCanGoBackChange: (canGoBack: boolean) => {
+              this.webModeCanGoBack = canGoBack;
+            },
+            onSwitchToNative: () => this.exitWebMode()
           })
         }
 
@@ -959,6 +1164,10 @@ struct ScpArticlePage {
       // 预览打开时，系统返回先关闭预览层，不再退出文章页。
       if (this.previewVisible) {
         this.closePreview();
+        return true;
+      }
+      if (this.webModeActive && this.webModeCanGoBack) {
+        this.webBackEpoch++;
         return true;
       }
       return false;

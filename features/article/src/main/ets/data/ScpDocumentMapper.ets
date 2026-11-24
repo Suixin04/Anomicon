@@ -1,8 +1,12 @@
 import {
+  ScpAcsMetadata,
   ScpArticleDocument,
   ScpBlockType,
+  ScpCalloutTone,
   ScpContentBlock,
   ScpFootnote,
+  ScpHiddenTextKind,
+  ScpTextAlign,
   ScpTextSpan,
   ScpTextStyle
 } from '../domain/ScpDocument';
@@ -46,6 +50,26 @@ interface RawSpan {
   t: string;
   u?: string;
   r?: string;
+  b?: boolean;
+  i?: boolean;
+  d?: boolean;
+  ul?: boolean;
+  m?: boolean;
+  sup?: boolean;
+  sub?: boolean;
+  c?: string;
+  fs?: number;
+  h?: string;
+}
+
+interface RawAcsMetadata {
+  itemNumber: string;
+  clearanceLevel: string;
+  containmentClass: string;
+  secondaryClass: string;
+  disruptionClass: string;
+  riskClass: string;
+  memoUrl: string;
 }
 
 interface RawBlock {
@@ -53,6 +77,14 @@ interface RawBlock {
   spans?: RawSpan[];
   level?: number;
   title?: string;
+  closeTitle?: string;
+  expanded?: boolean;
+  ordered?: boolean;
+  isHeader?: boolean;
+  tone?: string;
+  preferredWidth?: number;
+  acs?: RawAcsMetadata;
+  align?: string;
   blocks?: RawBlock[];
   src?: string;
   caption?: string;
@@ -100,6 +132,7 @@ export interface ScpExtractPayload {
   blocks: RawBlock[];
   footnotes: RawFootnote[];
   warnings: string[];
+  creditBlocks?: RawBlock[];
 }
 
 /** 把统一 HTML 提取协议的输出投影为正式文档模型。 */
@@ -127,10 +160,11 @@ export class ScpDocumentMapper {
     }
 
     const blocks = this.mapBlocks(itemId, payload.blocks);
+    const creditBlocks = this.mapBlocksWithPrefix(itemId, payload.creditBlocks ?? [], `${itemId}:credit`);
     const footnotes: ScpFootnote[] = [];
     for (let index: number = 0; index < payload.footnotes.length; index++) {
       const footnote = payload.footnotes[index];
-      const blocks = this.mapFootnoteBlocks(
+      const fnBlocks = this.mapFootnoteBlocks(
         itemId,
         footnote.blocks,
         `${itemId}:fn:${footnote.index}`,
@@ -139,8 +173,8 @@ export class ScpDocumentMapper {
       );
       // A Wikidot footnote may contain only indentation, anchors or a trailing
       // <br>.  Do not create an empty visual row for that payload.
-      if (blocks.length > 0) {
-        footnotes.push(new ScpFootnote(footnote.id, footnote.index, blocks));
+      if (fnBlocks.length > 0) {
+        footnotes.push(new ScpFootnote(footnote.id, footnote.index, fnBlocks));
       }
     }
 
@@ -159,7 +193,8 @@ export class ScpDocumentMapper {
       this.displayText(payload.rating).trim(),
       this.filteredTags(payload.tags),
       this.displayText(payload.pageVersion).trim(),
-      images
+      images,
+      creditBlocks
     );
   }
 
@@ -202,6 +237,10 @@ export class ScpDocumentMapper {
     if (!this.validateBlocks(payload.blocks, 0, budget) ||
       !this.validateFootnotes(payload.footnotes, budget)) {
       return '正文解析正文结构格式错误';
+    }
+    if (payload.creditBlocks !== undefined &&
+      (!Array.isArray(payload.creditBlocks) || !this.validateBlocks(payload.creditBlocks, 0, budget))) {
+      return '正文解析著作信息格式错误';
     }
     if (!Array.isArray(payload.warnings) || payload.warnings.length > MAX_PAYLOAD_WARNINGS ||
       !this.validateWarnings(payload.warnings)) {
@@ -286,11 +325,39 @@ export class ScpDocumentMapper {
       }
       if (block.level !== undefined &&
         (typeof block.level !== 'number' || !Number.isFinite(block.level) ||
-          block.level < 1 || block.level > 6)) {
+          block.level < 0 || block.level > 32)) {
         return false;
       }
       if (block.title !== undefined &&
         (typeof block.title !== 'string' || block.title.length > MAX_PAYLOAD_STRING_LENGTH)) {
+        return false;
+      }
+      if (block.closeTitle !== undefined &&
+        (typeof block.closeTitle !== 'string' || block.closeTitle.length > MAX_PAYLOAD_STRING_LENGTH)) {
+        return false;
+      }
+      if (block.expanded !== undefined && typeof block.expanded !== 'boolean') {
+        return false;
+      }
+      if (block.ordered !== undefined && typeof block.ordered !== 'boolean') {
+        return false;
+      }
+      if (block.isHeader !== undefined && typeof block.isHeader !== 'boolean') {
+        return false;
+      }
+      if (block.tone !== undefined &&
+        (typeof block.tone !== 'string' || block.tone.length > 64)) {
+        return false;
+      }
+      if (block.preferredWidth !== undefined &&
+        (typeof block.preferredWidth !== 'number' || !Number.isFinite(block.preferredWidth) ||
+          block.preferredWidth < 0 || block.preferredWidth > 4096)) {
+        return false;
+      }
+      if (block.acs !== undefined && !this.validateAcsMetadata(block.acs)) {
+        return false;
+      }
+      if (block.align !== undefined && (typeof block.align !== 'string' || block.align.length > 16)) {
         return false;
       }
       if (block.src !== undefined &&
@@ -313,6 +380,27 @@ export class ScpDocumentMapper {
     return true;
   }
 
+  private validateAcsMetadata(acs: RawAcsMetadata): boolean {
+    if (acs === null || typeof acs !== 'object' || Array.isArray(acs)) {
+      return false;
+    }
+    const fields = [
+      acs.itemNumber,
+      acs.clearanceLevel,
+      acs.containmentClass,
+      acs.secondaryClass,
+      acs.disruptionClass,
+      acs.riskClass,
+      acs.memoUrl
+    ];
+    for (let index: number = 0; index < fields.length; index++) {
+      if (typeof fields[index] !== 'string' || fields[index].length > MAX_PAYLOAD_STRING_LENGTH) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private validateSpans(spans: RawSpan[], budget: PayloadValidationBudget): boolean {
     if (spans.length > MAX_PAYLOAD_SPANS) {
       return false;
@@ -323,7 +411,18 @@ export class ScpDocumentMapper {
         typeof span.s !== 'string' || typeof span.t !== 'string' ||
         span.s.length > 128 || span.t.length > MAX_PAYLOAD_STRING_LENGTH ||
         (span.u !== undefined && (typeof span.u !== 'string' || span.u.length > MAX_PAYLOAD_STRING_LENGTH)) ||
-        (span.r !== undefined && (typeof span.r !== 'string' || span.r.length > MAX_PAYLOAD_STRING_LENGTH))) {
+        (span.r !== undefined && (typeof span.r !== 'string' || span.r.length > MAX_PAYLOAD_STRING_LENGTH)) ||
+        (span.b !== undefined && typeof span.b !== 'boolean') ||
+        (span.i !== undefined && typeof span.i !== 'boolean') ||
+        (span.d !== undefined && typeof span.d !== 'boolean') ||
+        (span.ul !== undefined && typeof span.ul !== 'boolean') ||
+        (span.m !== undefined && typeof span.m !== 'boolean') ||
+        (span.sup !== undefined && typeof span.sup !== 'boolean') ||
+        (span.sub !== undefined && typeof span.sub !== 'boolean') ||
+        (span.c !== undefined && (typeof span.c !== 'string' || span.c.length > 16)) ||
+        (span.fs !== undefined && (typeof span.fs !== 'number' || !Number.isFinite(span.fs) ||
+          span.fs < 0.5 || span.fs > 3.0)) ||
+        (span.h !== undefined && (typeof span.h !== 'string' || span.h.length > 32))) {
         return false;
       }
       budget.spanCount++;
@@ -348,6 +447,13 @@ export class ScpDocumentMapper {
         }
       }
       if (block.k === 'embed' && typeof block.src === 'string' && block.src.trim().length > 0) {
+        return true;
+      }
+      if (block.k === 'image' && typeof block.src === 'string' && block.src.trim().length > 0) {
+        return true;
+      }
+      if (block.k === 'acs_header' && block.acs !== undefined &&
+        (block.acs.itemNumber.trim().length > 0 || block.acs.containmentClass.trim().length > 0)) {
         return true;
       }
       if (this.hasReadableBlocks(block.blocks ?? [])) {
@@ -431,24 +537,55 @@ export class ScpDocumentMapper {
     return false;
   }
 
+  private cloneSpanWithText(span: ScpTextSpan, text: string): ScpTextSpan {
+    return new ScpTextSpan(
+      span.style,
+      text,
+      span.target,
+      span.referenceId,
+      span.bold,
+      span.italic,
+      span.deleted,
+      span.underline,
+      span.monospace,
+      span.superscript,
+      span.subscript,
+      span.color,
+      span.fontScale,
+      span.hiddenKind
+    );
+  }
+
+  private cloneBlockWithSpans(block: ScpContentBlock, spans: ScpTextSpan[]): ScpContentBlock {
+    return new ScpContentBlock(
+      block.key,
+      block.type,
+      spans,
+      block.source,
+      block.caption,
+      block.level,
+      block.children,
+      block.closeCaption,
+      block.initiallyExpanded,
+      block.ordered,
+      block.isHeader,
+      block.calloutTone,
+      block.preferredWidth,
+      block.acs,
+      block.textAlign
+    );
+  }
+
   private replaceLeadingSpanText(block: ScpContentBlock, nextFirstText: string): ScpContentBlock {
     const updated: ScpTextSpan[] = [];
     if (nextFirstText.length > 0) {
       const first = block.spans[0];
-      updated.push(new ScpTextSpan(first.style, nextFirstText, first.target, first.referenceId));
+      updated.push(this.cloneSpanWithText(first, nextFirstText));
     }
     for (let index: number = 1; index < block.spans.length; index++) {
       updated.push(block.spans[index]);
     }
-    return new ScpContentBlock(
-      block.key,
-      block.type,
-      this.trimSpanEdges(updated),
-      block.source,
-      block.caption,
-      block.level,
-      block.children
-    );
+    return this.cloneBlockWithSpans(block, this.trimSpanEdges(updated));
   }
 
   private dropFirstSpanAndTrimLeading(
@@ -463,18 +600,10 @@ export class ScpDocumentMapper {
         text = text.replace(/^\s*(?:\.(?!\d)|[．、:])\s*/, '');
       }
       if (text.length > 0) {
-        updated.push(new ScpTextSpan(span.style, text, span.target, span.referenceId));
+        updated.push(this.cloneSpanWithText(span, text));
       }
     }
-    return new ScpContentBlock(
-      block.key,
-      block.type,
-      this.trimSpanEdges(updated),
-      block.source,
-      block.caption,
-      block.level,
-      block.children
-    );
+    return this.cloneBlockWithSpans(block, this.trimSpanEdges(updated));
   }
 
   private stripDuplicateFootnoteIndex(
@@ -549,19 +678,201 @@ export class ScpDocumentMapper {
     return result;
   }
 
+  private mapCalloutTone(tone: string | undefined): ScpCalloutTone {
+    switch ((tone ?? '').toLowerCase()) {
+      case 'terminal':
+        return ScpCalloutTone.TERMINAL;
+      case 'warning':
+        return ScpCalloutTone.WARNING;
+      case 'note':
+        return ScpCalloutTone.NOTE;
+      default:
+        return ScpCalloutTone.NEUTRAL;
+    }
+  }
+
+  private mapTextAlign(align: string | undefined): ScpTextAlign {
+    switch ((align ?? '').toLowerCase()) {
+      case 'start':
+      case 'left':
+        return ScpTextAlign.START;
+      case 'center':
+        return ScpTextAlign.CENTER;
+      case 'end':
+      case 'right':
+        return ScpTextAlign.END;
+      case 'justify':
+        return ScpTextAlign.JUSTIFY;
+      default:
+        return ScpTextAlign.DEFAULT;
+    }
+  }
+
+  private mapHiddenKind(hidden: string | undefined): ScpHiddenTextKind {
+    switch ((hidden ?? '').toLowerCase()) {
+      case 'white_easter_egg':
+        return ScpHiddenTextKind.WHITE_EASTER_EGG;
+      case 'zero_size_whisper':
+        return ScpHiddenTextKind.ZERO_SIZE_WHISPER;
+      case 'blackbox':
+        return ScpHiddenTextKind.BLACKBOX;
+      default:
+        return ScpHiddenTextKind.NONE;
+    }
+  }
+
+  private sanitizeHexColor(raw: string | undefined): string {
+    if (raw === undefined) {
+      return '';
+    }
+    const trimmed = raw.trim();
+    return /^#[0-9A-Fa-f]{6}$/.test(trimmed) ? trimmed.toUpperCase() : '';
+  }
+
   private mapBlock(itemId: string, key: string, raw: RawBlock): ScpContentBlock {
     const spans = this.mapSpans(raw.spans);
+    const textAlign = this.mapTextAlign(raw.align);
     switch (raw.k) {
       case 'paragraph':
-        return new ScpContentBlock(key, ScpBlockType.PARAGRAPH, spans);
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.PARAGRAPH,
+          spans,
+          '',
+          '',
+          0,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          textAlign
+        );
       case 'heading':
-        return new ScpContentBlock(key, ScpBlockType.HEADING, spans, '', '', raw.level ?? 2);
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.HEADING,
+          spans,
+          '',
+          '',
+          raw.level ?? 2,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          textAlign
+        );
       case 'quote':
         return new ScpContentBlock(key, ScpBlockType.QUOTE, spans, '', '', 0,
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
       case 'collapsible':
-        return new ScpContentBlock(key, ScpBlockType.COLLAPSIBLE, [], '', this.displayText(raw.title ?? ''), 0,
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.COLLAPSIBLE,
+          [],
+          '',
+          this.displayText(raw.title ?? ''),
+          0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          this.displayText(raw.closeTitle ?? ''),
+          raw.expanded ?? false
+        );
+      case 'tabs':
+        return new ScpContentBlock(key, ScpBlockType.TABS, [], '', '', 0,
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
+      case 'tab_panel':
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.TAB_PANEL,
+          [],
+          '',
+          this.displayText(raw.title ?? ''),
+          0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key)
+        );
+      case 'callout':
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.CALLOUT,
+          [],
+          '',
+          '',
+          0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          false,
+          false,
+          this.mapCalloutTone(raw.tone)
+        );
+      case 'code_block':
+        return new ScpContentBlock(key, ScpBlockType.CODE_BLOCK, spans);
+      case 'list':
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.LIST,
+          [],
+          '',
+          '',
+          raw.level ?? 0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          raw.ordered ?? false
+        );
+      case 'list_item':
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.LIST_ITEM,
+          spans,
+          '',
+          '',
+          raw.level ?? 0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          textAlign
+        );
+      case 'acs_header': {
+        const rawAcs = raw.acs;
+        const acs = rawAcs === undefined ? undefined : new ScpAcsMetadata(
+          this.displayText(rawAcs.itemNumber).trim(),
+          this.displayText(rawAcs.clearanceLevel).trim(),
+          this.displayText(rawAcs.containmentClass).trim(),
+          this.displayText(rawAcs.secondaryClass).trim(),
+          this.displayText(rawAcs.disruptionClass).trim(),
+          this.displayText(rawAcs.riskClass).trim(),
+          rawAcs.memoUrl.trim()
+        );
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.ACS_HEADER,
+          [],
+          '',
+          '',
+          0,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          acs
+        );
+      }
       case 'table':
         return new ScpContentBlock(key, ScpBlockType.TABLE, [], '', '', 0,
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
@@ -569,14 +880,43 @@ export class ScpDocumentMapper {
         return new ScpContentBlock(key, ScpBlockType.TABLE_ROW, [], '', '', 0,
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
       case 'cell':
-        return new ScpContentBlock(key, ScpBlockType.TABLE_CELL, spans);
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.TABLE_CELL,
+          spans,
+          '',
+          '',
+          0,
+          [],
+          '',
+          false,
+          false,
+          raw.isHeader ?? false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          textAlign
+        );
       case 'divider':
         return new ScpContentBlock(key, ScpBlockType.DIVIDER);
       case 'embed':
         return new ScpContentBlock(key, ScpBlockType.EMBED, [], raw.src ?? '');
       case 'image':
-        return new ScpContentBlock(key, ScpBlockType.IMAGE, [], raw.src ?? '',
-          this.displayText(raw.caption ?? ''));
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.IMAGE,
+          [],
+          raw.src ?? '',
+          this.displayText(raw.caption ?? ''),
+          0,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          raw.preferredWidth ?? 0
+        );
       default:
         return new ScpContentBlock(key, ScpBlockType.UNSUPPORTED, spans);
     }
@@ -592,34 +932,55 @@ export class ScpDocumentMapper {
       // Keep code snippets byte-for-byte stable; every other span is reader
       // prose and can safely use the Traditional -> Simplified projection.
       const text = span.s === 'code' ? span.t : this.displayText(span.t);
+      let style = ScpTextStyle.PLAIN;
+      let target = '';
+      let referenceId = '';
+      let outputText = text;
       switch (span.s) {
         case 'strong':
-          result.push(new ScpTextSpan(ScpTextStyle.STRONG, text));
+          style = ScpTextStyle.STRONG;
           break;
         case 'em':
-          result.push(new ScpTextSpan(ScpTextStyle.EMPHASIS, text));
+          style = ScpTextStyle.EMPHASIS;
           break;
         case 'del':
-          result.push(new ScpTextSpan(ScpTextStyle.DELETED, text));
+          style = ScpTextStyle.DELETED;
           break;
         case 'code':
-          result.push(new ScpTextSpan(ScpTextStyle.CODE, text));
+          style = ScpTextStyle.CODE;
           break;
         case 'link':
-          result.push(new ScpTextSpan(ScpTextStyle.LINK, text, span.u ?? ''));
+          style = ScpTextStyle.LINK;
+          target = span.u ?? '';
           break;
         case 'footnote':
-          result.push(new ScpTextSpan(
-            ScpTextStyle.FOOTNOTE_REFERENCE,
-            this.normalizeFootnoteRefLabel(text),
-            '',
-            span.r ?? ''
-          ));
+          style = ScpTextStyle.FOOTNOTE_REFERENCE;
+          outputText = this.normalizeFootnoteRefLabel(text);
+          referenceId = span.r ?? '';
           break;
         default:
-          result.push(new ScpTextSpan(ScpTextStyle.PLAIN, text));
+          style = ScpTextStyle.PLAIN;
           break;
       }
+      const rawScale = span.fs;
+      const fontScale = rawScale !== undefined && Number.isFinite(rawScale) ?
+        Math.max(0.72, Math.min(1.85, rawScale)) : 1;
+      result.push(new ScpTextSpan(
+        style,
+        outputText,
+        target,
+        referenceId,
+        span.b ?? (style === ScpTextStyle.STRONG),
+        span.i ?? (style === ScpTextStyle.EMPHASIS),
+        span.d ?? (style === ScpTextStyle.DELETED),
+        span.ul ?? false,
+        span.m ?? (style === ScpTextStyle.CODE),
+        span.sup ?? false,
+        span.sub ?? false,
+        this.sanitizeHexColor(span.c),
+        fontScale,
+        this.mapHiddenKind(span.h)
+      ));
     }
     return this.trimSpanEdges(result);
   }
@@ -632,7 +993,32 @@ export class ScpDocumentMapper {
     return match !== null ? match[1].toUpperCase() : sourceUrl;
   }
 
+  private findAcsClass(blocks: ScpContentBlock[]): string {
+    for (let index: number = 0; index < blocks.length; index++) {
+      const block = blocks[index];
+      if (block.type === ScpBlockType.ACS_HEADER && block.acs !== undefined) {
+        const containment = block.acs.containmentClass.trim();
+        const secondary = block.acs.secondaryClass.trim();
+        if ((containment === '机密' || containment.toLowerCase() === 'esoteric') && secondary.length > 0) {
+          return secondary;
+        }
+        if (containment.length > 0) {
+          return containment;
+        }
+      }
+      const nested = this.findAcsClass(block.children);
+      if (nested.length > 0) {
+        return nested;
+      }
+    }
+    return '';
+  }
+
   private objectClassOf(blocks: ScpContentBlock[]): string {
+    const acsClass = this.findAcsClass(blocks);
+    if (acsClass.length > 0) {
+      return acsClass;
+    }
     for (let index: number = 0; index < blocks.length; index++) {
       const text = this.plainText(blocks[index]);
       const match = /项目等级：?\s*([A-Za-z\u4e00-\u9fa5]+)/.exec(toSimplifiedChinese(text));
@@ -688,7 +1074,7 @@ export class ScpDocumentMapper {
       if (text.length === 0) {
         continue;
       }
-      result.push(new ScpTextSpan(span.style, text, span.target, span.referenceId));
+      result.push(this.cloneSpanWithText(span, text));
     }
     return result;
   }
@@ -696,6 +1082,9 @@ export class ScpDocumentMapper {
   private isMeaningfulBlock(block: ScpContentBlock): boolean {
     if (block.type === ScpBlockType.DIVIDER) {
       return true;
+    }
+    if (block.type === ScpBlockType.ACS_HEADER && block.acs !== undefined) {
+      return block.acs.itemNumber.trim().length > 0 || block.acs.containmentClass.trim().length > 0;
     }
     if (block.source.trim().length > 0) {
       return true;

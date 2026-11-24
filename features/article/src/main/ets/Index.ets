@@ -17,10 +17,14 @@ export {
   ArticleRelatedTale
 } from './domain/ArticleContracts';
 export {
+  ScpAcsMetadata,
   ScpArticleDocument,
   ScpBlockType,
+  ScpCalloutTone,
   ScpContentBlock,
   ScpFootnote,
+  ScpHiddenTextKind,
+  ScpTextAlign,
   ScpTextSpan,
   ScpTextStyle
 } from './domain/ScpDocument';
@@ -37,6 +41,12 @@ export {
   ArticleViewModelListener
 } from './presentation/viewmodel/ArticleViewModel';
 export { ArticleNativeRenderer } from './presentation/view/ArticleNativeRenderer';
+export { ArticleWebRenderer } from './presentation/view/ArticleWebRenderer';
+export {
+  ArticleRenderer,
+  ArticleWebModeDecision,
+  ArticleWebModeRecommendation
+} from './presentation/view/ArticleRenderer';
 export { ArticleScrollRestore } from './presentation/view/ArticleScrollRestore';
 // Public presentation pieces used by the product route adapter. They accept
 // only serializable content/preview callbacks; the native parser is the normal

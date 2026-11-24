@@ -3,7 +3,7 @@
 // 所有样式标签与结构映射见 ScpDocument.ets 的 ScpBlockType/ScpTextStyle。
 function __anomiconExtract() {
   var out = {
-    parserVersion: 5,
+    parserVersion: 8,
     ok: false,
     error: '',
     title: '',
@@ -584,6 +584,45 @@ function __anomiconExtract() {
     }
 
     walkBlocks(pc, out.blocks);
+
+    var pcLinks = pc.querySelectorAll('a[href]');
+    for (var li = 0; li < pcLinks.length; li++) {
+      var linkEl = pcLinks[li];
+      if (linkEl.closest('.footer-wikiwalk-nav, .page-tags, .page-options, .info-container')) {
+        continue;
+      }
+      var href = (linkEl.getAttribute('href') || '').trim();
+      if (/\/offset\/\d+(?:[/?#]|$)/i.test(href)) {
+        addWarning('interactive:listpages-offset');
+        break;
+      }
+    }
+
+    var styles = document.querySelectorAll('style');
+    for (var si = 0; si < styles.length; si++) {
+      var styleEl = styles[si];
+      if ((styleEl.id || '').toLowerCase() === 'internal-style') {
+        continue;
+      }
+      var cssText = styleEl.textContent || '';
+      if (cssText.length < 4000) {
+        continue;
+      }
+      var cssLow = cssText.toLowerCase();
+      if (cssLow.indexOf('anom-bar') >= 0 ||
+        cssLow.indexOf('bhl.scpwikicn') >= 0 ||
+        cssLow.indexOf('black-highlighter') >= 0 ||
+        (cssLow.indexOf('info-container') >= 0 && cssLow.indexOf('modal-wrapper') >= 0)) {
+        continue;
+      }
+      if (cssLow.indexOf('@keyframes') >= 0 ||
+        cssLow.indexOf('animation:') >= 0 ||
+        cssLow.indexOf('grid-template') >= 0 ||
+        cssLow.indexOf('clip-path') >= 0) {
+        addWarning('format-screw:custom-css');
+        break;
+      }
+    }
 
     var footnotesBox = pc.querySelector('.footnotes-footer');
     if (footnotesBox) {
