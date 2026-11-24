@@ -16,6 +16,7 @@ import {
   SearchHistoryRepository,
   TaleRepository
 } from '../domain/CatalogRepositories';
+import { SeriesTalesRepository } from '../domain/SeriesTalesContracts';
 import { ScpHtmlRequestPriority } from '../domain/ArticleHtmlRepository';
 import {
   findCatalogSeriesById,
@@ -26,8 +27,13 @@ import { ScpCatalogRawEntry } from '../domain/StaticCatalogContracts';
 import { CachedArticleRepo } from '../data/CachedArticleRepo';
 import { PreviewRepositoryAdapter } from '../data/PreviewRepositoryAdapter';
 import { CatalogRepoAdapter } from '../data/CatalogRepoAdapter';
-import { ScpCatalogCacheService } from '../data/ScpCatalogCacheService';
+import { ScpCatalogCacheService, ScpStoredCatalog } from '../data/ScpCatalogCacheService';
 import { ScpCatalogTitleResolver } from '../data/ScpCatalogTitleResolver';
+import {
+  SeriesTalesCacheRecord,
+  SeriesTalesCacheStore,
+  SeriesTalesRepositoryAdapter
+} from '../data/SeriesTalesRepositoryAdapter';
 import { ScpImageCacheService } from '../data/ScpImageCacheService';
 import { ScpImagePrefetchService } from '../data/ScpImagePrefetchService';
 import { PreviewActionsAdapter } from '../data/PreviewActionsAdapter';
@@ -80,10 +86,27 @@ function titleSeriesDescriptor(seriesId: string): ScpSeriesDescriptor | undefine
   );
 }
 
+class ScpSeriesTalesCacheStore implements SeriesTalesCacheStore {
+  private readonly service: ScpCatalogCacheService;
+
+  constructor(service: ScpCatalogCacheService) {
+    this.service = service;
+  }
+
+  get(key: string): Promise<SeriesTalesCacheRecord | undefined> {
+    return this.service.get(key);
+  }
+
+  put(record: SeriesTalesCacheRecord): Promise<void> {
+    return this.service.put(new ScpStoredCatalog(record.seriesId, record.json, record.parsedAt));
+  }
+}
+
 /** Explicit ArkTS object type for the graph returned to the product layer. */
 class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
   readonly catalogRepository: CatalogRepository;
   readonly taleRepository: TaleRepository;
+  readonly seriesTalesRepository: SeriesTalesRepository;
   readonly previewRepository: PreviewRepository;
   readonly searchHistoryRepository: SearchHistoryRepository;
   readonly articleHtmlRepository: ArticleHtmlRepository;
@@ -96,6 +119,7 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
   constructor(
     catalogRepository: CatalogRepository,
     taleRepository: TaleRepository,
+    seriesTalesRepository: SeriesTalesRepository,
     previewRepository: PreviewRepository,
     searchHistoryRepository: SearchHistoryRepository,
     articleHtmlRepository: ArticleHtmlRepository,
@@ -107,6 +131,7 @@ class CatalogFeatureGraphImpl implements CatalogFeatureGraph {
   ) {
     this.catalogRepository = catalogRepository;
     this.taleRepository = taleRepository;
+    this.seriesTalesRepository = seriesTalesRepository;
     this.previewRepository = previewRepository;
     this.searchHistoryRepository = searchHistoryRepository;
     this.articleHtmlRepository = articleHtmlRepository;
@@ -220,6 +245,10 @@ export function createCatalogFeatureGraph(
     parser
   );
   const taleRepository = new TaleRepositoryAdapter(taleListService, parser);
+  const seriesTalesRepository = new SeriesTalesRepositoryAdapter(
+    articleHtmlRepository,
+    new ScpSeriesTalesCacheStore(catalogCacheService)
+  );
   const previewRepository = new PreviewRepositoryAdapter(previewService);
   const searchHistoryRepository = new SearchHistoryAdapter(searchHistoryService);
   const titleResolver = new TitleResolverAdapter(
@@ -286,6 +315,7 @@ export function createCatalogFeatureGraph(
   return new CatalogFeatureGraphImpl(
     catalogRepository,
     taleRepository,
+    seriesTalesRepository,
     previewRepository,
     searchHistoryRepository,
     articleHtmlRepository,

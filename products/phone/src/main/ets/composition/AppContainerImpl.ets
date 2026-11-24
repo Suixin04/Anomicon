@@ -264,7 +264,8 @@ export class AppContainer {
       }
       const articleMetadata: ArticleMetadataPort = new ArticleMetadataAdapter(
         this.catalogGraph.titleResolver,
-        this.catalogGraph.taleRepository
+        this.catalogGraph.taleRepository,
+        this.catalogGraph.seriesTalesRepository
       );
       // Article owns its gateway/parser/view-state adapters; the product only
       // supplies Catalog domain ports assembled above.

@@ -1,5 +1,6 @@
 import catalogSearchSnapshotTest from './CatalogSearchSnapshot.test';
 import catalogDirectTargetTest from './CatalogDirectTarget.test';
+import seriesTalesEditionTest from './SeriesTalesEdition.test';
 import scpPageFetchLifecycleTest from './ScpPageFetchLifecycle.test';
 import staticCatalogHtmlParserTest from './StaticCatalogHtmlParser.test';
 import scpPreviewImageFallbackTest from './ScpPreviewImageFallback.test';
@@ -10,6 +11,7 @@ import scpPreviewHtmlExtractorTest from './ScpPreviewHtmlExtractor.test';
 export default function testsuite(): void {
   catalogSearchSnapshotTest();
   catalogDirectTargetTest();
+  seriesTalesEditionTest();
   scpPageFetchLifecycleTest();
   staticCatalogHtmlParserTest();
   scpPreviewImageFallbackTest();

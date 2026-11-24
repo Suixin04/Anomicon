@@ -168,7 +168,7 @@ export class StaticCatalogHtmlParser {
   }
 
   /** 只保留 page-content 正文，避免侧栏与页脚导航链接混入结果。 */
-  private static pageContent(html: string): string {
+  static pageContent(html: string): string {
     const marker = /<div\b[^>]*\bid\s*=\s*(["'])page-content\1[^>]*>/i.exec(html);
     if (marker === null || marker.index === undefined) {
       return '';
@@ -324,13 +324,13 @@ export class StaticCatalogHtmlParser {
     return navigationPages.indexOf(slug) < 0 && !slug.startsWith('user:');
   }
 
-  private static normalizeHref(value: string): string {
+  static normalizeHref(value: string): string {
     const decoded = StaticCatalogHtmlParser.decodeEntities(value).trim();
     const hash = decoded.indexOf('#');
     return (hash >= 0 ? decoded.substring(0, hash) : decoded).trim();
   }
 
-  private static cleanText(value: string): string {
+  static cleanText(value: string): string {
     const withoutMarkup = value
       .replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ')
       .replace(/<!--[\s\S]*?-->/g, ' ')

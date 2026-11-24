@@ -14,7 +14,8 @@ export {
   ArticleHistoryPort,
   ArticleHistorySnapshot,
   ArticleMetadataPort,
-  ArticleRelatedTale
+  ArticleRelatedTale,
+  ArticleRelatedTaleSource
 } from './domain/ArticleContracts';
 export {
   ScpAcsMetadata,

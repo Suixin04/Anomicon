@@ -24,7 +24,10 @@ import {
   uiImmersiveMaterialSupported,
   windowWidthVp
 } from 'anomiconbasic';
-import { ArticleRelatedTale } from '../../domain/ArticleContracts';
+import {
+  ArticleRelatedTale,
+  ArticleRelatedTaleSource
+} from '../../domain/ArticleContracts';
 import {
   ScpArticleDocument,
   ScpBlockType,
@@ -571,6 +574,7 @@ export struct ArticleNativeRenderer {
   @Local private activeWorkbenchTab: number = WorkbenchTab.FOOTNOTES;
   @Local private userClosedSidePanel: boolean = false;
   @Local private revealedHiddenKeys: string[] = [];
+  @Local private expandAllRelatedTales: boolean = false;
   private readonly galleryController: SwiperController = new SwiperController();
   private readonly footnoteSheetScroller: Scroller = new Scroller();
   private readonly tocSheetScroller: Scroller = new Scroller();
@@ -632,6 +636,7 @@ export struct ArticleNativeRenderer {
     if (!sameItem) {
       this.userClosedSidePanel = false;
       this.revealedHiddenKeys = [];
+      this.expandAllRelatedTales = false;
       this.tocFilterQuery = '';
       this.searchQuery = '';
       this.searchHits = [];
@@ -2121,6 +2126,45 @@ export struct ArticleNativeRenderer {
     return `关联故事 (${this.relatedTaleRows.length})`;
   }
 
+  private relatedTalesSourceBadge(): string {
+    if (this.relatedTaleRows.length === 0) {
+      return '';
+    }
+    const source = this.relatedTaleRows[0].tale.source;
+    if (source === ArticleRelatedTaleSource.SERIES_TALES_EDITION) {
+      return '收录于系列故事版';
+    }
+    if (source === ArticleRelatedTaleSource.TITLE_INDEX_FALLBACK) {
+      return '按编号匹配';
+    }
+    return '';
+  }
+
+  private isCuratedRelatedTales(): boolean {
+    return this.relatedTaleRows.length > 0 &&
+      this.relatedTaleRows[0].tale.source === ArticleRelatedTaleSource.SERIES_TALES_EDITION;
+  }
+
+  private relatedTalesSidePanelCaption(): string {
+    const badge = this.relatedTalesSourceBadge();
+    if (badge.length === 0) {
+      return '';
+    }
+    return `${badge} · 共 ${this.relatedTaleRows.length} 篇`;
+  }
+
+  private visibleBottomRelatedTaleRows(): ArticleRelatedTaleRowState[] {
+    if (this.expandAllRelatedTales || this.relatedTaleRows.length <= 8) {
+      return this.relatedTaleRows;
+    }
+    return this.relatedTaleRows.slice(0, 8);
+  }
+
+  private relatedTalesExpandLabel(): string {
+    return this.expandAllRelatedTales ?
+      '收起部分关联故事' : `展开全部 ${this.relatedTaleRows.length} 篇关联故事`;
+  }
+
   @Builder
   private spanText(
     row: ArticleBlockRowState,
@@ -2968,12 +3012,31 @@ export struct ArticleNativeRenderer {
         Divider()
           .strokeWidth(0.5)
           .color($r('sys.color.comp_divider'))
-        Text('关联故事')
-          .fontSize(AppTypography.SUBTITLE_M)
-          .fontWeight(FontWeight.Bold)
-          .fontColor($r('sys.color.font'))
-          .width('100%')
-        ForEach(this.relatedTaleRows, (row: ArticleRelatedTaleRowState) => {
+        Row({ space: 8 }) {
+          Text('关联故事')
+            .fontSize(AppTypography.SUBTITLE_M)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('sys.color.font'))
+          if (this.relatedTalesSourceBadge().length > 0) {
+            Text(this.relatedTalesSourceBadge())
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.isCuratedRelatedTales() ?
+                $r('sys.color.font_emphasize') : $r('sys.color.font_secondary'))
+              .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+              .borderRadius(9)
+              .backgroundColor(this.isCuratedRelatedTales() ?
+                badgeInfoBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+          }
+          Blank()
+          Text(`共 ${this.relatedTaleRows.length} 篇`)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_tertiary'))
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        ForEach(this.visibleBottomRelatedTaleRows(), (row: ArticleRelatedTaleRowState) => {
           Row({ space: 8 }) {
             Column({ space: 2 }) {
               Text(row.tale.title)
@@ -3004,6 +3067,29 @@ export struct ArticleNativeRenderer {
           .borderRadius(12)
           .onClick(() => this.onOpenRelatedTale(row.tale))
         }, (row: ArticleRelatedTaleRowState) => row.key)
+
+        if (this.relatedTaleRows.length > 8) {
+          Row({ space: 6 }) {
+            Text(this.relatedTalesExpandLabel())
+              .fontSize(AppTypography.BODY_S)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('sys.color.font_secondary'))
+            SymbolGlyph($r('sys.symbol.chevron_down'))
+              .fontSize(13)
+              .fontColor([$r('sys.color.icon_secondary')])
+              .rotate({ angle: this.expandAllRelatedTales ? 180 : 0 })
+          }
+          .attributeModifier(ROW_PRESS_MODIFIER)
+          .animation(pressAnimation())
+          .width('100%')
+          .height(40)
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(12)
+          .onClick(() => {
+            this.expandAllRelatedTales = !this.expandAllRelatedTales;
+          })
+        }
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
@@ -3641,6 +3727,30 @@ export struct ArticleNativeRenderer {
           .scrollBar(BarState.Auto)
         }
       } else {
+        if (this.relatedTalesSidePanelCaption().length > 0) {
+          Row({ space: 6 }) {
+            SymbolGlyph($r('sys.symbol.list_book'))
+              .fontSize(13)
+              .fontColor([this.isCuratedRelatedTales() ?
+                $r('sys.color.font_emphasize') : $r('sys.color.icon_secondary')])
+            Text(this.relatedTalesSidePanelCaption())
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.isCuratedRelatedTales() ?
+                $r('sys.color.font_emphasize') : $r('sys.color.font_secondary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+          .alignItems(VerticalAlign.Center)
+
+          Divider()
+            .strokeWidth(0.5)
+            .color($r('sys.color.comp_divider'))
+        }
+
         List({ space: 10 }) {
           ForEach(this.relatedTaleRows, (taleRow: ArticleRelatedTaleRowState) => {
             ListItem() {

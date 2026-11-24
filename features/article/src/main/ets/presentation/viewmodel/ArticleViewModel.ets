@@ -973,7 +973,7 @@ export class ArticleViewModel implements ViewModelLifecycle {
     }).catch((): void => {
       resolvedTitle = '';
     }).finally(complete);
-    Promise.resolve().then(() => this.useCase.listRelatedTales(content, 6)).then((tales: ArticleRelatedTale[]): void => {
+    Promise.resolve().then(() => this.useCase.listRelatedTales(content, 64)).then((tales: ArticleRelatedTale[]): void => {
       resolvedTales = Array.isArray(tales) ? tales.slice() : [];
     }).catch((): void => {
       resolvedTales = [];

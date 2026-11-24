@@ -16,6 +16,7 @@ export {
   ArticleHistorySnapshot,
   ArticleMetadataPort,
   ArticleRelatedTale,
+  ArticleRelatedTaleSource,
   ScpAcsMetadata,
   ScpArticleDocument,
   ScpBlockType,

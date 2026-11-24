@@ -51,6 +51,12 @@ export {
   CatalogSearchTargetKind,
   resolveCatalogDirectTarget
 } from './domain/CatalogDirectTarget';
+export {
+  SeriesRelatedTaleEntry,
+  SeriesTalesRepository,
+  matchesExactScpReference,
+  resolveSeriesTalesEditionPageId
+} from './domain/SeriesTalesContracts';
 export { DailyContentPolicy } from './domain/DailyContentPolicy';
 export {
   CATALOG_TOOLBAR_HEIGHT,

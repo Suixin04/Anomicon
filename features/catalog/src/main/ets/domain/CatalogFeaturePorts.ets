@@ -7,6 +7,7 @@ import {
   SearchHistoryRepository,
   TaleRepository
 } from './CatalogRepositories';
+import { SeriesTalesRepository } from './SeriesTalesContracts';
 
 /**
  * The product composition root receives this graph instead of importing
@@ -16,6 +17,7 @@ import {
 export interface CatalogFeatureGraph {
   readonly catalogRepository: CatalogRepository;
   readonly taleRepository: TaleRepository;
+  readonly seriesTalesRepository: SeriesTalesRepository;
   readonly previewRepository: PreviewRepository;
   readonly searchHistoryRepository: SearchHistoryRepository;
   readonly articleHtmlRepository: ArticleHtmlRepository;

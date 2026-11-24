@@ -139,9 +139,15 @@ export interface ArticleDocumentParserPort {
  * as a serializable port lets the Article ViewModel own the request token and
  * lifecycle rules while the product composition root supplies the adapter.
  */
+export enum ArticleRelatedTaleSource {
+  SERIES_TALES_EDITION = 'series_tales_edition',
+  TITLE_INDEX_FALLBACK = 'title_index_fallback'
+}
+
 export interface ArticleRelatedTale {
   readonly id: string;
   readonly title: string;
+  readonly source?: ArticleRelatedTaleSource;
 }
 
 export interface ArticleMetadataPort {
