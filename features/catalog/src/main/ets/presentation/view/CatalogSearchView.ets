@@ -813,7 +813,11 @@ struct CatalogSearchContent {
                 .fontSize(16)
                 .fontColor([$r('sys.color.icon_secondary')])
                 .onClick(() => {
-                  this.viewModel.clearHistory();
+                  try {
+                    this.viewModel.clearHistory();
+                  } catch (error) {
+                    this.getUIContext().getPromptAction().showToast({ message: '清空搜索历史失败，请重试' });
+                  }
                 })
             }
             .width('100%')

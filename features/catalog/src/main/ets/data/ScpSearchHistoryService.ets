@@ -9,51 +9,81 @@ interface SearchHistoryPreferenceValues {
   catalog_search_history_native?: preferences.ValueType;
 }
 
-/** 搜索历史：本地 preferences 持久化，最近 10 条、去重、可清空。 */
-export class ScpSearchHistoryService {
-  private store: preferences.Preferences | undefined = undefined;
-  private context: common.UIAbilityContext | undefined = undefined;
-  private items: string[] = [];
-  private dirty: boolean = false;
+/** A write returns only after the new list is durable. */
+export interface SearchHistoryStorage {
+  discardCache(): void;
+  read(): preferences.ValueType | undefined;
+  write(items: string[]): void;
+}
 
-  initialize(context: common.UIAbilityContext): void {
+class PreferencesSearchHistoryStorage implements SearchHistoryStorage {
+  private readonly context: common.UIAbilityContext;
+
+  constructor(context: common.UIAbilityContext) {
     this.context = context;
-    if (this.store !== undefined) {
-      return;
-    }
-    try {
-      const store = preferences.getPreferencesSync(context, { name: PREFERENCES_NAME });
-      this.store = store;
-      if (!this.dirty) {
-        const values = store.getAllSync() as SearchHistoryPreferenceValues;
-        const stored = values.catalog_search_history_native;
-        if (stored !== undefined) {
-          this.items = this.itemsFromValue(stored);
-        }
-      } else {
-        // Retry an edit that was kept in memory after a previous flush error.
-        this.flush();
-      }
-    } catch (error) {
-      this.store = undefined;
-      // Keep the in-memory history intact.  Preferences may be temporarily
-      // unavailable during ability startup; clearing it here would make a
-      // recoverable read failure look like an intentional user clear.
-      console.warn(`Initialize search history failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-    }
   }
 
-  private itemsFromValue(value: preferences.ValueType | undefined): string[] {
-    return Array.isArray(value) ? this.normalizeItems(value as string[]) : [];
+  discardCache(): void {
+    preferences.removePreferencesFromCacheSync(this.context, PREFERENCES_NAME);
+  }
+
+  read(): preferences.ValueType | undefined {
+    const store = preferences.getPreferencesSync(this.context, { name: PREFERENCES_NAME });
+    const values = store.getAllSync() as SearchHistoryPreferenceValues;
+    return values.catalog_search_history_native;
+  }
+
+  write(items: string[]): void {
+    const store = preferences.getPreferencesSync(this.context, { name: PREFERENCES_NAME });
+    if (items.length === 0) {
+      store.deleteSync(HISTORY_KEY);
+    } else {
+      store.putSync(HISTORY_KEY, items);
+    }
+    store.flushSync();
+  }
+}
+
+/** 搜索历史：本地 preferences 持久化，最近 10 条、去重、可清空。 */
+export class ScpSearchHistoryService {
+  private readonly storage: SearchHistoryStorage;
+  private items: string[] = [];
+  private loaded: boolean = false;
+  private needsFreshCache: boolean = true;
+  private dirty: boolean = false;
+
+  constructor(storage: SearchHistoryStorage) {
+    this.storage = storage;
+  }
+
+  static forContext(context: common.UIAbilityContext): ScpSearchHistoryService {
+    return new ScpSearchHistoryService(new PreferencesSearchHistoryStorage(context));
+  }
+
+  initialize(): void {
+    if (this.dirty) {
+      this.saveAdditions();
+      return;
+    }
+    if (!this.loaded) {
+      try {
+        this.prepareStorage();
+        const stored = this.storage.read();
+        this.items = Array.isArray(stored) ? this.normalizeItems(stored as string[]) : [];
+        this.loaded = true;
+      } catch (error) {
+        console.warn(`Read search history failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+      }
+    }
   }
 
   list(): string[] {
-    this.ensureInitialized();
+    this.initialize();
     return this.items.slice();
   }
 
   add(query: string): void {
-    this.ensureInitialized();
+    this.initialize();
     const value = query.trim();
     if (value.length === 0) {
       return;
@@ -66,20 +96,42 @@ export class ScpSearchHistoryService {
     if (this.items.length > MAX_HISTORY) {
       this.items.length = MAX_HISTORY;
     }
-    this.dirty = true;
-    this.flush();
+    this.saveAdditions();
   }
 
   clear(): void {
-    this.ensureInitialized();
+    // A failed deletion leaves the visible list intact so either page can retry.
+    this.persist([]);
     this.items = [];
-    this.dirty = true;
-    this.flush();
+    this.dirty = false;
+    this.loaded = true;
   }
 
-  private ensureInitialized(): void {
-    if (this.store === undefined && this.context !== undefined) {
-      this.initialize(this.context);
+  private prepareStorage(): void {
+    if (this.needsFreshCache) {
+      this.storage.discardCache();
+      this.needsFreshCache = false;
+    }
+  }
+
+  private persist(items: string[]): void {
+    this.prepareStorage();
+    // A failed flush can consume the SDK's dirty keys. Retry from disk so an
+    // already edited cache cannot make the next flush skip the write.
+    this.needsFreshCache = true;
+    this.storage.write(items);
+    this.needsFreshCache = false;
+  }
+
+  private saveAdditions(): void {
+    try {
+      this.persist(this.items.slice());
+      this.loaded = true;
+      this.dirty = false;
+    } catch (error) {
+      // Keep newly entered queries usable and retry their write on the next read.
+      this.dirty = true;
+      console.warn(`Save search history failed: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
   }
 
@@ -99,27 +151,5 @@ export class ScpSearchHistoryService {
       }
     }
     return normalized;
-  }
-
-  private flush(): void {
-    const store = this.store;
-    if (store === undefined) {
-      console.warn('Search history preferences unavailable; keeping changes in memory');
-      return;
-    }
-    try {
-      store.putSync(HISTORY_KEY, this.items.slice());
-      // 历史最多 10 条且只在显式搜索/清空时写入；同步落盘可保证跳转后不丢失，
-      // 也避免异步 flush 的拒绝逃出当前 try/catch。
-      store.flushSync();
-    } catch (error) {
-      // Mark the handle unavailable so the next operation can reopen it.  The
-      // dirty flag keeps pending in-memory edits from being overwritten by an
-      // older persisted value during that retry.
-      this.store = undefined;
-      console.warn(`Flush search history failed: ${error instanceof Error ? error.message : 'unknown error'}`);
-      return;
-    }
-    this.dirty = false;
   }
 }

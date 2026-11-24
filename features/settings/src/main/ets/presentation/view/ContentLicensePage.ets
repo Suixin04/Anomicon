@@ -14,15 +14,17 @@ import {
   READING_CONTENT_MAX_WIDTH,
   windowWidthVp
 } from 'anomiconbasic';
+import { SettingsViewModel } from '../viewmodel/SettingsViewModel';
 import {
   ContentLicenseContent,
   ContentLicenseLink
 } from './SettingsViewContracts';
 
 @Builder
-export function ContentLicensePageBuilder(content: ContentLicenseContent) {
+export function ContentLicensePageBuilder(content: ContentLicenseContent, settings: SettingsViewModel) {
   ContentLicensePage({
-    content: content
+    content: content,
+    settings: settings
   })
 }
 
@@ -30,6 +32,7 @@ export function ContentLicensePageBuilder(content: ContentLicenseContent) {
 @ComponentV2
 export struct ContentLicensePage {
   @Require @Param content: ContentLicenseContent;
+  @Require @Param settings: SettingsViewModel;
   private pageStack: NavPathStack | undefined = undefined;
   private scroller: Scroller = new Scroller();
   @Local private paneWidth: number = 0;
@@ -136,7 +139,7 @@ export struct ContentLicensePage {
           popNavigationDestination(this.pageStack);
         })
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.settings.immersiveMaterialEnabled)
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))

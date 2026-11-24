@@ -46,12 +46,12 @@ export function SettingsRouteAdapter() {
 }
 @Builder
 export function AboutRouteAdapter() {
-  AboutPageBuilder(AppContainer.getInstance().appInfo());
+  AboutPageBuilder(AppContainer.getInstance().appInfo(), AppContainer.getInstance().settings());
 }
 
 @Builder
 export function ContentLicenseRouteAdapter() {
-  ContentLicensePageBuilder();
+  ContentLicensePageBuilder(AppContainer.getInstance().settings());
 }
 
 @Builder
@@ -78,12 +78,18 @@ export function SearchRouteAdapter() {
 
 @Builder
 export function LibraryCollectionRouteAdapter() {
-  LibraryCollectionPageBuilder(AppContainer.getInstance().createLibraryCollectionVM());
+  LibraryCollectionPageBuilder(
+    AppContainer.getInstance().createLibraryCollectionVM(),
+    AppContainer.getInstance().settings()
+  );
 }
 
 @Builder
 export function ExploreCollectionRouteAdapter() {
-  ExploreCollectionPageBuilder(AppContainer.getInstance().createExploreCollectionVM());
+  ExploreCollectionPageBuilder(
+    AppContainer.getInstance().createExploreCollectionVM(),
+    AppContainer.getInstance().settings()
+  );
 }
 
 @Builder

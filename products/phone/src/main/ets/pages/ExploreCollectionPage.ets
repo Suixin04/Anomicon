@@ -3,6 +3,7 @@ import {
   HdsNavDestination,
   HdsNavDestinationTitleMode
 } from '@kit.UIDesignKit';
+import { SettingsViewModel } from 'settings';
 import {
   ExploreCollectionMode,
   ExploreCollectionView,
@@ -24,9 +25,10 @@ import {
 } from 'anomiconbasic';
 
 @Builder
-export function ExploreCollectionPageBuilder(viewModel: ExploreCollectionVM) {
+export function ExploreCollectionPageBuilder(viewModel: ExploreCollectionVM, settings: SettingsViewModel) {
   ExploreCollectionPage({
-    viewModel: viewModel
+    viewModel: viewModel,
+    settings: settings
   })
 }
 
@@ -39,6 +41,7 @@ export function ExploreCollectionPageBuilder(viewModel: ExploreCollectionVM) {
 @ComponentV2
 struct ExploreCollectionPage {
   @Require @Param viewModel: ExploreCollectionVM;
+  @Require @Param settings: SettingsViewModel;
   private pageStack: NavPathStack | undefined = undefined;
   private navDestinationId: string = '';
   @Local private readonly navMotion: DestinationMotionState = new DestinationMotionState();
@@ -85,7 +88,7 @@ struct ExploreCollectionPage {
           popNavigationDestination(this.pageStack);
         })
       },
-      style: createAppTitleBarStyle()
+      style: createAppTitleBarStyle(this.settings.immersiveMaterialEnabled)
     })
     .titleMode(HdsNavDestinationTitleMode.MINI)
     .backgroundColor($r('sys.color.background_secondary'))

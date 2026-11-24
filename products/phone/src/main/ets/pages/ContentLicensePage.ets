@@ -1,12 +1,13 @@
 import {
   ContentLicenseContent,
   ContentLicenseLink,
-  ContentLicensePageBuilder as SettingsContentLicensePageBuilder
+  ContentLicensePageBuilder as SettingsContentLicensePageBuilder,
+  SettingsViewModel
 } from 'settings';
 
 /** Thin product adapter that supplies product-specific licence copy and links. */
 @Builder
-export function ContentLicensePageBuilder() {
+export function ContentLicensePageBuilder(settings: SettingsViewModel) {
   SettingsContentLicensePageBuilder(new ContentLicenseContent(
     '内容来源与许可',
     'CC BY-SA 3.0',
@@ -30,5 +31,5 @@ export function ContentLicensePageBuilder() {
       new ContentLicenseLink('CC BY-SA 3.0 许可文本', 'https://creativecommons.org/licenses/by-sa/3.0/')
     ],
     '格异录为非官方应用，与 SCP Wiki 不存在隶属或认可关系。'
-  ));
+  ), settings);
 }

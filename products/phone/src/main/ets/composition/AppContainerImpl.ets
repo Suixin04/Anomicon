@@ -521,15 +521,18 @@ export class AppContainer {
 
   /** Storage maintenance seam exposed only to Settings. */
   createSettingsStorageActions(): SettingsStorageActions {
-    if (this.articleGraph === undefined || this.catalogGraph === undefined ||
-      this.searchHistoryRepository === undefined) {
+    const article = this.articleGraph;
+    const catalog = this.catalogGraph;
+    if (article === undefined || catalog === undefined || this.searchHistoryRepository === undefined) {
       throw new Error('AppContainer must be initialized before managing storage');
     }
     return new SettingsStorageAdapter(
       this.appCacheDir,
       this.appFilesDir,
-      this.articleGraph,
-      this.catalogGraph,
+      async (): Promise<number> => (await article.listOfflineArticles()).length,
+      async (): Promise<void> => {
+        await Promise.all([article.clearDocumentCache(), catalog.clearTemporaryCaches()]);
+      },
       this.searchHistoryRepository
     );
   }
