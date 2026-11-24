@@ -242,6 +242,15 @@ export function buildArticleNavigationIndex(
     }
     registerAnchors(extraAnchors, location);
     registerAnchors(block.anchors, location);
+    for (let index = 0; index < block.spans.length; index++) {
+      const span = block.spans[index];
+      if (span.style === ScpTextStyle.FOOTNOTE_REFERENCE && span.referenceId.length > 0) {
+        const refAnchor = normalizeArticleAnchor(`footnoteref-${span.referenceId}`);
+        if (!anchorMap.has(refAnchor)) {
+          anchorMap.set(refAnchor, location);
+        }
+      }
+    }
 
     if (block.type === ScpBlockType.HEADING) {
       const title = readableHeadingText(block);
@@ -473,23 +482,31 @@ export function searchArticleDocument(
   for (let fnIdx = 0; fnIdx < document.footnotes.length && hits.length < maxHits; fnIdx++) {
     const fn = document.footnotes[fnIdx];
     const fnDisplayNumber = fn.index > 0 ? fn.index : fnIdx + 1;
-    const combinedText = flattenBlocksPlainText(fn.blocks);
-    const lower = combinedText.toLowerCase();
-    const matchPos = lower.indexOf(needle);
-    if (matchPos >= 0) {
-      const fnLocation = resolveAnchorLocation(index, `footnote-${fn.id}`) ??
-        index.locationByBlockKey.get(fn.blocks.length > 0 ? fn.blocks[0].key : '') ??
-        new ArticleBlockLocation(0, `fn:${fn.id}`, [], []);
-      hits.push(new ArticleSearchHit(
-        `hit:${hits.length}:fn:${fn.id}`,
-        fnLocation.blockKey,
-        buildSearchSnippet(combinedText, matchPos, needle.length),
-        `脚注 ${fnDisplayNumber}`,
-        true,
-        fnIdx,
-        fn.id,
-        fnLocation
-      ));
+    const parts: FootnoteTextPart[] = [];
+    collectFootnoteTextParts(fn.blocks, parts);
+    const combinedText = parts.map((part: FootnoteTextPart): string => part.text).join(' ');
+    const matchPos = combinedText.toLowerCase().indexOf(needle);
+    if (matchPos < 0) {
+      continue;
+    }
+    // Keep one result per footnote, including phrases that span adjacent blocks.
+    let nextStart = 0;
+    for (const part of parts) {
+      nextStart += part.text.toLowerCase().length + 1;
+      if (matchPos < nextStart) {
+        const location = index.locationByBlockKey.get(part.blockKey)!;
+        hits.push(new ArticleSearchHit(
+          `hit:${hits.length}:fn:${fn.id}`,
+          part.blockKey,
+          buildSearchSnippet(combinedText, matchPos, needle.length),
+          `脚注 ${fnDisplayNumber}`,
+          true,
+          fnIdx,
+          fn.id,
+          location
+        ));
+        break;
+      }
     }
   }
 
@@ -543,22 +560,19 @@ function spansTextOf(block: ScpContentBlock): string {
   return text;
 }
 
-function flattenBlocksPlainText(blocks: ScpContentBlock[]): string {
-  const parts: string[] = [];
-  for (let index = 0; index < blocks.length; index++) {
-    const block = blocks[index];
-    const spanText = spansTextOf(block).trim();
-    if (spanText.length > 0) {
-      parts.push(spanText);
+interface FootnoteTextPart {
+  readonly blockKey: string;
+  readonly text: string;
+}
+
+function collectFootnoteTextParts(blocks: ScpContentBlock[], parts: FootnoteTextPart[]): void {
+  for (const block of blocks) {
+    const text = spansTextOf(block).trim();
+    if (text.length > 0) {
+      parts.push({ blockKey: block.key, text: text });
     }
-    if (block.children.length > 0) {
-      const childText = flattenBlocksPlainText(block.children);
-      if (childText.length > 0) {
-        parts.push(childText);
-      }
-    }
+    collectFootnoteTextParts(block.children, parts);
   }
-  return parts.join(' ');
 }
 
 function buildSearchSnippet(text: string, matchPos: number, matchLen: number): string {

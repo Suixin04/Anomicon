@@ -214,6 +214,7 @@ struct ScpArticlePage {
   @Local private justifyBodyText: boolean = true;
   @Local private webModeActive: boolean = false;
   @Local private webModeUrl: string = '';
+  private currentWebUrl: string = '';
   @Local private webModeCanGoBack: boolean = false;
   @Local private webReloadEpoch: number = 0;
   @Local private webBackEpoch: number = 0;
@@ -443,6 +444,7 @@ struct ScpArticlePage {
     this.revealHiddenText = this.settings.defaultRevealHiddenText;
     this.webModeActive = false;
     this.webModeUrl = '';
+    this.currentWebUrl = '';
     this.webModeCanGoBack = false;
     this.webModeHint = '';
     this.autoWebEvaluatedItemId = '';
@@ -729,6 +731,8 @@ struct ScpArticlePage {
     }
     this.sidePanelOpen = false;
     this.webModeUrl = resolved;
+    this.currentWebUrl = resolved;
+    this.setReadingScrollActive(false);
     this.setWebModeActiveAnimated(true);
     if (toastMessage.length > 0) {
       this.showToast(toastMessage);
@@ -1202,8 +1206,7 @@ struct ScpArticlePage {
       content: {
         icon: $r('sys.symbol.arrow_up_right'),
         label: '在浏览器中打开',
-        action: () => this.openUrl(this.webModeActive && this.webModeUrl.length > 0 ?
-          this.webModeUrl : this.sourceUrl)
+        action: () => this.openUrl(this.webModeActive ? this.currentWebUrl : this.sourceUrl)
       }
     });
     items.push({
@@ -1456,6 +1459,12 @@ struct ScpArticlePage {
             onOpenExternalUrl: (url: string) => this.openUrl(url),
             onCanGoBackChange: (canGoBack: boolean) => {
               this.webModeCanGoBack = canGoBack;
+            },
+            onCurrentUrlChange: (url: string): void => { this.currentWebUrl = url; },
+            onReadingInput: (): void => {
+              if (this.webModeActive && this.acceptsProgressEvents) {
+                this.noteReadingInteraction();
+              }
             },
             onSwitchToNative: () => this.exitWebMode()
           })

@@ -258,6 +258,27 @@ export default function articleNavigationTest(): void {
       expect(creditHits[0].contextLabel).assertEqual('著作信息');
     });
 
+    it('returns from a footnote to the first referencing child of a collapsed, inactive tab', 0, () => {
+      const reference = new ScpTextSpan(ScpTextStyle.FOOTNOTE_REFERENCE, '[1]', '', '1');
+      const paragraphs: ScpContentBlock[] = [];
+      for (let index = 0; index < 60; index++) {
+        paragraphs.push(makeBlock(`p:${index}`, ScpBlockType.PARAGRAPH, [new ScpTextSpan(ScpTextStyle.PLAIN, '正文')]));
+      }
+      paragraphs.push(makeBlock('p:60', ScpBlockType.HEADING, [reference], '', 2, [], ['target']));
+      paragraphs.push(makeBlock('p:61', ScpBlockType.PARAGRAPH, [reference]));
+      const fold = makeBlock('fold', ScpBlockType.COLLAPSIBLE, [], '附录', 0, paragraphs);
+      const tabs = makeBlock('tabs', ScpBlockType.TABS, [], '', 0, [
+        makeBlock('first', ScpBlockType.PARAGRAPH), makeBlock('second', ScpBlockType.PARAGRAPH, [], '', 0, [fold])
+      ]);
+      const nav = buildArticleNavigationIndex([{ sectionIndex: 2, block: tabs }], [], -1);
+      const ref = resolveAnchorLocation(nav, '#footnoteref-1');
+      expect(ref?.blockKey).assertEqual('p:60');
+      expect(ref?.sectionIndex).assertEqual(2);
+      expect(ref?.expandCollapsibleKeys[0]).assertEqual('fold');
+      expect(ref?.tabTargets[0].tabIndex).assertEqual(1);
+      expect(resolveAnchorLocation(nav, 'target') === ref).assertTrue();
+    });
+
     it('splits text into highlight segments case-insensitively', 0, () => {
       const segments = splitTextForSearchHighlight('Mobile Task Force Alpha-1 and alpha-9', 'ALPHA');
       expect(segments.length).assertEqual(5);
