@@ -35,8 +35,35 @@ export {
   ReadingHistoryViewModel,
   ReadingHistoryViewModelListener,
   ResearchProfileViewModel,
-  ResearchProfileViewModelListener
+  ResearchProfileViewModelListener,
+  StorySeriesViewModel,
+  StorySeriesViewModelListener
 } from './presentation/viewmodel/Index';
+export {
+  ANTIMEMETICS_DIVISION_SERIES,
+  ANTIMEMETICS_HUB_ID,
+  ANTIMEMETICS_SERIES_ID,
+  StorySeriesArticleContext,
+  StorySeriesDefinition,
+  StorySeriesEnrollment,
+  StorySeriesEntry,
+  StorySeriesGroup,
+  StorySeriesProgressSnapshot,
+  StorySeriesRepository,
+  StorySeriesTier,
+  buildStorySeriesArticleContext,
+  containsSeriesEntry,
+  countSeriesProgress,
+  findStorySeriesByHubId,
+  findStorySeriesById,
+  findStorySeriesByMemberId,
+  flattenSeriesEntries,
+  listBuiltInStorySeries,
+  listMainlineSeriesEntries,
+  normalizeSeriesPageId,
+  parseStorySeriesGroupsFromHubHtml,
+  resolveSeriesResumeEntry
+} from './domain/StorySeriesContracts';
 export { ReadingActivityCoord } from './application/ReadingActivityCoord';
 export {
   LibraryCollectionItem,

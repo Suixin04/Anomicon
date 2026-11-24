@@ -10,11 +10,18 @@ import {
 } from 'library';
 import {
   adaptivePageMarginForWidth,
+  AppTypography,
+  badgeInfoBackgroundColor,
+  CARD_PRESS_MODIFIER,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
   pageContentTop,
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_BOTTOM_SPACE,
   PHONE_TAB_CONTENT_TOP_GAP,
+  pressAnimation,
   READING_CONTENT_MAX_WIDTH,
+  ROW_PRESS_MODIFIER,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
 import { ExploreCollectionMode } from '../../domain/ExploreContracts';
@@ -42,6 +49,10 @@ export struct ExploreHome {
     (_anchor: ExploreHeroAnchor): void => {};
   @Param active: boolean = false;
   @Param recommendationSkeletonAnimated: boolean = true;
+  @Param showStarterGuide: boolean = false;
+  @Event onDismissStarterGuide: () => void = (): void => {};
+  @Event onOpenStarterManual: () => void = (): void => {};
+  @Event onOpenStarterSeries: () => void = (): void => {};
   @Local private sideBySide: boolean = false;
   @Local private dualScreen: boolean = false;
   @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
@@ -119,6 +130,135 @@ export struct ExploreHome {
   }
 
   @Builder
+  private starterGuideActionButton(
+    testId: string,
+    symbol: Resource,
+    title: string,
+    subtitle: string,
+    accent: boolean,
+    onTap: () => void
+  ) {
+    Row({ space: 8 }) {
+      Column() {
+        SymbolGlyph(symbol)
+          .fontSize(15)
+          .fontColor([accent ? $r('sys.color.icon_emphasize') : $r('sys.color.icon_primary')])
+      }
+      .width(28)
+      .height(28)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(accent ? badgeInfoBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+      .borderRadius(8)
+
+      Column({ space: 2 }) {
+        Text(title)
+          .fontSize(AppTypography.BODY_S)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+        Text(subtitle)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(11)
+        .fontColor([$r('sys.color.icon_tertiary')])
+    }
+    .id(testId)
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .layoutWeight(1)
+    .padding({ left: 9, right: 8, top: 9, bottom: 9 })
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor($r('sys.color.comp_background_secondary'))
+    .borderRadius(12)
+    .onClick(() => onTap())
+  }
+
+  @Builder
+  private starterGuideSection() {
+    Column({ space: 12 }) {
+      Row({ space: 8 }) {
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.discover_fill'))
+            .fontSize(15)
+            .fontColor([$r('sys.color.icon_emphasize')])
+          Text('初次接入格异录？')
+            .fontSize(AppTypography.SUBTITLE_M)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('sys.color.font'))
+            .maxLines(1)
+        }
+        .layoutWeight(1)
+        .alignItems(VerticalAlign.Center)
+
+        Button({ type: ButtonType.Circle, stateEffect: false }) {
+          SymbolGlyph($r('sys.symbol.xmark'))
+            .fontSize(12)
+            .fontColor([$r('sys.color.icon_secondary')])
+        }
+        .id('starterGuideDismissButton')
+        .width(26)
+        .height(26)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .accessibilityText('关闭新人导览')
+        .onClick(() => {
+          this.onSelection();
+          this.onDismissStarterGuide();
+        })
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Text('不确定从哪篇读起？可以先了解基金会基本设定，或按 Wiki 编排顺序跟读经典故事系列。')
+        .fontSize(AppTypography.CAPTION_L)
+        .fontColor($r('sys.color.font_secondary'))
+        .lineHeightMultiple(1.45)
+        .width('100%')
+
+      Row({ space: 10 }) {
+        this.starterGuideActionButton(
+          'starterGuideManualButton',
+          $r('sys.symbol.doc_text_fill'),
+          '基础设定',
+          '基金会简介',
+          false,
+          (): void => {
+            this.onSelection();
+            this.onOpenStarterManual();
+          }
+        )
+        this.starterGuideActionButton(
+          'starterGuideSeriesButton',
+          $r('sys.symbol.list_book_fill'),
+          '逆模因部',
+          '从 055 跟读',
+          true,
+          (): void => {
+            this.onSelection();
+            this.onOpenStarterSeries();
+          }
+        )
+      }
+      .width('100%')
+    }
+    .id('starterGuideCard')
+    .width('100%')
+    .padding(14)
+    .alignItems(HorizontalAlign.Start)
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(18)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+  }
+
+  @Builder
   private topRatedSection() {
     ExploreTopRatedSection({
       entries: this.viewModel.topRatedEntries,
@@ -175,6 +315,9 @@ export struct ExploreHome {
               .width('44%')
 
               Column({ space: SECTION_SPACE }) {
+                if (this.showStarterGuide) {
+                  this.starterGuideSection()
+                }
                 this.topRatedSection()
                 this.recentSection()
               }
@@ -185,6 +328,9 @@ export struct ExploreHome {
           } else if (this.dualScreen) {
             Column({ space: SECTION_SPACE }) {
               this.recommendationSection(true)
+              if (this.showStarterGuide) {
+                this.starterGuideSection()
+              }
 
               Row({ space: DUAL_COLUMN_GUTTER }) {
                 Column() {
@@ -206,6 +352,9 @@ export struct ExploreHome {
           } else {
             Column({ space: SECTION_SPACE }) {
               this.recommendationSection(false)
+              if (this.showStarterGuide) {
+                this.starterGuideSection()
+              }
               this.topRatedSection()
               this.recentSection()
               this.jokeSection(false)

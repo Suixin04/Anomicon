@@ -107,6 +107,7 @@ export {
   CatalogBranchSeriesBar,
   ScpCatalogHome,
   TaleList,
+  TaleFeaturedSeriesCard,
   StoryFilterBar
 } from './presentation/view/Index';
 export { ScpCatalogEntry } from './presentation/ScpCatalogItem';

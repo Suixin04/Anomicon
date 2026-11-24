@@ -76,6 +76,7 @@ export {
   CatalogBranchSeriesBar,
   ScpCatalogHome,
   TaleList,
+  TaleFeaturedSeriesCard,
   StoryFilterBar,
   ScpCatalogEntry
 } from './src/main/ets/Index';

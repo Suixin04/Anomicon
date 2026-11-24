@@ -40,6 +40,7 @@ export interface Scp3DArchiveRouteParams {
 export interface ScpArticleRouteParams {
   readonly content: LibraryContentRef;
   readonly anchor?: string;
+  readonly seriesId?: string;
 }
 
 interface SerializedArticleRouteContent {

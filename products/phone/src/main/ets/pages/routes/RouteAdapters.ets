@@ -61,6 +61,7 @@ export function ArticleRouteAdapter() {
     AppContainer.getInstance().createHapticFeedback(),
     AppContainer.getInstance().settings(),
     AppContainer.getInstance().researchProfile(),
+    AppContainer.getInstance().storySeries(),
     (contentId: string): boolean => hasScp3DModel(contentId),
     AppContainer.getInstance().networkBoost()
   );

@@ -34,6 +34,7 @@ import {
   TaleFilterState,
   CatalogPreview,
   CatalogViewModel,
+  TaleFeaturedSeriesCard,
   TaleListViewModel
 } from 'catalog';
 import {
@@ -41,8 +42,11 @@ import {
   TerminalViewModel
 } from 'terminal';
 import {
+  ANTIMEMETICS_HUB_ID,
   LibraryContentKind,
   LibraryContentRef,
+  StorySeriesProgressSnapshot,
+  StorySeriesViewModel,
   createLibraryContentRef,
   ReadingHistoryViewModel
 } from 'library';
@@ -96,6 +100,7 @@ export struct MainTabIndex {
   @Require @Param taleListViewModel: TaleListViewModel;
   @Require @Param terminalViewModel: TerminalViewModel;
   @Require @Param readingHistory: ReadingHistoryViewModel;
+  @Require @Param storySeries: StorySeriesViewModel;
   @Require @Param exploreSkeletonAnimated: boolean;
   @Event onExploreHeroAnchorChange: (anchor: ExploreHeroAnchor) => void;
   @Param pageStack: NavPathStack = new NavPathStack();
@@ -104,6 +109,7 @@ export struct MainTabIndex {
   /** 故事筛选只在首页会话内共享给筛选栏和列表。 */
   @Local private taleFilterState: TaleFilterState = new TaleFilterState();
   @Local private completionRevision: number = 0;
+  @Local private seriesRevision: number = 0;
   // 顶部栏跟随页签选中；页面激活和滚动绑定仍等切页完成。
   @Local private titleTabIndex: number = HomeTabId.EXPLORE;
   @Local private tabContentOpacity: number = 1;
@@ -112,6 +118,7 @@ export struct MainTabIndex {
   @Local private stackDepth: number = 0;
   @Local private navPaneWidth: number = 0;
   private readingHistoryUnsubscribe: (() => void) | undefined = undefined;
+  private storySeriesUnsubscribe: (() => void) | undefined = undefined;
   @Local private tabsViewModel: TabsViewModel = new TabsViewModel({
     onCatalogSearch: () => this.openCatalogSearchMenu(),
     onOpenSettings: () => this.openSettings(),
@@ -129,6 +136,11 @@ export struct MainTabIndex {
     this.readingHistoryUnsubscribe = this.readingHistory.subscribe((): void => {
       this.completionRevision++;
     });
+    this.storySeriesUnsubscribe = this.storySeries.subscribe((): void => {
+      this.seriesRevision++;
+    });
+    this.readingHistory.initialize().catch((): void => {});
+    this.storySeries.initialize().catch((): void => {});
     for (let index: number = 0; index < this.scrollers.length; index++) {
       this.tabsController.bindScroller(index, this.scrollers[index]);
     }
@@ -146,6 +158,8 @@ export struct MainTabIndex {
   aboutToDisappear(): void {
     this.readingHistoryUnsubscribe?.();
     this.readingHistoryUnsubscribe = undefined;
+    this.storySeriesUnsubscribe?.();
+    this.storySeriesUnsubscribe = undefined;
     for (let index: number = 0; index < this.scrollers.length; index++) {
       this.tabsController.unbindScroller(this.scrollers[index]);
     }
@@ -235,15 +249,85 @@ export struct MainTabIndex {
     );
   }
 
-  private openContent(content: LibraryContentRef): void {
+  private openContent(content: LibraryContentRef, seriesId: string = ''): void {
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    const params: ScpArticleRouteParams = { content: content };
+    const params: ScpArticleRouteParams = seriesId.length > 0 ?
+      { content: content, seriesId: seriesId } :
+      { content: content };
     AppNavigationCoordinator.openFromMaster(
       this.pageStack,
       AppRoutes.ARTICLE,
       params,
       this.shouldUseSplitMode()
     );
+  }
+
+  private shouldShowStarterGuide(): boolean {
+    return this.completionRevision >= 0 &&
+      this.seriesRevision >= 0 &&
+      this.readingHistory.initialized &&
+      this.storySeries.initialized &&
+      !this.settings.starterGuideDismissed &&
+      this.readingHistory.items.length === 0 &&
+      this.readingHistory.completedCount === 0 &&
+      this.storySeries.enrolledCount === 0;
+  }
+
+  private dismissStarterGuide(): void {
+    this.settings.setStarterGuideDismissed(true);
+  }
+
+  private openStarterManual(): void {
+    this.openContent(createLibraryContentRef(
+      LibraryContentKind.KNOWLEDGE,
+      'about-the-scp-foundation',
+      '关于 SCP 基金会'
+    ));
+  }
+
+  private openStarterSeries(): void {
+    this.openContent(createLibraryContentRef(
+      LibraryContentKind.TALE,
+      ANTIMEMETICS_HUB_ID,
+      '逆模因部'
+    ));
+  }
+
+  private featuredSeriesCards(): TaleFeaturedSeriesCard[] {
+    if (this.seriesRevision < 0 || this.completionRevision < 0) {
+      return [];
+    }
+    const snapshots: StorySeriesProgressSnapshot[] = this.storySeries.listProgressSnapshots();
+    const cards: TaleFeaturedSeriesCard[] = [];
+    for (let index: number = 0; index < snapshots.length; index++) {
+      const snapshot = snapshots[index];
+      const active = snapshot.enrolled || snapshot.mainlineCompleted > 0;
+      const resumeTitle = snapshot.resumeEntry !== undefined ? snapshot.resumeEntry.title : '跟读';
+      cards.push({
+        seriesId: snapshot.series.id,
+        hubId: snapshot.series.hubId,
+        title: snapshot.series.title,
+        subtitle: snapshot.series.subtitle,
+        description: snapshot.series.description,
+        progressLabel: active ?
+          `主线 ${snapshot.mainlineCompleted}/${snapshot.mainlineTotal}` :
+          `主线 ${snapshot.mainlineTotal} 篇`,
+        actionLabel: active ? `继续 · ${resumeTitle}` : '开始跟读',
+        enrolled: active
+      });
+    }
+    return cards;
+  }
+
+  private async startFeaturedSeries(seriesId: string): Promise<void> {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    try {
+      const entry = await this.storySeries.startSeries(seriesId);
+      if (entry !== undefined) {
+        this.openContent(entry.toContentRef(), seriesId);
+      }
+    } catch (_error) {
+    }
   }
 
   private resolveMotionState(info: NavContentInfo): DestinationMotionState | undefined {
@@ -520,6 +604,10 @@ export struct MainTabIndex {
                   materialEnabled: this.settings.immersiveMaterialEnabled,
                   active: this.tabsViewModel.currentIndex === HomeTabId.EXPLORE,
                   recommendationSkeletonAnimated: this.exploreSkeletonAnimated,
+                  showStarterGuide: this.shouldShowStarterGuide(),
+                  onDismissStarterGuide: () => this.dismissStarterGuide(),
+                  onOpenStarterManual: () => this.openStarterManual(),
+                  onOpenStarterSeries: () => this.openStarterSeries(),
                   onOpenContent: (content: LibraryContentRef) => this.openContent(content),
                   onOpenCollection: (mode: ExploreCollectionMode) => this.openExploreCollection(mode),
                   onSelection: () => this.hapticService.playSelection(this.settings.hapticEnabled),
@@ -553,7 +641,16 @@ export struct MainTabIndex {
                     createLibraryContentRef(LibraryContentKind.TALE, id, name)
                   ),
                   isReadCompleted: (id: string): boolean => this.isReadCompleted(id),
-                  completionRevision: this.completionRevision
+                  completionRevision: this.completionRevision,
+                  materialEnabled: this.settings.immersiveMaterialEnabled,
+                  featuredSeries: this.featuredSeriesCards(),
+                  seriesRevision: this.seriesRevision,
+                  onOpenFeaturedSeriesHub: (hubId: string, title: string) => this.openContent(
+                    createLibraryContentRef(LibraryContentKind.TALE, hubId, title)
+                  ),
+                  onStartFeaturedSeries: (seriesId: string) => {
+                    this.startFeaturedSeries(seriesId);
+                  }
                 })
               } else if (item.id === HomeTabId.TERMINAL) {
                 TerminalHome({
@@ -562,6 +659,11 @@ export struct MainTabIndex {
                   settings: this.settings,
                   active: this.tabsViewModel.currentIndex === HomeTabId.TERMINAL,
                   onOpenContent: (content: LibraryContentRef) => this.openContent(content),
+                  onResumeSeries: (seriesId: string, content: LibraryContentRef) =>
+                    this.openContent(content, seriesId),
+                  onOpenSeriesHub: (hubId: string, title: string) => this.openContent(
+                    createLibraryContentRef(LibraryContentKind.TALE, hubId, title)
+                  ),
                   onOpenCollection: (mode: LibraryCollectionMode) => this.openLibraryCollection(mode),
                   onOpenArchive3DGallery: () => this.openArchive3DGallery(),
                   onOpenSettings: () => this.openSettings()

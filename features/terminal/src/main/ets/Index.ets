@@ -8,12 +8,15 @@ export {
   TerminalReadingHistoryPort,
   TerminalResearchProfilePort,
   TerminalOfflineArticleSummary,
-  TerminalOfflineArticlesPort
+  TerminalOfflineArticlesPort,
+  TerminalEnrolledSeriesCard,
+  TerminalStorySeriesPort
 } from './presentation/viewmodel/TerminalViewModel';
 export {
   TerminalErrorState,
   TerminalLibrarySectionTitle,
   TerminalReadingHistoryList,
+  TerminalEnrolledSeriesList,
   TerminalOfflineArticleList,
   TerminalCompactEmptyBanner,
   TerminalQuickWorkbenchBar

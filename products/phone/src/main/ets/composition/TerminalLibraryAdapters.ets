@@ -4,6 +4,8 @@ import {
   ReadingHistoryEntry,
   ResearchActivitySnapshot,
   ResearchProgress,
+  StorySeriesProgressSnapshot,
+  StorySeriesViewModel,
   createLibraryContentRef
 } from 'library';
 import {
@@ -17,11 +19,13 @@ import {
   ResearchProfileViewModel
 } from 'library';
 import {
+  TerminalEnrolledSeriesCard,
   TerminalFavoritesPort,
   TerminalOfflineArticleSummary,
   TerminalOfflineArticlesPort,
   TerminalReadingHistoryPort,
   TerminalResearchProfilePort,
+  TerminalStorySeriesPort,
   TerminalViewModelListener
 } from 'terminal';
 
@@ -166,5 +170,43 @@ export class TerminalOfflineArticlesAdapter implements TerminalOfflineArticlesPo
 
   subscribe(listener: TerminalViewModelListener): () => void {
     return this.articleGraph.subscribeOfflineArticles((): void => listener());
+  }
+}
+
+/** Product composition bridge exposing enrolled story series progress to Terminal. */
+export class TerminalStorySeriesAdapter implements TerminalStorySeriesPort {
+  private readonly state: StorySeriesViewModel;
+
+  constructor(state: StorySeriesViewModel) {
+    this.state = state;
+  }
+
+  listEnrolled(): TerminalEnrolledSeriesCard[] {
+    const snapshots: StorySeriesProgressSnapshot[] = this.state.listEnrolledSnapshots();
+    return snapshots.map((snapshot: StorySeriesProgressSnapshot): TerminalEnrolledSeriesCard => ({
+      seriesId: snapshot.series.id,
+      hubId: snapshot.series.hubId,
+      title: snapshot.series.title,
+      subtitle: snapshot.series.subtitle,
+      nextEntry: snapshot.resumeEntry !== undefined ? snapshot.resumeEntry.toContentRef() : undefined,
+      nextEntryLabel: snapshot.resumeEntry !== undefined ?
+        `下一篇：${snapshot.resumeEntry.title}` : '主线已全部读完',
+      progressText: `主线 ${snapshot.mainlineCompleted}/${snapshot.mainlineTotal}`,
+      mainlineCompleted: snapshot.mainlineCompleted,
+      mainlineTotal: snapshot.mainlineTotal,
+      updatedAt: snapshot.updatedAt
+    }));
+  }
+
+  initialize(): Promise<void> {
+    return this.state.initialize();
+  }
+
+  reload(): Promise<void> {
+    return this.state.reload();
+  }
+
+  subscribe(listener: TerminalViewModelListener): () => void {
+    return this.state.subscribe((): void => listener());
   }
 }

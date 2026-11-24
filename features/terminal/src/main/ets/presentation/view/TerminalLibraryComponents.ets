@@ -5,11 +5,13 @@ import {
   ReadingHistoryEntry
 } from 'library';
 import {
+  TerminalEnrolledSeriesCard,
   TerminalOfflineArticleSummary
 } from '../viewmodel/TerminalViewModel';
 import { formatStorageBytes } from 'settings';
 import {
   AppTypography,
+  badgeInfoBackgroundColor,
   CARD_PRESS_MODIFIER,
   materialCardBorderColor,
   materialCardSurfaceColor,
@@ -667,6 +669,115 @@ export struct TerminalOfflineArticleList {
           .width('100%')
         })
         .key((item: TerminalOfflineArticleSummary) => `${item.content.key}:${item.badgeText}:${item.totalBytes}`)
+    }
+    .width('100%')
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(18)
+    .clip(true)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+  }
+}
+
+/** 终端“正在跟读”故事系列卡片：一眼续读下一篇或直达中心页顺序清单。 */
+@ComponentV2
+export struct TerminalEnrolledSeriesList {
+  @Require @Param entries: TerminalEnrolledSeriesCard[];
+  @Require @Param materialEnabled: boolean;
+  @Event onResumeSeries: (seriesId: string, content: LibraryContentRef) => void;
+  @Event onOpenSeriesHub: (hubId: string, title: string) => void;
+
+  @Builder
+  private seriesRow(item: TerminalEnrolledSeriesCard) {
+    Row({ space: 12 }) {
+      Column() {
+        SymbolGlyph($r('sys.symbol.list_book_fill'))
+          .fontSize(18)
+          .fontColor([$r('sys.color.icon_emphasize')])
+      }
+      .width(38)
+      .height(38)
+      .justifyContent(FlexAlign.Center)
+      .backgroundColor(badgeInfoBackgroundColor())
+      .borderRadius(12)
+
+      Column({ space: 3 }) {
+        Row({ space: 6 }) {
+          Text(`继续${item.title}`)
+            .fontSize(AppTypography.BODY_M)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('sys.color.font'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+          Text(item.progressText)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_emphasize'))
+            .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+            .backgroundColor(badgeInfoBackgroundColor())
+            .borderRadius(8)
+            .maxLines(1)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text(item.nextEntryLabel)
+          .fontSize(AppTypography.CAPTION_L)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Text('目录')
+        .fontSize(AppTypography.CAPTION_M)
+        .fontWeight(FontWeight.Medium)
+        .fontColor($r('sys.color.font'))
+        .padding({ left: 9, right: 9, top: 5, bottom: 5 })
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(12)
+        .onClick(() => this.onOpenSeriesHub(item.hubId, item.title))
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(13)
+        .fontColor([$r('sys.color.icon_secondary')])
+    }
+    .id(`terminalSeriesCard:${item.seriesId}`)
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .width('100%')
+    .constraintSize({ minHeight: 68 })
+    .alignItems(VerticalAlign.Center)
+    .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+    .onClick(() => {
+      if (item.nextEntry !== undefined) {
+        this.onResumeSeries(item.seriesId, item.nextEntry);
+      } else {
+        this.onOpenSeriesHub(item.hubId, item.title);
+      }
+    })
+    .accessibilityText(`继续跟读${item.title}，${item.nextEntryLabel}`)
+  }
+
+  build() {
+    Column() {
+      Repeat<TerminalEnrolledSeriesCard>(this.entries)
+        .each((row: RepeatItem<TerminalEnrolledSeriesCard>) => {
+          Column() {
+            this.seriesRow(row.item)
+            if (row.index < this.entries.length - 1) {
+              Divider()
+                .strokeWidth(0.5)
+                .color($r('sys.color.comp_divider'))
+                .margin({ left: 64, right: 14 })
+            }
+          }
+          .width('100%')
+        })
+        .key((item: TerminalEnrolledSeriesCard) =>
+          `${item.seriesId}:${item.mainlineCompleted}:${item.nextEntryLabel}:${item.updatedAt}`)
     }
     .width('100%')
     .backgroundColor(materialCardSurfaceColor(this.materialEnabled))

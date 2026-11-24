@@ -199,6 +199,28 @@ class FakeSettingsRepository implements SettingsRepository {
       this.stored.complexPageMode,
       this.stored.defaultRevealHiddenText,
       this.stored.readingTextAlign,
+      value,
+      this.stored.starterGuideDismissed
+    );
+    return true;
+  }
+
+  saveStarterGuideDismissed(value: boolean): boolean {
+    if (this.failNextSave) {
+      this.lastError = '写入失败';
+      return false;
+    }
+    this.lastError = undefined;
+    this.stored = new AppSettings(
+      this.stored.themeMode,
+      this.stored.hapticEnabled,
+      this.stored.immersiveMaterialEnabled,
+      this.stored.fontSize,
+      this.stored.lineHeightMultiple,
+      this.stored.complexPageMode,
+      this.stored.defaultRevealHiddenText,
+      this.stored.readingTextAlign,
+      this.stored.keepScreenOnReading,
       value
     );
     return true;
@@ -230,6 +252,7 @@ export default function settingsViewModelTest(): void {
       expect(defaults.defaultRevealHiddenText).assertFalse();
       expect(defaults.readingTextAlign).assertEqual(ReadingTextAlign.JUSTIFY);
       expect(defaults.keepScreenOnReading).assertFalse();
+      expect(defaults.starterGuideDismissed).assertFalse();
 
       const clamped = new AppSettings(ThemeMode.DARK, false, false, 99, 0.2);
       expect(clamped.fontSize).assertEqual(ReadingSettingsRange.FONT_SIZE_MAX);
@@ -272,6 +295,9 @@ export default function settingsViewModelTest(): void {
       expect(vm.setKeepScreenOnReading(true)).assertTrue();
       expect(vm.keepScreenOnReading).assertTrue();
 
+      expect(vm.setStarterGuideDismissed(true)).assertTrue();
+      expect(vm.starterGuideDismissed).assertTrue();
+
       expect(vm.setFontSize(20.5)).assertTrue();
       expect(vm.setLineHeightMultiple(1.85)).assertTrue();
       expect(vm.resetReadingTypography()).assertTrue();
@@ -286,6 +312,9 @@ export default function settingsViewModelTest(): void {
 
       expect(vm.setDefaultRevealHiddenText(false)).assertFalse();
       expect(vm.defaultRevealHiddenText).assertTrue();
+
+      expect(vm.setStarterGuideDismissed(false)).assertFalse();
+      expect(vm.starterGuideDismissed).assertTrue();
     });
 
     it('preserves active state on failed retryLoad and recovers when storage succeeds', 0, () => {

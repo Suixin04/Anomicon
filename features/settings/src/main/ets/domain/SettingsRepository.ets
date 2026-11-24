@@ -15,6 +15,7 @@ export interface SettingsRepository {
   saveDefaultRevealHiddenText(value: boolean): boolean;
   saveReadingTextAlign(value: ReadingTextAlign): boolean;
   saveKeepScreenOnReading(value: boolean): boolean;
+  saveStarterGuideDismissed(value: boolean): boolean;
   flush(): Promise<void>;
 }
 

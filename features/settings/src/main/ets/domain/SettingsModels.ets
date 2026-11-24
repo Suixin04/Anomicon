@@ -37,6 +37,7 @@ export class AppSettings {
   readonly defaultRevealHiddenText: boolean;
   readonly readingTextAlign: ReadingTextAlign;
   readonly keepScreenOnReading: boolean;
+  readonly starterGuideDismissed: boolean;
 
   constructor(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
@@ -47,7 +48,8 @@ export class AppSettings {
     complexPageMode: ComplexPageMode = ComplexPageMode.SMART,
     defaultRevealHiddenText: boolean = false,
     readingTextAlign: ReadingTextAlign = ReadingTextAlign.JUSTIFY,
-    keepScreenOnReading: boolean = false
+    keepScreenOnReading: boolean = false,
+    starterGuideDismissed: boolean = false
   ) {
     this.themeMode = themeMode;
     this.hapticEnabled = hapticEnabled;
@@ -58,6 +60,7 @@ export class AppSettings {
     this.defaultRevealHiddenText = defaultRevealHiddenText;
     this.readingTextAlign = readingTextAlign;
     this.keepScreenOnReading = keepScreenOnReading;
+    this.starterGuideDismissed = starterGuideDismissed;
   }
 }
 

@@ -72,11 +72,34 @@ export interface TerminalOfflineArticlesPort {
   subscribe(listener: TerminalViewModelListener): () => void;
 }
 
+/** 终端“正在跟读”故事系列摘要；不绑定 Library 具体 ViewModel 或 Article。 */
+export interface TerminalEnrolledSeriesCard {
+  readonly seriesId: string;
+  readonly hubId: string;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly nextEntry: LibraryContentRef | undefined;
+  readonly nextEntryLabel: string;
+  readonly progressText: string;
+  readonly mainlineCompleted: number;
+  readonly mainlineTotal: number;
+  readonly updatedAt: number;
+}
+
+/** Terminal 只读取已开启跟读的系列进度。 */
+export interface TerminalStorySeriesPort {
+  listEnrolled(): TerminalEnrolledSeriesCard[];
+  initialize(): Promise<void>;
+  reload(): Promise<void>;
+  subscribe(listener: TerminalViewModelListener): () => void;
+}
+
 /** 终端首页页面级投影 VM；不依赖 UI、导航或具体标题 service。 */
 @ObservedV2
 export class TerminalViewModel implements ViewModelLifecycle {
   @Trace favoriteEntries: LibraryFavorite[] = [];
   @Trace resumeEntries: ReadingHistoryEntry[] = [];
+  @Trace enrolledSeries: TerminalEnrolledSeriesCard[] = [];
   @Trace recentEntries: ReadingHistoryEntry[] = [];
   @Trace offlineEntries: TerminalOfflineArticleSummary[] = [];
   @Trace offlineCount: number = 0;
@@ -103,6 +126,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
   private readonly research: TerminalResearchProfilePort;
   private readonly titleResolver: TerminalTitleResolver | undefined;
   private readonly offlineArticles: TerminalOfflineArticlesPort | undefined;
+  private readonly storySeries: TerminalStorySeriesPort | undefined;
   private active: boolean = false;
   private disposed: boolean = false;
   private generation: number = 0;
@@ -114,6 +138,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
   private historyUnsubscribe: (() => void) | undefined = undefined;
   private researchUnsubscribe: (() => void) | undefined = undefined;
   private offlineArticlesUnsubscribe: (() => void) | undefined = undefined;
+  private storySeriesUnsubscribe: (() => void) | undefined = undefined;
   /** Source retry owners; the generation prevents an old request from
    * clearing a marker belonging to the same source after re-entry. */
   private readonly sourceRefreshes: Map<string, number> = new Map<string, number>();
@@ -122,13 +147,15 @@ export class TerminalViewModel implements ViewModelLifecycle {
     history: TerminalReadingHistoryPort,
     research: TerminalResearchProfilePort,
     titleResolver?: TerminalTitleResolver,
-    offlineArticles?: TerminalOfflineArticlesPort
+    offlineArticles?: TerminalOfflineArticlesPort,
+    storySeries?: TerminalStorySeriesPort
   ) {
     this.favorites = favorites;
     this.history = history;
     this.research = research;
     this.titleResolver = titleResolver;
     this.offlineArticles = offlineArticles;
+    this.storySeries = storySeries;
   }
 
   activate(): void {
@@ -147,7 +174,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
     Promise.all([
       this.favorites.initialize(),
       this.history.initialize(),
-      this.research.initialize()
+      this.research.initialize(),
+      this.storySeries !== undefined ? this.storySeries.initialize() : Promise.resolve()
     ]).then((): void => {
       if (!this.isCurrent(generation)) {
         return;
@@ -208,7 +236,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
     Promise.all([
       this.favorites.reload(),
       this.history.reload(),
-      this.research.reload()
+      this.research.reload(),
+      this.storySeries !== undefined ? this.storySeries.reload() : Promise.resolve()
     ]).then((): void => {
       if (!this.isCurrent(generation)) {
         return;
@@ -302,6 +331,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
       this.history.resumableItems :
       this.history.items.filter((entry: ReadingHistoryEntry): boolean => entry.scrollOffset > 0);
     this.resumeEntries = resumable.slice(0, 1);
+    this.enrolledSeries = this.storySeries !== undefined ?
+      this.storySeries.listEnrolled().slice() : [];
     const resumeKey = this.resumeEntries.length > 0 ? this.resumeEntries[0].content.key : '';
     this.recentEntries = this.history.items
       .filter((entry: ReadingHistoryEntry): boolean => entry.content.key !== resumeKey)
@@ -433,6 +464,13 @@ export class TerminalViewModel implements ViewModelLifecycle {
         }
       });
     }
+    if (this.storySeriesUnsubscribe === undefined && this.storySeries !== undefined) {
+      this.storySeriesUnsubscribe = this.storySeries.subscribe((): void => {
+        if (this.active && !this.disposed) {
+          this.publishProjection();
+        }
+      });
+    }
   }
 
   private reloadOfflineArticles(generation: number): void {
@@ -462,6 +500,8 @@ export class TerminalViewModel implements ViewModelLifecycle {
     this.researchUnsubscribe = undefined;
     this.offlineArticlesUnsubscribe?.();
     this.offlineArticlesUnsubscribe = undefined;
+    this.storySeriesUnsubscribe?.();
+    this.storySeriesUnsubscribe = undefined;
   }
 
   private isCurrent(generation: number): boolean {

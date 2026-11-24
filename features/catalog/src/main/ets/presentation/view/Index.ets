@@ -14,5 +14,5 @@ export { CatalogSeriesSelector } from './CatalogSeriesSelector';
 export { CatalogBranchSeriesBar } from './CatalogBranchSeriesBar';
 export { ScpCatalogHome } from './ScpCatalogHome';
 export { CatalogPreviewLoader, ScpCatalogCard } from './ScpCatalogCard';
-export { TaleList } from './TaleList';
+export { TaleList, TaleFeaturedSeriesCard } from './TaleList';
 export { StoryFilterBar } from './StoryFilterBar';

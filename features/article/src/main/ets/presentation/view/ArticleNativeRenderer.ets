@@ -61,6 +61,13 @@ import {
 } from '../../domain/ArticleNavigation';
 import { ArticleRenderer, FootnoteSheetHeader } from './ArticleRenderer';
 import { ScpArticleImage } from './ScpArticleImage';
+import {
+  LibraryContentKind,
+  StorySeriesArticleContext,
+  StorySeriesEntry,
+  StorySeriesGroup,
+  StorySeriesTier
+} from 'library';
 
 /**
  * Stable presentation identity for one inline span.
@@ -338,13 +345,16 @@ enum ArticleSectionKind {
   RELATED_TALES = 7,
   FOOTER = 8,
   WEB_RECOMMEND_BANNER = 9,
-  CALLOUT_CHILD = 10
+  CALLOUT_CHILD = 10,
+  SERIES_HUB_HEADER = 11,
+  SERIES_FOOTER = 12
 }
 
 enum ArticleSheetMode {
   NONE = 0,
   FOOTNOTE = 1,
-  TOC = 2
+  TOC = 2,
+  SERIES_CHECKLIST = 3
 }
 
 class WorkbenchTab {
@@ -543,6 +553,16 @@ export struct ArticleNativeRenderer {
   @Param offlineProgressCompleted: number = 0;
   @Param offlineProgressTotal: number = 0;
   @Param offlineRevision: number = 0;
+  @Param seriesContext: StorySeriesArticleContext | undefined = undefined;
+  @Param seriesRevision: number = 0;
+  @Param seriesChecklistOpenEpoch: number = 0;
+  @Param isSeriesEntryCompleted: (entryId: string) => boolean = (_entryId: string): boolean => false;
+
+  @Event onStartSeries: (seriesId: string) => void = (_seriesId: string): void => {};
+  @Event onOpenSeriesEntry: (entry: StorySeriesEntry, markCurrentCompleted: boolean) => void =
+    (_entry: StorySeriesEntry, _markCurrentCompleted: boolean): void => {};
+  @Event onOpenSeriesHub: (hubId: string, title: string) => void =
+    (_hubId: string, _title: string): void => {};
 
   @Event onRetryPartial: () => void = () => {};
   @Event onSaveOffline: () => void = () => {};
@@ -593,6 +613,7 @@ export struct ArticleNativeRenderer {
   private readonly galleryController: SwiperController = new SwiperController();
   private readonly footnoteSheetScroller: Scroller = new Scroller();
   private readonly tocSheetScroller: Scroller = new Scroller();
+  private readonly seriesChecklistScroller: Scroller = new Scroller();
   private readonly sidePanelScroller: Scroller = new Scroller();
   private readonly sidePanelTocScroller: Scroller = new Scroller();
   private readonly sheetDetents: [SheetSize, SheetSize, SheetSize] =
@@ -701,11 +722,19 @@ export struct ArticleNativeRenderer {
     this.tryFlushPendingRouteAnchor();
   }
 
-  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint', 'offlineEnabled')
+  @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint', 'offlineEnabled', 'seriesContext', 'seriesRevision')
   onLayoutInputsChange(): void {
     this.syncDocumentAndSections();
     this.syncWorkbenchTabDefault();
     this.syncSidePanelAvailability();
+  }
+
+  @Monitor('seriesChecklistOpenEpoch')
+  onSeriesChecklistOpenRequested(): void {
+    if (this.seriesChecklistOpenEpoch <= 0 || this.seriesContext === undefined) {
+      return;
+    }
+    this.sheetMode = ArticleSheetMode.SERIES_CHECKLIST;
   }
 
   @Monitor('targetAnchorEpoch')
@@ -898,6 +927,18 @@ export struct ArticleNativeRenderer {
         16
       );
     }
+    if (this.seriesContext !== undefined && this.seriesContext.isHubPage) {
+      pushSection(
+        '__series_hub__',
+        ArticleSectionKind.SERIES_HUB_HEADER,
+        120,
+        undefined,
+        undefined,
+        false,
+        false,
+        16
+      );
+    }
     if (!this.galleryAfterBody && this.shouldRenderGallerySection()) {
       pushSection(
         '__gallery_top__',
@@ -1036,6 +1077,19 @@ export struct ArticleNativeRenderer {
         '__gallery_bottom__',
         ArticleSectionKind.GALLERY,
         260,
+        undefined,
+        undefined,
+        false,
+        false,
+        16
+      );
+    }
+
+    if (this.seriesContext !== undefined && !this.seriesContext.isHubPage) {
+      pushSection(
+        '__series_footer__',
+        ArticleSectionKind.SERIES_FOOTER,
+        140,
         undefined,
         undefined,
         false,
@@ -1628,10 +1682,15 @@ export struct ArticleNativeRenderer {
 
   private activeSheetOptions(): SheetOptions {
     const isToc = this.sheetMode === ArticleSheetMode.TOC;
+    const isChecklist = this.sheetMode === ArticleSheetMode.SERIES_CHECKLIST;
+    const isTallList = isToc || isChecklist;
     const useCenter = shouldUseCenterSheet(windowWidthVp());
     let sheetTitle = '脚注';
     let sheetSubtitle = '';
-    if (isToc) {
+    if (isChecklist && this.seriesContext !== undefined) {
+      sheetTitle = `${this.seriesContext.seriesTitle} · 系列顺序`;
+      sheetSubtitle = `按 Wiki 推荐顺序 · 主线已读 ${this.seriesContext.mainlineCompleted}/${this.seriesContext.mainlineTotal}`;
+    } else if (isToc) {
       sheetTitle = '章节目录';
       sheetSubtitle = `共 ${this.tocItems.length} 项`;
     } else {
@@ -1662,11 +1721,12 @@ export struct ArticleNativeRenderer {
       }
     };
     if (useCenter) {
-      options.height = isToc ? SheetSize.LARGE : SheetSize.FIT_CONTENT;
+      options.height = isTallList ? SheetSize.LARGE : SheetSize.FIT_CONTENT;
     } else {
-      options.detents = isToc ?
-        (this.tocItems.length >= 10 ? this.longTocSheetDetents : this.tocSheetDetents) :
-        this.sheetDetents;
+      options.detents = isChecklist ? this.longTocSheetDetents :
+        (isToc ?
+          (this.tocItems.length >= 10 ? this.longTocSheetDetents : this.tocSheetDetents) :
+          this.sheetDetents);
       options.scrollSizeMode = ScrollSizeMode.CONTINUOUS;
     }
     if (this.materialEnabled) {
@@ -2922,6 +2982,383 @@ export struct ArticleNativeRenderer {
     .padding({ top: 2, bottom: 2 })
   }
 
+  private openSeriesChecklist(): void {
+    if (this.seriesContext === undefined) {
+      return;
+    }
+    this.sheetMode = ArticleSheetMode.SERIES_CHECKLIST;
+  }
+
+  private seriesTierLabel(tier: StorySeriesTier): string {
+    if (tier === StorySeriesTier.SIDE) {
+      return '支线';
+    }
+    if (tier === StorySeriesTier.EXTENDED) {
+      return '延伸';
+    }
+    return '主线';
+  }
+
+  private seriesTierTextColor(tier: StorySeriesTier): ResourceColor {
+    if (tier === StorySeriesTier.MAINLINE) {
+      return $r('sys.color.font_emphasize');
+    }
+    return $r('sys.color.font_secondary');
+  }
+
+  private seriesTierBackgroundColor(tier: StorySeriesTier): ResourceColor {
+    if (tier === StorySeriesTier.MAINLINE) {
+      return badgeInfoBackgroundColor();
+    }
+    return $r('sys.color.comp_background_tertiary');
+  }
+
+  private isSeriesEntryActive(entry: StorySeriesEntry): boolean {
+    return this.seriesContext !== undefined &&
+      this.seriesContext.currentEntry !== undefined &&
+      this.seriesContext.currentEntry.id === entry.id;
+  }
+
+  private isSeriesEntryNextResume(entry: StorySeriesEntry): boolean {
+    if (this.seriesContext === undefined || this.isSeriesEntryActive(entry)) {
+      return false;
+    }
+    return this.seriesContext.resumeEntry !== undefined &&
+      this.seriesContext.resumeEntry.id === entry.id;
+  }
+
+  private seriesEntryCompleted(entry: StorySeriesEntry): boolean {
+    if (this.seriesRevision < 0) {
+      return false;
+    }
+    return this.isSeriesEntryCompleted(entry.id);
+  }
+
+  private seriesGroupCompletedCount(group: StorySeriesGroup): number {
+    if (this.seriesRevision < 0) {
+      return 0;
+    }
+    let done = 0;
+    for (let index = 0; index < group.entries.length; index++) {
+      if (this.isSeriesEntryCompleted(group.entries[index].id)) {
+        done++;
+      }
+    }
+    return done;
+  }
+
+  private seriesHubPrimaryLabel(): string {
+    if (this.seriesContext === undefined) {
+      return '开始跟读';
+    }
+    const resume = this.seriesContext.resumeEntry;
+    if ((this.seriesContext.enrolled || this.seriesContext.mainlineCompleted > 0) &&
+      resume !== undefined) {
+      return `继续跟读 · ${resume.title}`;
+    }
+    return resume !== undefined ? `开始跟读 · ${resume.title}` : '开始跟读';
+  }
+
+  private seriesFooterPositionLabel(): string {
+    if (this.seriesContext === undefined || this.seriesContext.currentGroupTitle.length === 0) {
+      return '';
+    }
+    if (this.seriesContext.currentGroupTotal > 0 && this.seriesContext.currentGroupIndex > 0) {
+      return `${this.seriesContext.currentGroupTitle} ${this.seriesContext.currentGroupIndex}/${this.seriesContext.currentGroupTotal}`;
+    }
+    return this.seriesContext.currentGroupTitle;
+  }
+
+  private seriesFooterNextSubtitle(): string {
+    if (this.seriesContext === undefined || this.seriesContext.nextEntry === undefined) {
+      return '';
+    }
+    const next = this.seriesContext.nextEntry;
+    if (next.groupTitle.length > 0 && next.groupTitle !== this.seriesContext.currentGroupTitle) {
+      return `进入《${next.groupTitle}》${next.note.length > 0 ? ` · ${next.note}` : ''}`;
+    }
+    return next.note;
+  }
+
+  private seriesEntryMetaText(entry: StorySeriesEntry): string {
+    const kindLabel = entry.kind === LibraryContentKind.SCP ? 'SCP 档案' : '故事';
+    if (entry.author.length > 0 && entry.note.length > 0) {
+      return `${kindLabel} · ${entry.author} · ${entry.note}`;
+    }
+    if (entry.author.length > 0) {
+      return `${kindLabel} · ${entry.author}`;
+    }
+    if (entry.note.length > 0) {
+      return `${kindLabel} · ${entry.note}`;
+    }
+    return `${kindLabel} · ${entry.id}`;
+  }
+
+  @Builder
+  private seriesHubHeaderCard() {
+    if (this.seriesContext !== undefined && this.seriesContext.isHubPage && this.seriesRevision >= 0) {
+      Column({ space: 12 }) {
+        Row({ space: 8 }) {
+          Column() {
+            SymbolGlyph($r('sys.symbol.list_book_fill'))
+              .fontSize(17)
+              .fontColor([$r('sys.color.icon_emphasize')])
+          }
+          .width(34)
+          .height(34)
+          .justifyContent(FlexAlign.Center)
+          .backgroundColor(badgeInfoBackgroundColor())
+          .borderRadius(10)
+
+          Column({ space: 2 }) {
+            Text(`系列跟读 · ${this.seriesContext.seriesTitle}`)
+              .fontSize(AppTypography.SUBTITLE_M)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('sys.color.font'))
+              .maxLines(1)
+            Text(`主线已读 ${this.seriesContext.mainlineCompleted}/${this.seriesContext.mainlineTotal} 篇 · 共 ${this.seriesContext.groups.length} 组`)
+              .fontSize(AppTypography.CAPTION_L)
+              .fontColor($r('sys.color.font_secondary'))
+              .maxLines(1)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Text('Wiki 顺序')
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_emphasize'))
+            .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+            .backgroundColor(badgeInfoBackgroundColor())
+            .borderRadius(9)
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Row({ space: 10 }) {
+          Row({ space: 6 }) {
+            Text(this.seriesHubPrimaryLabel())
+              .fontSize(AppTypography.BODY_S)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(accentPillForegroundColor())
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+            SymbolGlyph($r('sys.symbol.chevron_right'))
+              .fontSize(13)
+              .fontColor([accentPillForegroundColor()])
+          }
+          .id('seriesHubStartButton')
+          .attributeModifier(ROW_PRESS_MODIFIER)
+          .animation(pressAnimation())
+          .layoutWeight(1)
+          .height(38)
+          .padding({ left: 14, right: 12 })
+          .backgroundColor(accentPillBackgroundColor())
+          .borderRadius(19)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            if (this.seriesContext !== undefined) {
+              this.onStartSeries(this.seriesContext.seriesId);
+            }
+          })
+
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.list_bullet'))
+              .fontSize(13)
+              .fontColor([$r('sys.color.font')])
+            Text('系列顺序')
+              .fontSize(AppTypography.BODY_S)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('sys.color.font'))
+          }
+          .id('seriesHubChecklistButton')
+          .attributeModifier(ROW_PRESS_MODIFIER)
+          .animation(pressAnimation())
+          .height(38)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(19)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => this.openSeriesChecklist())
+        }
+        .width('100%')
+      }
+      .id('seriesHubHeaderCard')
+      .width('100%')
+      .padding(14)
+      .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+      .border(this.materialEnabled ?
+        { width: 0.5, color: materialCardBorderColor(true) } :
+        { width: 0.5, color: $r('sys.color.comp_divider') })
+      .borderRadius(16)
+    }
+  }
+
+  @Builder
+  private seriesFooterCard() {
+    if (this.seriesContext !== undefined && !this.seriesContext.isHubPage && this.seriesRevision >= 0) {
+      Column({ space: 12 }) {
+        Divider()
+          .strokeWidth(0.5)
+          .color($r('sys.color.comp_divider'))
+
+        Row({ space: 8 }) {
+          Row({ space: 6 }) {
+            SymbolGlyph($r('sys.symbol.list_book_fill'))
+              .fontSize(14)
+              .fontColor([$r('sys.color.icon_emphasize')])
+            Text(`系列跟读 · ${this.seriesContext.seriesTitle}`)
+              .fontSize(AppTypography.CAPTION_L)
+              .fontWeight(FontWeight.Bold)
+              .fontColor($r('sys.color.font_emphasize'))
+          }
+          .padding({ left: 8, right: 8, top: 4, bottom: 4 })
+          .backgroundColor(badgeInfoBackgroundColor())
+          .borderRadius(10)
+
+          if (this.seriesFooterPositionLabel().length > 0) {
+            Text(this.seriesFooterPositionLabel())
+              .fontSize(AppTypography.CAPTION_M)
+              .fontColor($r('sys.color.font_secondary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          } else {
+            Blank()
+          }
+
+          Text(`主线 ${this.seriesContext.mainlineCompleted}/${this.seriesContext.mainlineTotal}`)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font_secondary'))
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        if (this.seriesContext.nextEntry !== undefined) {
+          Row({ space: 10 }) {
+            Column({ space: 3 }) {
+              Text(`下一篇 · ${this.seriesContext.nextEntry.title}`)
+                .fontSize(AppTypography.BODY_M)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(accentPillForegroundColor())
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              if (this.seriesFooterNextSubtitle().length > 0) {
+                Text(this.seriesFooterNextSubtitle())
+                  .fontSize(AppTypography.CAPTION_M)
+                  .fontColor(accentPillForegroundColor())
+                  .opacity(0.88)
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+
+            SymbolGlyph($r('sys.symbol.chevron_right'))
+              .fontSize(15)
+              .fontColor([accentPillForegroundColor()])
+          }
+          .id('seriesFooterNextButton')
+          .attributeModifier(CARD_PRESS_MODIFIER)
+          .animation(pressAnimation())
+          .width('100%')
+          .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+          .backgroundColor(accentPillBackgroundColor())
+          .borderRadius(14)
+          .alignItems(VerticalAlign.Center)
+          .onClick(() => {
+            if (this.seriesContext?.nextEntry !== undefined) {
+              this.onOpenSeriesEntry(this.seriesContext.nextEntry, true);
+            }
+          })
+        } else {
+          Row({ space: 8 }) {
+            SymbolGlyph($r('sys.symbol.checkmark_circle_fill'))
+              .fontSize(16)
+              .fontColor(['#16A34A'])
+            Text(`已读至《${this.seriesContext.currentGroupTitle}》末尾`)
+              .fontSize(AppTypography.BODY_S)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('sys.color.font'))
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(12)
+        }
+
+        Row({ space: 8 }) {
+          if (this.seriesContext.previousEntry !== undefined) {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.chevron_left'))
+                .fontSize(12)
+                .fontColor([$r('sys.color.font')])
+              Text(`上一篇 · ${this.seriesContext.previousEntry.title}`)
+                .fontSize(AppTypography.CAPTION_L)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('sys.color.font'))
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+            }
+            .constraintSize({ maxWidth: '48%' })
+            .height(34)
+            .padding({ left: 10, right: 10 })
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .borderRadius(17)
+            .onClick(() => {
+              if (this.seriesContext?.previousEntry !== undefined) {
+                this.onOpenSeriesEntry(this.seriesContext.previousEntry, false);
+              }
+            })
+          }
+
+          Blank()
+
+          Row({ space: 4 }) {
+            SymbolGlyph($r('sys.symbol.list_bullet'))
+              .fontSize(12)
+              .fontColor([$r('sys.color.font')])
+            Text('系列顺序')
+              .fontSize(AppTypography.CAPTION_L)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('sys.color.font'))
+          }
+          .id('seriesFooterChecklistButton')
+          .height(34)
+          .padding({ left: 11, right: 11 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(17)
+          .onClick(() => this.openSeriesChecklist())
+
+          Text('中心页')
+            .fontSize(AppTypography.CAPTION_L)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font'))
+            .height(34)
+            .padding({ left: 11, right: 11 })
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .borderRadius(17)
+            .onClick(() => {
+              if (this.seriesContext !== undefined) {
+                this.onOpenSeriesHub(this.seriesContext.hubId, this.seriesContext.seriesTitle);
+              }
+            })
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+      }
+      .id('seriesFooterCard')
+      .width('100%')
+      .padding(14)
+      .backgroundColor($r('sys.color.comp_background_primary'))
+      .borderRadius(16)
+    }
+  }
+
   @Builder
   private headerCard() {
     if (this.hasHeaderCardContent()) {
@@ -3453,6 +3890,8 @@ export struct ArticleNativeRenderer {
       this.webRecommendBannerView()
     } else if (section.kind === ArticleSectionKind.HEADER_CARD) {
       this.headerCard()
+    } else if (section.kind === ArticleSectionKind.SERIES_HUB_HEADER) {
+      this.seriesHubHeaderCard()
     } else if (section.kind === ArticleSectionKind.GALLERY) {
       this.imageGallery()
     } else if (section.kind === ArticleSectionKind.BLOCK && section.blockRow !== undefined) {
@@ -3465,6 +3904,8 @@ export struct ArticleNativeRenderer {
       this.footnotesHeaderView()
     } else if (section.kind === ArticleSectionKind.FOOTNOTE && section.footnoteRow !== undefined) {
       this.footnoteItemView(section.footnoteRow)
+    } else if (section.kind === ArticleSectionKind.SERIES_FOOTER) {
+      this.seriesFooterCard()
     } else if (section.kind === ArticleSectionKind.RELATED_TALES) {
       this.relatedTalesSection()
     } else if (section.kind === ArticleSectionKind.FOOTER) {
@@ -3630,9 +4071,170 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
+  private seriesChecklistEntryRow(entry: StorySeriesEntry, indexInGroup: number) {
+    Row({ space: 10 }) {
+      if (this.seriesEntryCompleted(entry)) {
+        SymbolGlyph($r('sys.symbol.checkmark_circle_fill'))
+          .fontSize(18)
+          .fontColor(['#16A34A'])
+      } else {
+        Column() {
+          Text(`${indexInGroup + 1}`)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.isSeriesEntryActive(entry) ?
+              $r('sys.color.font_emphasize') : $r('sys.color.font_secondary'))
+        }
+        .width(20)
+        .height(20)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(this.isSeriesEntryActive(entry) ?
+          badgeInfoBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+        .borderRadius(10)
+      }
+
+      Column({ space: 2 }) {
+        Row({ space: 6 }) {
+          Text(entry.title)
+            .fontSize(AppTypography.BODY_M)
+            .fontWeight(this.isSeriesEntryActive(entry) || this.isSeriesEntryNextResume(entry) ?
+              FontWeight.Bold : FontWeight.Medium)
+            .fontColor($r('sys.color.font'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .layoutWeight(1)
+          if (this.isSeriesEntryActive(entry)) {
+            Text('当前')
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(accentPillForegroundColor())
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .backgroundColor(accentPillBackgroundColor())
+              .borderRadius(8)
+          } else if (this.isSeriesEntryNextResume(entry)) {
+            Text('下一篇')
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(FontWeight.Medium)
+              .fontColor($r('sys.color.font_emphasize'))
+              .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+              .backgroundColor(badgeInfoBackgroundColor())
+              .borderRadius(8)
+          }
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        Text(this.seriesEntryMetaText(entry))
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_tertiary'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      SymbolGlyph($r('sys.symbol.chevron_right'))
+        .fontSize(13)
+        .fontColor([$r('sys.color.icon_tertiary')])
+    }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .width('100%')
+    .padding({ left: 12, right: 12, top: 10, bottom: 10 })
+    .backgroundColor(this.isSeriesEntryActive(entry) ?
+      badgeInfoBackgroundColor() : $r('sys.color.comp_background_primary'))
+    .borderRadius(12)
+    .onClick(() => {
+      this.closeSheet();
+      this.onOpenSeriesEntry(entry, false);
+    })
+  }
+
+  @Builder
+  private seriesChecklistGroupCard(group: StorySeriesGroup) {
+    Column({ space: 8 }) {
+      Row({ space: 8 }) {
+        Text(group.title)
+          .fontSize(AppTypography.SUBTITLE_M)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(this.seriesTierLabel(group.tier))
+          .fontSize(AppTypography.CAPTION_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.seriesTierTextColor(group.tier))
+          .padding({ left: 7, right: 7, top: 2, bottom: 2 })
+          .backgroundColor(this.seriesTierBackgroundColor(group.tier))
+          .borderRadius(8)
+        Blank()
+        Text(`${this.seriesGroupCompletedCount(group)}/${group.entries.length}`)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_tertiary'))
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      if (group.subtitle.length > 0) {
+        Text(group.subtitle)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .width('100%')
+      }
+
+      Column({ space: 6 }) {
+        ForEach(group.entries, (entry: StorySeriesEntry, idx: number) => {
+          this.seriesChecklistEntryRow(entry, idx)
+        }, (entry: StorySeriesEntry) =>
+          `${this.seriesRevision}:${entry.id}:${this.seriesEntryCompleted(entry) ? 1 : 0}:${this.isSeriesEntryActive(entry) ? 1 : 0}`)
+      }
+      .width('100%')
+    }
+    .width('100%')
+    .padding(12)
+    .backgroundColor($r('sys.color.comp_background_secondary'))
+    .borderRadius(16)
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private seriesChecklistSheetContent() {
+    if (this.seriesContext !== undefined) {
+      List({ scroller: this.seriesChecklistScroller, space: 12 }) {
+        ForEach(this.seriesContext.groups, (group: StorySeriesGroup) => {
+          ListItem() {
+            this.seriesChecklistGroupCard(group)
+          }
+        }, (group: StorySeriesGroup) =>
+          `${this.seriesRevision}:${group.id}:${this.seriesGroupCompletedCount(group)}`)
+      }
+      .width('100%')
+      .flexShrink(1)
+      .constraintSize({
+        minHeight: 220,
+        maxHeight: shouldUseCenterSheet(windowWidthVp()) ? 480 : 660
+      })
+      .padding({
+        left: adaptivePageMarginForWidth(windowWidthVp()),
+        right: adaptivePageMarginForWidth(windowWidthVp()),
+        top: 6,
+        bottom: 24
+      })
+      .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
+      .nestedScroll({
+        scrollForward: NestedScrollMode.PARENT_FIRST,
+        scrollBackward: NestedScrollMode.SELF_FIRST
+      })
+    }
+  }
+
+  @Builder
   private activeSheetBuilder() {
     Column() {
-      if (this.sheetMode === ArticleSheetMode.TOC) {
+      if (this.sheetMode === ArticleSheetMode.SERIES_CHECKLIST && this.seriesContext !== undefined) {
+        this.seriesChecklistSheetContent()
+      } else if (this.sheetMode === ArticleSheetMode.TOC) {
         this.tocFilterBar(adaptivePageMarginForWidth(windowWidthVp()))
 
         if (this.filteredTocItems().length === 0) {

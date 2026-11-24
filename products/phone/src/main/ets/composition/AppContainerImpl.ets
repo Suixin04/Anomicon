@@ -27,7 +27,8 @@ import {
 } from 'library';
 import { LibraryCollectionVM } from 'library';
 import {
-  ResearchProfileViewModel
+  ResearchProfileViewModel,
+  StorySeriesViewModel
 } from 'library';
 import {
   SettingsFeatureGraph,
@@ -93,7 +94,8 @@ import {
   TerminalFavoritesAdapter,
   TerminalOfflineArticlesAdapter,
   TerminalReadingHistoryAdapter,
-  TerminalResearchProfileAdapter
+  TerminalResearchProfileAdapter,
+  TerminalStorySeriesAdapter
 } from './TerminalLibraryAdapters';
 
 class CatalogOfflineImageFetcher implements ArticleOfflineImageFetcher {
@@ -111,6 +113,7 @@ class CatalogOfflineImageFetcher implements ArticleOfflineImageFetcher {
 const FAVORITES_STORAGE_KEY: string = 'anomicon.library.favorites';
 const READING_HISTORY_STORAGE_KEY: string = 'anomicon.library.readingHistory';
 const RESEARCH_PROFILE_STORAGE_KEY: string = 'anomicon.research.profile';
+const STORY_SERIES_STORAGE_KEY: string = 'anomicon.library.storySeries';
 
 /**
  * 应用级组合根。具体 Harmony 实现只在这里被组装，页面只取得已装配的展示状态。
@@ -124,6 +127,7 @@ export class AppContainer {
   private favoritesState: FavoritesViewModel | undefined = undefined;
   private readingHistoryState: ReadingHistoryViewModel | undefined = undefined;
   private researchState: ResearchProfileViewModel | undefined = undefined;
+  private storySeriesState: StorySeriesViewModel | undefined = undefined;
   private readingActivityState: ReadingActivityCoord | undefined = undefined;
   private articleGraph: ArticleFeatureGraph | undefined = undefined;
   /** Feature graphs are shared at the adapter/use-case level; screen VMs are factory-owned. */
@@ -257,6 +261,20 @@ export class AppContainer {
         () => new ResearchProfileViewModel(this.libraryGraph!.researchActivityRepository)
       )!;
     }
+
+    if (this.storySeriesState === undefined) {
+      if (this.libraryGraph === undefined) {
+        throw new Error('Library feature graph is not initialized');
+      }
+      this.storySeriesState = AppStorageV2.connect(
+        StorySeriesViewModel,
+        STORY_SERIES_STORAGE_KEY,
+        () => new StorySeriesViewModel(
+          this.libraryGraph!.storySeriesRepository,
+          this.readingHistory()
+        )
+      )!;
+    }
     // AppStorageV2 may return an existing shared profile when an ability is
     // recreated in the same process.  The activity coordinator is a separate
     // application service, so ensure it is rebuilt whenever its VM exists but
@@ -353,6 +371,13 @@ export class AppContainer {
       throw new Error('AppContainer must be initialized before loading research profile');
     }
     return this.researchState;
+  }
+
+  storySeries(): StorySeriesViewModel {
+    if (this.storySeriesState === undefined) {
+      throw new Error('AppContainer must be initialized before loading story series');
+    }
+    return this.storySeriesState;
   }
 
   readingActivity(): ReadingActivityCoord {
@@ -501,7 +526,8 @@ export class AppContainer {
       new TerminalReadingHistoryAdapter(this.readingHistory()),
       new TerminalResearchProfileAdapter(this.researchProfile()),
       (ids: string[]): Promise<Map<string, string>> => titleResolver.resolveMany(ids),
-      new TerminalOfflineArticlesAdapter(this.articleGraph)
+      new TerminalOfflineArticlesAdapter(this.articleGraph),
+      new TerminalStorySeriesAdapter(this.storySeries())
     );
   }
 
@@ -515,6 +541,10 @@ export class AppContainer {
 
   whenResearchProfileReady(): Promise<void> {
     return this.researchProfile().initialize();
+  }
+
+  whenStorySeriesReady(): Promise<void> {
+    return this.storySeries().initialize();
   }
 
   /**
@@ -533,6 +563,7 @@ export class AppContainer {
     tasks.push(this.whenFavoritesReady());
     tasks.push(this.whenReadingHistoryReady());
     tasks.push(this.whenResearchProfileReady());
+    tasks.push(this.whenStorySeriesReady());
     await Promise.all(tasks);
   }
 
@@ -620,6 +651,7 @@ export class AppContainer {
   /** Remove every product object whose adapter graph was built from a context. */
   private clearAbilityScopedGraph(): void {
     this.settingsState?.dispose();
+    this.storySeriesState?.dispose();
     this.catalogGraph?.dispose();
     this.networkBoostCapability.stop();
 
@@ -629,6 +661,7 @@ export class AppContainer {
     this.favoritesState = undefined;
     this.readingHistoryState = undefined;
     this.researchState = undefined;
+    this.storySeriesState = undefined;
     this.readingActivityState = undefined;
     this.articleGraph = undefined;
     this.exploreGraph = undefined;
@@ -654,6 +687,7 @@ export class AppContainer {
     this.removeSharedStateIfPresent(sharedKeys, FAVORITES_STORAGE_KEY);
     this.removeSharedStateIfPresent(sharedKeys, READING_HISTORY_STORAGE_KEY);
     this.removeSharedStateIfPresent(sharedKeys, RESEARCH_PROFILE_STORAGE_KEY);
+    this.removeSharedStateIfPresent(sharedKeys, STORY_SERIES_STORAGE_KEY);
   }
 
   private removeSharedStateIfPresent(keys: string[], key: string): void {

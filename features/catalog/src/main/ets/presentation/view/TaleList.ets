@@ -2,20 +2,37 @@ import { CatalogTaleEntry } from '../../domain/CatalogContracts';
 import { TaleListViewModel } from '../viewmodel/TaleListViewModel';
 import { TALE_FILTER_BAR_HEIGHT, TaleFilterState } from '../TaleFilterState';
 import {
+  accentPillBackgroundColor,
+  accentPillForegroundColor,
   adaptiveListLanesForWidth,
   adaptivePageMarginForWidth,
   AppTypography,
+  badgeInfoBackgroundColor,
   CARD_PRESS_MODIFIER,
   ContentUpdateNotice,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
   pageContentTop,
   PHONE_PAGE_MARGIN,
   PHONE_TAB_CONTENT_BOTTOM_SPACE,
   PHONE_TAB_CONTENT_TOP_GAP,
   pressAnimation,
+  ROW_PRESS_MODIFIER,
   SkeletonBlock,
   WIDE_CONTENT_MAX_WIDTH,
   windowWidthVp
 } from 'anomiconbasic';
+
+export interface TaleFeaturedSeriesCard {
+  readonly seriesId: string;
+  readonly hubId: string;
+  readonly title: string;
+  readonly subtitle: string;
+  readonly description: string;
+  readonly progressLabel: string;
+  readonly actionLabel: string;
+  readonly enrolled: boolean;
+}
 
 /**
  * 故事列表 View。所有缓存、网络和解析都由 TaleListViewModel 编排；此处
@@ -30,6 +47,12 @@ export struct TaleList {
   @Param active: boolean = true;
   @Param isReadCompleted: (id: string) => boolean = (_id: string): boolean => false;
   @Param completionRevision: number = 0;
+  @Param materialEnabled: boolean = false;
+  @Param featuredSeries: TaleFeaturedSeriesCard[] = [];
+  @Param seriesRevision: number = 0;
+  @Event onOpenFeaturedSeriesHub: (hubId: string, title: string) => void =
+    (_hubId: string, _title: string): void => {};
+  @Event onStartFeaturedSeries: (seriesId: string) => void = (_seriesId: string): void => {};
   @Local private paneWidth: number = 0;
 
   private resolvedWidth(): number {
@@ -244,10 +267,150 @@ export struct TaleList {
     return this.viewModel.visibleTales.length > 0 && this.hasDirectoryUpdate();
   }
 
+  private shouldShowFeaturedSeries(): boolean {
+    return !this.filterState.active && this.featuredSeries.length > 0 &&
+      this.viewModel.visibleTales.length > 0;
+  }
+
+  @Builder
+  private featuredSeriesCardView(card: TaleFeaturedSeriesCard) {
+    Column({ space: 10 }) {
+      Row({ space: 8 }) {
+        Column() {
+          SymbolGlyph($r('sys.symbol.list_book_fill'))
+            .fontSize(16)
+            .fontColor([$r('sys.color.icon_emphasize')])
+        }
+        .width(34)
+        .height(34)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor(badgeInfoBackgroundColor())
+        .borderRadius(10)
+
+        Column({ space: 2 }) {
+          Text(card.title)
+            .fontSize(AppTypography.SUBTITLE_M)
+            .fontWeight(FontWeight.Bold)
+            .fontColor($r('sys.color.font'))
+            .maxLines(1)
+          Text(card.subtitle)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_secondary'))
+            .maxLines(1)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Text(card.progressLabel)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(card.enrolled ? $r('sys.color.font_emphasize') : $r('sys.color.font_secondary'))
+          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .backgroundColor(card.enrolled ?
+            badgeInfoBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+          .borderRadius(9)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Text(card.description)
+        .fontSize(AppTypography.CAPTION_L)
+        .fontColor($r('sys.color.font_secondary'))
+        .lineHeightMultiple(1.4)
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .width('100%')
+
+      Row({ space: 8 }) {
+        Row({ space: 4 }) {
+          Text(card.actionLabel)
+            .fontSize(AppTypography.CAPTION_L)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(accentPillForegroundColor())
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(12)
+            .fontColor([accentPillForegroundColor()])
+        }
+        .attributeModifier(ROW_PRESS_MODIFIER)
+        .animation(pressAnimation())
+        .height(32)
+        .padding({ left: 12, right: 10 })
+        .backgroundColor(accentPillBackgroundColor())
+        .borderRadius(16)
+        .onClick(() => this.onStartFeaturedSeries(card.seriesId))
+
+        Text('中心页与顺序')
+          .fontSize(AppTypography.CAPTION_L)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font'))
+          .height(32)
+          .padding({ left: 12, right: 12 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(16)
+          .onClick(() => this.onOpenFeaturedSeriesHub(card.hubId, card.title))
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+    }
+    .attributeModifier(CARD_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .width('100%')
+    .padding(14)
+    .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+    .border(this.materialEnabled ?
+      { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
+    .borderRadius(16)
+    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+    .onClick(() => this.onOpenFeaturedSeriesHub(card.hubId, card.title))
+  }
+
+  @Builder
+  private featuredSeriesHeader() {
+    Column({ space: 10 }) {
+      Row({ space: 6 }) {
+        Text('系列跟读')
+          .fontSize(AppTypography.TITLE_S)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('sys.color.font'))
+        Text('按 Wiki 编排顺序')
+          .fontSize(AppTypography.CAPTION_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font_emphasize'))
+          .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+          .backgroundColor(badgeInfoBackgroundColor())
+          .borderRadius(9)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      ForEach(this.featuredSeries, (card: TaleFeaturedSeriesCard) => {
+        this.featuredSeriesCardView(card)
+      }, (card: TaleFeaturedSeriesCard) =>
+        `${this.seriesRevision}:${card.seriesId}:${card.progressLabel}:${card.actionLabel}`)
+
+      Row() {
+        Text('全部故事')
+          .fontSize(AppTypography.SUBTITLE_M)
+          .fontWeight(FontWeight.Bold)
+          .fontColor($r('sys.color.font'))
+      }
+      .width('100%')
+      .padding({ top: 4, bottom: 2 })
+    }
+    .width('100%')
+    .padding({ bottom: 8 })
+    .alignItems(HorizontalAlign.Start)
+  }
+
   build() {
     Column() {
       Stack({ alignContent: Alignment.Top }) {
         List({ scroller: this.scroller, space: 10 }) {
+          if (this.shouldShowFeaturedSeries()) {
+            ListItemGroup({ header: this.featuredSeriesHeader() })
+          }
+
           Repeat<CatalogTaleEntry>(this.viewModel.visibleTales)
             .each((row: RepeatItem<CatalogTaleEntry>) => {
               ListItem() {

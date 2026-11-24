@@ -3,7 +3,8 @@ import {
 } from 'explore';
 import {
   LibraryCollectionMode,
-  LibraryContentRef
+  LibraryContentRef,
+  normalizeSeriesPageId
 } from 'library';
 import { normalizeArticleAnchor } from 'article';
 import {
@@ -77,6 +78,19 @@ export function parseArticleRouteAnchor(
     return '';
   }
   return normalizeArticleAnchor(candidate.anchor);
+}
+
+export function parseArticleRouteSeriesId(
+  param: Object | null | undefined
+): string {
+  if (param === undefined || param === null || typeof param !== 'object') {
+    return '';
+  }
+  const candidate = param as ScpArticleRouteParams;
+  if (typeof candidate.seriesId !== 'string') {
+    return '';
+  }
+  return normalizeSeriesPageId(candidate.seriesId);
 }
 
 /**

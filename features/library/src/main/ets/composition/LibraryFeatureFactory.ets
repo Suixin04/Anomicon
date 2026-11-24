@@ -3,25 +3,30 @@ import { LibraryFeatureGraph } from '../domain/LibraryFeaturePorts';
 import { FavoriteRepository } from '../domain/LibraryRepositories';
 import { ReadingHistoryRepository } from '../domain/LibraryRepositories';
 import { ResearchActivityRepo as ResearchActivityRepoPort } from '../domain/ResearchActivityRepo';
+import { StorySeriesRepository } from '../domain/StorySeriesContracts';
 import { RdbFavoriteRepository } from '../data/RdbFavoriteRepository';
 import { ReadingHistoryRepo } from '../data/ReadingHistoryRepo';
 import { ResearchActivityRepo } from '../data/ResearchActivityRepo';
+import { StorySeriesRepo } from '../data/StorySeriesRepo';
 
 class LibraryFeatureGraphImpl implements LibraryFeatureGraph {
   readonly favoriteRepository: FavoriteRepository;
   readonly readingHistoryRepository: ReadingHistoryRepository;
   readonly researchActivityRepository: ResearchActivityRepoPort;
+  readonly storySeriesRepository: StorySeriesRepository;
   private readonly initializer: () => Promise<void>;
 
   constructor(
     favoriteRepository: FavoriteRepository,
     readingHistoryRepository: ReadingHistoryRepository,
     researchActivityRepository: ResearchActivityRepoPort,
+    storySeriesRepository: StorySeriesRepository,
     initializer: () => Promise<void>
   ) {
     this.favoriteRepository = favoriteRepository;
     this.readingHistoryRepository = readingHistoryRepository;
     this.researchActivityRepository = researchActivityRepository;
+    this.storySeriesRepository = storySeriesRepository;
     this.initializer = initializer;
   }
 
@@ -38,6 +43,7 @@ export function createLibraryFeatureGraph(context: common.UIAbilityContext): Lib
   const favorites = new RdbFavoriteRepository(context);
   const history = new ReadingHistoryRepo(context);
   const research = new ResearchActivityRepo(context);
+  const storySeries = new StorySeriesRepo(context);
   let initialization: Promise<void> | undefined = undefined;
   const initialize = (): Promise<void> => {
     if (initialization !== undefined) {
@@ -47,7 +53,8 @@ export function createLibraryFeatureGraph(context: common.UIAbilityContext): Lib
       await Promise.all([
         favorites.initialize(),
         history.initialize(),
-        research.initialize()
+        research.initialize(),
+        storySeries.initialize()
       ]);
     })();
     // Persistence is a core part of the Library feature, not an optional
@@ -59,5 +66,5 @@ export function createLibraryFeatureGraph(context: common.UIAbilityContext): Lib
     });
     return initialization;
   };
-  return new LibraryFeatureGraphImpl(favorites, history, research, initialize);
+  return new LibraryFeatureGraphImpl(favorites, history, research, storySeries, initialize);
 }

@@ -17,14 +17,51 @@ import {
   FOUNDATION_KNOWLEDGE_SECTIONS,
   FOUNDATION_MANUAL_GRID_ITEMS,
   FoundationKnowledgeItem,
+  TerminalEnrolledSeriesCard,
   TerminalFavoritesPort,
   TerminalReadingHistoryPort,
   TerminalResearchProfilePort,
+  TerminalStorySeriesPort,
   TerminalViewModel,
   TerminalViewModelListener,
   buildRecentSevenDayActivity,
   formatTodayQuotaLabel
 } from '../main/ets/Index';
+
+class InMemoryStorySeriesPort implements TerminalStorySeriesPort {
+  cards: TerminalEnrolledSeriesCard[];
+  private readonly listeners: TerminalViewModelListener[];
+
+  constructor(
+    cards: TerminalEnrolledSeriesCard[],
+    listeners: TerminalViewModelListener[]
+  ) {
+    this.cards = cards;
+    this.listeners = listeners;
+  }
+
+  listEnrolled(): TerminalEnrolledSeriesCard[] {
+    return this.cards;
+  }
+
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  reload(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  subscribe(listener: TerminalViewModelListener): () => void {
+    this.listeners.push(listener);
+    return (): void => {
+      const idx = this.listeners.indexOf(listener);
+      if (idx >= 0) {
+        this.listeners.splice(idx, 1);
+      }
+    };
+  }
+}
 
 class InMemoryFavorites implements TerminalFavoritesPort {
   items: LibraryFavorite[];
@@ -348,6 +385,60 @@ export default function terminalViewModelTest(): void {
       await drainMicrotasks();
 
       expect(viewModel.resumeEntries[0].content.title).assertEqual('雕像');
+      viewModel.dispose();
+    });
+
+    it('projects and reactively updates enrolled story series cards', 0, async () => {
+      const seriesListeners: TerminalViewModelListener[] = [];
+      let seriesCards: TerminalEnrolledSeriesCard[] = [{
+        seriesId: 'antimemetics-division',
+        hubId: 'antimemetics-division-hub',
+        title: '逆模因部',
+        subtitle: '从 SCP-055 起步',
+        nextEntry: createLibraryContentRef(LibraryContentKind.SCP, 'scp-055', 'SCP-055'),
+        nextEntryLabel: '下一篇：SCP-055',
+        progressText: '主线 0/19',
+        mainlineCompleted: 0,
+        mainlineTotal: 19,
+        updatedAt: 100
+      }];
+      const seriesPort = new InMemoryStorySeriesPort(seriesCards, seriesListeners);
+
+      const viewModel = new TerminalViewModel(
+        new InMemoryFavorites([]),
+        new InMemoryReadingHistory([]),
+        new InMemoryResearchProfile(emptyResearchProgress()),
+        undefined,
+        undefined,
+        seriesPort
+      );
+
+      viewModel.activate();
+      await drainMicrotasks();
+
+      expect(viewModel.enrolledSeries.length).assertEqual(1);
+      expect(viewModel.enrolledSeries[0].nextEntryLabel).assertEqual('下一篇：SCP-055');
+      expect(seriesListeners.length).assertEqual(1);
+
+      seriesPort.cards = [{
+        seriesId: 'antimemetics-division',
+        hubId: 'antimemetics-division-hub',
+        title: '逆模因部',
+        subtitle: '从 SCP-055 起步',
+        nextEntry: createLibraryContentRef(
+          LibraryContentKind.TALE,
+          'we-need-to-talk-about-fifty-five',
+          '谈谈055'
+        ),
+        nextEntryLabel: '下一篇：谈谈055',
+        progressText: '主线 1/19',
+        mainlineCompleted: 1,
+        mainlineTotal: 19,
+        updatedAt: 200
+      }];
+      seriesListeners[0]();
+      expect(viewModel.enrolledSeries[0].nextEntryLabel).assertEqual('下一篇：谈谈055');
+      expect(viewModel.enrolledSeries[0].mainlineCompleted).assertEqual(1);
       viewModel.dispose();
     });
   });

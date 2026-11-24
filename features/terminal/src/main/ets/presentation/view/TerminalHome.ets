@@ -1,6 +1,7 @@
 import { ResearchProfileCard } from './ResearchProfileCard';
 import {
   TerminalCompactEmptyBanner,
+  TerminalEnrolledSeriesList,
   TerminalErrorState,
   TerminalFavoriteCards,
   TerminalLibrarySectionTitle,
@@ -30,7 +31,11 @@ import {
   READING_CONTENT_MAX_WIDTH,
   WIDE_CONTENT_MAX_WIDTH
 } from 'anomiconbasic';
-import { TerminalOfflineArticleSummary, TerminalViewModel } from '../viewmodel/TerminalViewModel';
+import {
+  TerminalEnrolledSeriesCard,
+  TerminalOfflineArticleSummary,
+  TerminalViewModel
+} from '../viewmodel/TerminalViewModel';
 import { SettingsViewModel } from 'settings';
 
 const SECTION_SPACE: number = 20;
@@ -140,6 +145,10 @@ export struct TerminalHome {
   @Require @Param active: boolean;
   @Require @Param onOpenContent: (content: LibraryContentRef) => void;
   @Require @Param onOpenCollection: (mode: LibraryCollectionMode) => void;
+  @Event onResumeSeries: (seriesId: string, content: LibraryContentRef) => void =
+    (_seriesId: string, _content: LibraryContentRef): void => {};
+  @Event onOpenSeriesHub: (hubId: string, title: string) => void =
+    (_hubId: string, _title: string): void => {};
   @Event onOpenArchive3DGallery: () => void = () => {};
   @Event onOpenSettings: () => void = () => {};
   @Require @Param viewModel: TerminalViewModel;
@@ -183,6 +192,11 @@ export struct TerminalHome {
   @Computed
   get resumeEntries(): ReadingHistoryEntry[] {
     return this.viewModel.resumeEntries;
+  }
+
+  @Computed
+  get enrolledSeries(): TerminalEnrolledSeriesCard[] {
+    return this.viewModel.enrolledSeries;
   }
 
   @Computed
@@ -395,6 +409,32 @@ export struct TerminalHome {
   }
 
   @Builder
+  private enrolledSeriesSection() {
+    if (this.enrolledSeries.length > 0) {
+      Column({ space: 10 }) {
+        TerminalLibrarySectionTitle({
+          symbol: $r('sys.symbol.list_book_fill'),
+          title: '正在跟读',
+          count: this.enrolledSeries.length,
+          showMore: false,
+          onOpen: () => {}
+        })
+        TerminalEnrolledSeriesList({
+          entries: this.enrolledSeries,
+          materialEnabled: this.isImmersiveMaterialEnabled(),
+          onResumeSeries: (seriesId: string, content: LibraryContentRef) =>
+            this.onResumeSeries(seriesId, content),
+          onOpenSeriesHub: (hubId: string, title: string) =>
+            this.onOpenSeriesHub(hubId, title)
+        })
+      }
+      .width('100%')
+      .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
+      .alignItems(HorizontalAlign.Start)
+    }
+  }
+
+  @Builder
   private offlineArticlesSection() {
     if (this.offlineCount > 0) {
       Column({ space: 10 }) {
@@ -556,6 +596,8 @@ export struct TerminalHome {
       .padding({ left: this.horizontalMargin, right: this.leftPaneRightMargin() })
 
       this.resumeReadingSection()
+
+      this.enrolledSeriesSection()
 
       this.offlineArticlesSection()
 

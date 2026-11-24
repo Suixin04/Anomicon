@@ -35,20 +35,30 @@ import {
 } from '../navigation/AppRoutes';
 import {
   parseArticleRouteAnchor,
-  parseArticleRouteContent
+  parseArticleRouteContent,
+  parseArticleRouteSeriesId
 } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
 import {
+  accentPillBackgroundColor,
+  accentPillForegroundColor,
   adaptivePageMarginForWidth,
   AppMotion,
+  AppTypography,
+  badgeInfoBackgroundColor,
   createAppBackIcon,
   createAppTitleBarStyle,
   DestinationMotionState,
   isDetailFullscreen,
   isReduceMotionEnabled,
+  materialCardBorderColor,
+  materialCardSurfaceColor,
   NavigationTransitionRegistry,
   pageContentTop,
   popNavigationDestination,
+  pressAnimation,
+  READING_CONTENT_MAX_WIDTH,
+  ROW_PRESS_MODIFIER,
   setDetailFullscreen,
   setPreviewFullscreen,
   supportsSplitNavigation,
@@ -58,7 +68,12 @@ import { ExternalUrlPolicy } from 'anomiconbasic';
 import {
   LibraryContentKind,
   LibraryContentRef,
+  StorySeriesArticleContext,
+  StorySeriesEntry,
+  StorySeriesViewModel,
+  containsSeriesEntry,
   createLibraryContentRef,
+  findStorySeriesById,
   isLibraryContentTitlePlaceholder,
   isLibraryScpId
 } from 'library';
@@ -112,6 +127,7 @@ export function ScpArticlePageBuilder(
   hapticService: HapticFeedbackPort,
   settings: SettingsViewModel,
   research: ResearchProfileViewModel,
+  storySeries: StorySeriesViewModel,
   archive3dAvailability: (contentId: string) => boolean,
   networkBoost?: NetworkBoostPort
 ) {
@@ -124,6 +140,7 @@ export function ScpArticlePageBuilder(
     hapticService: hapticService,
     settings: settings,
     research: research,
+    storySeries: storySeries,
     archive3dAvailability: archive3dAvailability,
     networkBoost: networkBoost
   })
@@ -136,6 +153,7 @@ struct ScpArticlePage {
   @Require @Param hapticService: HapticFeedbackPort;
   @Require @Param settings: SettingsViewModel;
   @Require @Param research: ResearchProfileViewModel;
+  @Require @Param storySeries: StorySeriesViewModel;
   @Require @Param archive3dAvailability: (contentId: string) => boolean;
   @Param networkBoost: NetworkBoostPort | undefined = undefined;
   private pageStack: NavPathStack | undefined = undefined;
@@ -160,6 +178,7 @@ struct ScpArticlePage {
   private readonly scrollRestore: ArticleScrollRestore =
     new ArticleScrollRestore();
   private viewModelUnsubscribe: (() => void) | undefined = undefined;
+  private storySeriesUnsubscribe: (() => void) | undefined = undefined;
   /** Keep the original serialized payload so an invalid route can be parsed again. */
   private routeParam: Object | null | undefined = undefined;
   @Local private document: ScpArticleDocument | undefined = undefined;
@@ -209,6 +228,10 @@ struct ScpArticlePage {
   @Local private offlineProgressCompleted: number = 0;
   @Local private offlineProgressTotal: number = 0;
   @Local private offlineRevision: number = 0;
+  @Local private routeSeriesId: string = '';
+  @Local private seriesContext: StorySeriesArticleContext | undefined = undefined;
+  @Local private seriesRevision: number = 0;
+  @Local private seriesChecklistOpenEpoch: number = 0;
   private offlinePreviewActionsCache: ImagePreviewActions | undefined = undefined;
   private autoWebEvaluatedItemId: string = '';
   private revealHiddenOverridden: boolean = false;
@@ -217,6 +240,12 @@ struct ScpArticlePage {
   aboutToAppear(): void {
     this.viewModelUnsubscribe?.();
     this.viewModelUnsubscribe = this.viewModel.subscribe(() => this.syncViewModelState());
+    this.storySeriesUnsubscribe?.();
+    this.storySeriesUnsubscribe = this.storySeries.subscribe((): void => {
+      this.seriesRevision++;
+      this.syncSeriesContext(false);
+    });
+    this.storySeries.initialize().catch((): void => {});
     this.viewModel.activate();
     this.syncViewModelState();
     this.syncReadingSettings();
@@ -231,6 +260,8 @@ struct ScpArticlePage {
     this.syncLoadingBoost(false);
     this.viewModelUnsubscribe?.();
     this.viewModelUnsubscribe = undefined;
+    this.storySeriesUnsubscribe?.();
+    this.storySeriesUnsubscribe = undefined;
     this.viewModel.releaseReadingSession(this.currentReadingOffset());
     this.viewModel.dispose();
   }
@@ -418,7 +449,76 @@ struct ScpArticlePage {
     this.targetAnchor = '';
     this.tocCount = 0;
     this.searchBarOpen = false;
+    this.seriesContext = undefined;
+    this.seriesChecklistOpenEpoch = 0;
     this.galleryReturnEpoch++;
+  }
+
+  private syncSeriesContext(recordIfEnrolled: boolean): void {
+    if (!this.routeResolved || this.itemId.length === 0) {
+      this.seriesContext = undefined;
+      return;
+    }
+    const resolved = this.storySeries.resolveArticleContext(this.itemId, this.routeSeriesId);
+    this.seriesContext = resolved;
+    if (recordIfEnrolled && resolved !== undefined && !resolved.isHubPage &&
+      resolved.currentEntry !== undefined &&
+      (this.routeSeriesId.length > 0 || resolved.enrolled)) {
+      this.storySeries.recordMemberOpened(
+        resolved.seriesId,
+        resolved.currentEntry.id,
+        this.routeSeriesId.length > 0
+      ).catch((): void => {});
+    }
+  }
+
+  private async startSeriesFromPage(seriesId: string): Promise<void> {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    try {
+      const target = await this.storySeries.startSeries(seriesId);
+      if (target !== undefined) {
+        const params: ScpArticleRouteParams = {
+          content: target.toContentRef(),
+          seriesId: seriesId
+        };
+        AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
+      }
+    } catch (_error) {
+    }
+  }
+
+  private async openSeriesEntryFromPage(
+    entry: StorySeriesEntry,
+    markCurrentCompleted: boolean
+  ): Promise<void> {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    const activeSeriesId = this.seriesContext !== undefined ?
+      this.seriesContext.seriesId : this.routeSeriesId;
+    if (markCurrentCompleted && !this.completed) {
+      try {
+        await this.viewModel.setCompleted(true);
+        this.completed = true;
+      } catch (_error) {
+      }
+    }
+    if (activeSeriesId.length > 0) {
+      try {
+        await this.storySeries.recordMemberOpened(activeSeriesId, entry.id, true);
+      } catch (_error) {
+      }
+    }
+    const params: ScpArticleRouteParams = activeSeriesId.length > 0 ?
+      { content: entry.toContentRef(), seriesId: activeSeriesId } :
+      { content: entry.toContentRef() };
+    AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
+  }
+
+  private openSeriesHubFromPage(hubId: string, title: string): void {
+    this.hapticService.playSelection(this.settings.hapticEnabled);
+    const params: ScpArticleRouteParams = {
+      content: createLibraryContentRef(LibraryContentKind.TALE, hubId, title)
+    };
+    AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
   }
 
   /** Parse and apply a route payload; this is also the invalid-route retry path. */
@@ -444,6 +544,7 @@ struct ScpArticlePage {
     this.routeResolved = true;
     this.routeErrorMessage = '';
     this.resetContentProjection();
+    this.routeSeriesId = parseArticleRouteSeriesId(param);
     const routeAnchor = parseArticleRouteAnchor(param);
     if (routeAnchor.length > 0) {
       this.scrollRestore.cancelForInteraction();
@@ -466,6 +567,7 @@ struct ScpArticlePage {
     this.viewModel.attachReadingSession(content, this.currentReadingOffset());
     this.viewModel.activate();
     this.syncViewModelState();
+    this.syncSeriesContext(true);
     return true;
   }
 
@@ -708,9 +810,20 @@ struct ScpArticlePage {
       return;
     }
     this.hapticService.playSelection(this.settings.hapticEnabled);
+    let forwardSeriesId = '';
+    if (this.seriesContext !== undefined) {
+      const series = findStorySeriesById(this.seriesContext.seriesId);
+      if (series !== undefined && containsSeriesEntry(series, content.id)) {
+        forwardSeriesId = this.seriesContext.seriesId;
+      }
+    }
     const params: ScpArticleRouteParams = anchor.length > 0 ?
-      { content: content, anchor: anchor } :
-      { content: content };
+      (forwardSeriesId.length > 0 ?
+        { content: content, anchor: anchor, seriesId: forwardSeriesId } :
+        { content: content, anchor: anchor }) :
+      (forwardSeriesId.length > 0 ?
+        { content: content, seriesId: forwardSeriesId } :
+        { content: content });
     AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
   }
 
@@ -1058,6 +1171,21 @@ struct ScpArticlePage {
         }
       });
     }
+    if (this.seriesContext !== undefined) {
+      items.push({
+        content: {
+          icon: $r('sys.symbol.list_book'),
+          label: '系列顺序',
+          action: () => {
+            this.hapticService.playSelection(this.settings.hapticEnabled);
+            if (this.webModeActive) {
+              this.exitWebMode();
+            }
+            this.seriesChecklistOpenEpoch++;
+          }
+        }
+      });
+    }
     items.push({
       content: {
         icon: $r('sys.symbol.arrow_up_right'),
@@ -1202,6 +1330,19 @@ struct ScpArticlePage {
             offlineProgressCompleted: this.offlineProgressCompleted,
             offlineProgressTotal: this.offlineProgressTotal,
             offlineRevision: this.offlineRevision,
+            seriesContext: this.seriesContext,
+            seriesRevision: this.seriesRevision,
+            seriesChecklistOpenEpoch: this.seriesChecklistOpenEpoch,
+            isSeriesEntryCompleted: (entryId: string): boolean => this.storySeries.isEntryCompleted(entryId),
+            onStartSeries: (seriesId: string): void => {
+              this.startSeriesFromPage(seriesId);
+            },
+            onOpenSeriesEntry: (entry: StorySeriesEntry, markCurrentCompleted: boolean): void => {
+              this.openSeriesEntryFromPage(entry, markCurrentCompleted);
+            },
+            onOpenSeriesHub: (hubId: string, title: string): void => {
+              this.openSeriesHubFromPage(hubId, title);
+            },
             onSaveOffline: (): void => {
               this.saveArticleForOffline();
             },
@@ -1287,6 +1428,75 @@ struct ScpArticlePage {
             onSwitchToNative: () => this.exitWebMode()
           })
             .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
+
+          if (this.seriesContext !== undefined && !this.seriesContext.isHubPage) {
+            Column() {
+              Row({ space: 10 }) {
+                Row({ space: 6 }) {
+                  SymbolGlyph($r('sys.symbol.list_book_fill'))
+                    .fontSize(14)
+                    .fontColor([$r('sys.color.icon_emphasize')])
+                  Text(this.seriesContext.seriesTitle)
+                    .fontSize(AppTypography.CAPTION_L)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor($r('sys.color.font'))
+                    .maxLines(1)
+                }
+                .padding({ left: 10, right: 10, top: 6, bottom: 6 })
+                .backgroundColor($r('sys.color.comp_background_tertiary'))
+                .borderRadius(14)
+                .onClick(() => {
+                  this.exitWebMode();
+                  this.seriesChecklistOpenEpoch++;
+                })
+
+                Blank()
+
+                if (this.seriesContext.nextEntry !== undefined) {
+                  Row({ space: 5 }) {
+                    Text(`下一篇 · ${this.seriesContext.nextEntry.title}`)
+                      .fontSize(AppTypography.CAPTION_L)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(accentPillForegroundColor())
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    SymbolGlyph($r('sys.symbol.chevron_right'))
+                      .fontSize(12)
+                      .fontColor([accentPillForegroundColor()])
+                  }
+                  .attributeModifier(ROW_PRESS_MODIFIER)
+                  .animation(pressAnimation())
+                  .constraintSize({ maxWidth: '64%' })
+                  .padding({ left: 12, right: 10, top: 7, bottom: 7 })
+                  .backgroundColor(accentPillBackgroundColor())
+                  .borderRadius(15)
+                  .onClick(() => {
+                    if (this.seriesContext?.nextEntry !== undefined) {
+                      this.openSeriesEntryFromPage(this.seriesContext.nextEntry, true);
+                    }
+                  })
+                }
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
+              .padding({ left: 12, right: 12, top: 8, bottom: 8 })
+              .backgroundColor(materialCardSurfaceColor(this.settings.immersiveMaterialEnabled))
+              .backgroundBlurStyle(this.settings.immersiveMaterialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
+              .border({ width: 0.5, color: materialCardBorderColor(this.settings.immersiveMaterialEnabled) })
+              .borderRadius(18)
+              .shadow({ radius: 12, color: '#22000000', offsetY: 4 })
+            }
+            .width('100%')
+            .height('100%')
+            .justifyContent(FlexAlign.End)
+            .alignItems(HorizontalAlign.Center)
+            .padding({
+              left: adaptivePageMarginForWidth(windowWidthVp()),
+              right: adaptivePageMarginForWidth(windowWidthVp()),
+              bottom: 18
+            })
+            .hitTestBehavior(HitTestMode.Transparent)
+          }
         }
 
         // 离屏解析：仅在一次解析期间挂载，完成后由状态移除。
@@ -1388,6 +1598,7 @@ struct ScpArticlePage {
       this.applyKeepScreenOn(this.settings.keepScreenOnReading);
       this.viewModel.activate();
       this.syncViewModelState();
+      this.syncSeriesContext(false);
       const content = this.currentLibraryContent();
       if (content !== undefined) {
         this.viewModel.setPageShown(true, this.document !== undefined, this.currentReadingOffset());

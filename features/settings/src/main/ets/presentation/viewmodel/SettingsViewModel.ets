@@ -21,6 +21,7 @@ export class SettingsViewModel {
   @Trace defaultRevealHiddenText: boolean = false;
   @Trace readingTextAlign: ReadingTextAlign = ReadingTextAlign.JUSTIFY;
   @Trace keepScreenOnReading: boolean = false;
+  @Trace starterGuideDismissed: boolean = false;
   @Trace errorMessage: string = '';
 
   private readonly repository: SettingsRepository;
@@ -197,6 +198,22 @@ export class SettingsViewModel {
     return true;
   }
 
+  setStarterGuideDismissed(value: boolean): boolean {
+    if (this.lifecycleDisposed) {
+      return false;
+    }
+    if (this.starterGuideDismissed === value) {
+      return true;
+    }
+    if (!this.repository.saveStarterGuideDismissed(value)) {
+      this.errorMessage = this.repository.lastError ?? '设置保存失败';
+      return false;
+    }
+    this.errorMessage = '';
+    this.starterGuideDismissed = value;
+    return true;
+  }
+
   resetReadingTypography(): boolean {
     if (this.lifecycleDisposed) {
       return false;
@@ -243,5 +260,6 @@ export class SettingsViewModel {
     this.defaultRevealHiddenText = settings.defaultRevealHiddenText;
     this.readingTextAlign = settings.readingTextAlign;
     this.keepScreenOnReading = settings.keepScreenOnReading;
+    this.starterGuideDismissed = settings.starterGuideDismissed;
   }
 }

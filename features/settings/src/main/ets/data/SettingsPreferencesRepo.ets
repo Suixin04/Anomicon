@@ -21,6 +21,7 @@ class SettingsPreferenceKeys {
   static readonly DEFAULT_REVEAL_HIDDEN_TEXT: string = 'default_reveal_hidden_text';
   static readonly READING_TEXT_ALIGN: string = 'reading_text_align';
   static readonly KEEP_SCREEN_ON_READING: string = 'keep_screen_on_reading';
+  static readonly STARTER_GUIDE_DISMISSED: string = 'starter_guide_dismissed';
 }
 
 const PREFERENCES_NAME: string = 'anomicon_settings_v3';
@@ -35,6 +36,7 @@ interface SettingsPreferenceValues {
   default_reveal_hidden_text?: preferences.ValueType;
   reading_text_align?: preferences.ValueType;
   keep_screen_on_reading?: preferences.ValueType;
+  starter_guide_dismissed?: preferences.ValueType;
 }
 
 /** Harmony Preferences 对设置仓库端口的实现。 */
@@ -91,6 +93,11 @@ export class SettingsPreferencesRepo implements SettingsRepository {
         false,
         '阅读时屏幕常亮'
       );
+      const starterGuideDismissed = this.readBoolean(
+        values.starter_guide_dismissed,
+        false,
+        '新人导览卡'
+      );
       return new AppSettings(
         this.parseThemeMode(values.theme_mode),
         haptic,
@@ -100,7 +107,8 @@ export class SettingsPreferencesRepo implements SettingsRepository {
         complexPageMode,
         defaultRevealHiddenText,
         readingTextAlign,
-        keepScreenOnReading
+        keepScreenOnReading,
+        starterGuideDismissed
       );
     } catch (error) {
       this.logError('Load settings', error);
@@ -143,6 +151,10 @@ export class SettingsPreferencesRepo implements SettingsRepository {
 
   saveKeepScreenOnReading(value: boolean): boolean {
     return this.persist(SettingsPreferenceKeys.KEEP_SCREEN_ON_READING, value);
+  }
+
+  saveStarterGuideDismissed(value: boolean): boolean {
+    return this.persist(SettingsPreferenceKeys.STARTER_GUIDE_DISMISSED, value);
   }
 
   flush(): Promise<void> {
