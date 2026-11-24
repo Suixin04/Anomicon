@@ -101,7 +101,8 @@ export struct TaleList {
   @Monitor('filterState.letter')
   onTaleLetterChange(): void {
     this.viewModel.setLetter(this.filterState.letter);
-    this.scroller.scrollTo({ xOffset: 0, yOffset: 0, animation: false });
+    // 回到列表顶边时保留悬浮标题栏和筛选栏的 contentStartOffset。
+    this.scroller.scrollEdge(Edge.Top);
   }
 
   @Monitor('completionRevision')
