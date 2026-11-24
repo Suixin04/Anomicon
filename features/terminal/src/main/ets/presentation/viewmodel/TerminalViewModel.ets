@@ -108,6 +108,7 @@ export interface TerminalAssessmentsPort {
 export class TerminalViewModel implements ViewModelLifecycle {
   @Trace favoriteEntries: LibraryFavorite[] = [];
   @Trace resumeEntries: ReadingHistoryEntry[] = [];
+  @Trace resumeCount: number = 0;
   @Trace enrolledSeries: TerminalEnrolledSeriesCard[] = [];
   @Trace assessmentSeals: FoundationAssessmentSealSummary[] = [];
   @Trace recentEntries: ReadingHistoryEntry[] = [];
@@ -347,6 +348,7 @@ export class TerminalViewModel implements ViewModelLifecycle {
       this.history.resumableItems :
       this.history.items.filter((entry: ReadingHistoryEntry): boolean => entry.scrollOffset > 0))
       .filter((entry: ReadingHistoryEntry): boolean => !entry.completed);
+    this.resumeCount = resumable.length;
     this.resumeEntries = resumable.slice(0, 1);
     this.enrolledSeries = this.storySeries !== undefined ?
       this.storySeries.listEnrolled().slice() : [];

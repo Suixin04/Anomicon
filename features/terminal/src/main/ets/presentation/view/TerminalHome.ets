@@ -88,7 +88,7 @@ export struct TerminalHome {
     return this.viewModel.favoriteEntries;
   }
 
-  /** 继续阅读是最近浏览的快捷入口，只提升最近一条，避免形成重复列表。 */
+  /** 首页推荐一篇，完整续读列表来自永久阅读进度。 */
   @Computed
   get resumeEntries(): ReadingHistoryEntry[] {
     return this.viewModel.resumeEntries;
@@ -296,7 +296,16 @@ export struct TerminalHome {
   @Builder
   private resumeReadingSection() {
     if (this.resumeEntries.length > 0 && !(this.historyLoading && this.historyCount === 0)) {
-      Column() {
+      Column({ space: 10 }) {
+        if (this.viewModel.resumeCount > 1) {
+          TerminalLibrarySectionTitle({
+            symbol: $r('sys.symbol.list_book_fill'),
+            title: '继续阅读',
+            count: this.viewModel.resumeCount,
+            showMore: true,
+            onOpen: () => this.onOpenCollection(LibraryCollectionMode.CONTINUE_READING)
+          })
+        }
         TerminalReadingHistoryList({
           entries: this.resumeEntries,
           continueReading: true,
@@ -531,7 +540,6 @@ export struct TerminalHome {
             historyCount: this.historyCount,
             favoriteReady: this.favoriteReady,
             historyReady: this.historyReady,
-            todayActiveMs: this.researchSnapshot.todayActiveMs,
             dailyProgress: this.researchSnapshot.daily,
             seals: this.assessmentSeals,
             loading: this.researchLoading ||

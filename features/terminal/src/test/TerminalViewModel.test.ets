@@ -398,7 +398,9 @@ export default function terminalViewModelTest(): void {
       );
       const history = new InMemoryReadingHistory(
         [new ReadingHistoryEntry(recentContent, 200, 400, 0, false)],
-        [new ReadingHistoryEntry(prunedResumeContent, 100, 300, 420, false)]
+        [new ReadingHistoryEntry(prunedResumeContent, 100, 300, 420, false),
+          new ReadingHistoryEntry(createLibraryContentRef(LibraryContentKind.TALE, 'old-tale', '旧文'),
+            50, 200, 180, false)]
       );
       const resolver = new ControlledTitleResolver();
       const viewModel = new TerminalViewModel(
@@ -411,6 +413,7 @@ export default function terminalViewModelTest(): void {
       viewModel.activate();
       await drainMicrotasks();
 
+      expect(viewModel.resumeCount).assertEqual(2);
       expect(viewModel.resumeEntries.length).assertEqual(1);
       expect(viewModel.resumeEntries[0].content.key).assertEqual('main:scp-173');
       expect(viewModel.resumeEntries[0].scrollOffset).assertEqual(420);
@@ -577,17 +580,18 @@ export default function terminalViewModelTest(): void {
   });
 
   describe('TerminalProfileHelpersAndManual', () => {
-    it('builds 7 ordered daily bars and merges live today active ms', 0, () => {
+    it('builds 7 ordered daily bars from the dated reading ledger', 0, () => {
       const nowMs = Date.UTC(2026, 10, 24, 12, 0, 0);
       const tzOffsetMinutes = 480;
       const dayMs = 24 * 60 * 60 * 1000;
       const todayKey = researchDayKeyAt(nowMs, tzOffsetMinutes);
       const daily: ResearchDailyProgress[] = [
         new ResearchDailyProgress(todayKey - 3 * dayMs, 40 * 60 * 1000),
-        new ResearchDailyProgress(todayKey - 1 * dayMs, 2 * 60 * 1000)
+        new ResearchDailyProgress(todayKey - 1 * dayMs, 2 * 60 * 1000),
+        new ResearchDailyProgress(todayKey, 15 * 60 * 1000)
       ];
 
-      const bars = buildRecentSevenDayActivity(daily, 15 * 60 * 1000, nowMs, tzOffsetMinutes);
+      const bars = buildRecentSevenDayActivity(daily, nowMs, tzOffsetMinutes);
 
       expect(bars.length).assertEqual(7);
       expect(bars[6].isToday).assertTrue();
@@ -600,6 +604,21 @@ export default function terminalViewModelTest(): void {
       // Small non-zero days remain visibly lifted above the baseline (0.22 minimum).
       expect(bars[5].minutes).assertEqual(2);
       expect(bars[5].ratio >= 0.22).assertTrue();
+    });
+
+    it('moves ten credited minutes to yesterday at local midnight without consuming today’s quota', 0, () => {
+      const before = Date.UTC(2026, 5, 1, 15, 59, 59);
+      const offset = 480;
+      const daily = [new ResearchDailyProgress(researchDayKeyAt(before, offset), 10 * 60 * 1000)];
+      const evening = buildRecentSevenDayActivity(daily, before, offset);
+      const morning = buildRecentSevenDayActivity(daily, before + 1000, offset);
+      expect(formatTodayQuotaLabel(evening[6].activeMs)).assertEqual('10 / 180 分钟');
+      expect(formatTodayQuotaLabel(morning[6].activeMs)).assertEqual('0 / 180 分钟');
+      expect(morning[5].dayKey).assertEqual(evening[6].dayKey);
+      expect(morning[5].minutes).assertEqual(10);
+      expect(morning[5].isToday).assertFalse();
+      expect(morning[5].key === evening[6].key).assertFalse();
+      expect(morning[6].ratio).assertEqual(0);
     });
 
     it('formats today quota labels across zero, sub-minute, and minute states', 0, () => {

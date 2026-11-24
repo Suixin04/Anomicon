@@ -25,6 +25,7 @@ export class FoundationAssessmentViewModel {
   @Trace revision: number = 0;
   @Trace loading: boolean = false;
   @Trace error: string = '';
+  @Trace profileRefreshError: string = '';
   @Trace initialized: boolean = false;
 
   private readonly repository: FoundationAssessmentRepository;
@@ -260,10 +261,21 @@ export class FoundationAssessmentViewModel {
       );
     });
 
-    if (shouldReloadXp && this.onBonusXpAwarded !== undefined) {
-      await this.onBonusXpAwarded();
+    if (shouldReloadXp) {
+      // The award is durable. A profile read must never hold up or invalidate its receipt.
+      this.refreshResearchProfile();
     }
     return outcome!;
+  }
+
+  async refreshResearchProfile(): Promise<void> {
+    this.profileRefreshError = '';
+    try {
+      await this.onBonusXpAwarded?.();
+      this.profileRefreshError = '';
+    } catch (error) {
+      this.profileRefreshError = error instanceof Error ? error.message : '档案阅历读取失败';
+    }
   }
 
   private replaceRecords(records: FoundationAssessmentRecord[]): void {

@@ -81,6 +81,8 @@ struct FoundationAssessmentPage {
           exam: this.exam!,
           scroller: this.scroller,
           initialRecord: this.assessments.recordFor(this.exam!.id),
+          profileRefreshError: this.assessments.profileRefreshError,
+          onRetryProfileRefresh: (): void => { this.assessments.refreshResearchProfile(); },
           materialEnabled: this.settings.immersiveMaterialEnabled,
           hapticEnabled: this.settings.hapticEnabled,
           onHaptic: (): void => {
