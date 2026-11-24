@@ -163,6 +163,8 @@ export struct FoundationAssessmentView {
   @Require @Param exam: FoundationAssessmentExam;
   @Require @Param scroller: Scroller;
   @Param initialRecord: FoundationAssessmentRecord | undefined = undefined;
+  @Require @Param profileRefreshError: string;
+  @Event onRetryProfileRefresh: () => void;
   @Param materialEnabled: boolean = true;
   @Param hapticEnabled: boolean = true;
   @Event onHaptic: () => void = () => {};
@@ -675,6 +677,19 @@ export struct FoundationAssessmentView {
         .backgroundColor($r('sys.color.comp_background_tertiary'))
         .borderRadius(14)
         .alignItems(VerticalAlign.Center)
+
+        if (this.profileRefreshError.length > 0) {
+          Row({ space: 10 }) {
+            Text(`成绩已保存，档案阅历刷新失败。${this.profileRefreshError}`)
+              .fontSize(AppTypography.CAPTION_L)
+              .fontColor($r('sys.color.font_secondary'))
+              .layoutWeight(1)
+            Button('刷新阅历', { type: ButtonType.Capsule, stateEffect: false })
+              .id('assessmentRetryProfile')
+              .onClick(() => this.onRetryProfileRefresh())
+          }
+          .width('100%')
+        }
 
         Text(this.submissionResult!.passed ?
           this.submissionResult!.exam.passRemark : this.submissionResult!.exam.failRemark)

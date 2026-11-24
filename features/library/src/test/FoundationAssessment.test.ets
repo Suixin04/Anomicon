@@ -136,6 +136,35 @@ export default function foundationAssessmentTest(): void {
       viewModel.dispose();
     });
 
+    it('returns the first-pass receipt before refresh settles and retries only the profile read', 0, async () => {
+      const repo = new InMemoryAssessmentRepository();
+      let reloads = 0;
+      let failRead: (reason: Error) => void = (_reason: Error): void => {};
+      const firstRead = new Promise<void>((_resolve: () => void, reject: (reason: Error) => void): void => {
+        failRead = reject;
+      });
+      const vm = new FoundationAssessmentViewModel(repo, (): Promise<void> => {
+        reloads++;
+        return reloads === 1 ? firstRead : Promise.resolve();
+      });
+
+      const receipt = await vm.submitAttempt('cert-01', 5);
+      expect(receipt.newlyPassed).assertTrue();
+      expect(receipt.awardedXpNow).assertEqual(15);
+      expect(receipt.record.attempts).assertEqual(1);
+      failRead(new Error('画像读取失败'));
+      await Promise.resolve();
+      expect(vm.profileRefreshError).assertEqual('画像读取失败');
+      await vm.refreshResearchProfile();
+      expect(vm.profileRefreshError).assertEqual('');
+      expect(reloads).assertEqual(2);
+      const stored = (await repo.listRecords())[0];
+      expect(stored.attempts).assertEqual(1);
+      expect(stored.xpAwarded).assertEqual(15);
+      expect(stored.passed).assertTrue();
+      vm.dispose();
+    });
+
     it('adds earned assessment bonus XP into derived ResearchProgress and advances rank', 0, () => {
       const progress = deriveResearchProgress([], 0, 0, 25);
       expect(progress.bonusExperience).assertEqual(25);

@@ -110,7 +110,6 @@ export struct ResearchProfileCard {
   @Require @Param error: string;
   @Require @Param notice: string;
   @Require @Param materialEnabled: boolean;
-  @Param todayActiveMs: number = 0;
   @Param dailyProgress: ResearchDailyProgress[] = [];
   @Param seals: FoundationAssessmentSealSummary[] = [];
   @Param maxWidth: number = WIDE_CONTENT_MAX_WIDTH;
@@ -120,6 +119,23 @@ export struct ResearchProfileCard {
   @Event onOpenSeal: (examId: string) => void = (_examId: string): void => {};
   @Local private wideBanner: boolean = false;
   @Local private rulesExpanded: boolean = false;
+  @Local private activityNow: number = Date.now();
+  private midnightTimer: number = -1;
+
+  private trackActivityDay(visible: boolean): void {
+    clearTimeout(this.midnightTimer);
+    if (visible) {
+      this.activityNow = Date.now();
+      const midnight = new Date(this.activityNow);
+      midnight.setHours(24, 0, 0, 0);
+      this.midnightTimer = setTimeout((): void => this.trackActivityDay(true),
+        midnight.getTime() - this.activityNow);
+    }
+  }
+
+  aboutToDisappear(): void {
+    clearTimeout(this.midnightTimer);
+  }
 
   private normalizedInteger(value: number, minimum: number = 0): number {
     if (!Number.isFinite(value)) {
@@ -183,7 +199,7 @@ export struct ResearchProfileCard {
 
   @Computed
   get recentActivityBars(): DailyActivityBar[] {
-    return buildRecentSevenDayActivity(this.dailyProgress, this.todayActiveMs);
+    return buildRecentSevenDayActivity(this.dailyProgress, this.activityNow);
   }
 
   @Builder
@@ -290,7 +306,7 @@ export struct ResearchProfileCard {
         Text('今日研读')
           .fontSize(AppTypography.CAPTION_M)
           .fontColor($r('sys.color.font_secondary'))
-        Text(formatTodayQuotaLabel(this.todayActiveMs))
+        Text(formatTodayQuotaLabel(this.recentActivityBars[this.recentActivityBars.length - 1].activeMs))
           .fontSize(AppTypography.BODY_S)
           .fontWeight(FontWeight.Bold)
           .fontColor($r('sys.color.font'))
@@ -605,6 +621,7 @@ export struct ResearchProfileCard {
       { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(22)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
+    .onVisibleAreaChange([0], (visible: boolean): void => this.trackActivityDay(visible))
     .onAreaChange((_oldArea: Area, newArea: Area): void => {
       const width = Number(newArea.width);
       if (Number.isFinite(width) && width > 0) {

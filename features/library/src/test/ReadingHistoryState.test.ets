@@ -338,23 +338,24 @@ export default function readingHistoryStateTest(): void {
       expect(viewModel.items[0].openedAt).assertEqual(recent14Before.openedAt);
     });
 
-    it('exposes pruned resumable entries in LibraryCollectionVM CONTINUE_READING without expanding RECENT', 0, async () => {
+    it('opens both unfinished articles from CONTINUE_READING after 500 newer visits', 0, async () => {
       const storage = new InMemoryReadingHistoryStorage();
       const clock = new MonotonicTestClock();
-      const engine = new ReadingHistoryStoreEngine(storage, 3, (): number => clock.now());
-      const historyVm = new ReadingHistoryViewModel(engine, 3);
-
-      const pruned = createLibraryContentRef(LibraryContentKind.SCP, 'SCP-055', '逆模因');
-      await historyVm.recordOpened(pruned);
-      await historyVm.updateProgress(pruned, 610);
-      for (let index = 56; index <= 58; index++) {
-        await historyVm.recordOpened(createLibraryContentRef(
-          LibraryContentKind.SCP,
-          `SCP-${padThree(index)}`,
-          `档案 ${index}`
+      const engine = new ReadingHistoryStoreEngine(storage, READING_HISTORY_LIMIT, (): number => clock.now());
+      const older = createLibraryContentRef(LibraryContentKind.SCP, 'SCP-001', '第一篇');
+      const newer = createLibraryContentRef(LibraryContentKind.SCP, 'SCP-002', '第二篇');
+      await engine.recordOpened(older);
+      await engine.updateProgress(older, 100);
+      await engine.recordOpened(newer);
+      await engine.updateProgress(newer, 200);
+      for (let index = 3; index < 3 + READING_HISTORY_LIMIT; index++) {
+        await engine.recordOpened(createLibraryContentRef(
+          LibraryContentKind.SCP, `SCP-${padThree(index)}`, `档案 ${index}`
         ));
       }
 
+      const historyVm = new ReadingHistoryViewModel(engine);
+      await historyVm.initialize();
       const collectionVm = new LibraryCollectionVM(
         new FavoritesViewModel(new EmptyFavoritesRepo()),
         historyVm
@@ -362,17 +363,17 @@ export default function readingHistoryStateTest(): void {
       collectionVm.setRouteMode(LibraryCollectionMode.CONTINUE_READING);
       collectionVm.activate();
       await Promise.resolve();
-      await Promise.resolve();
-      expect(collectionVm.items.length).assertEqual(1);
-      expect(collectionVm.items[0].content.key).assertEqual('main:scp-055');
+      expect(collectionVm.items.length).assertEqual(2);
+      expect(collectionVm.items[0].content.key).assertEqual(newer.key);
+      expect(collectionVm.items[1].content.key).assertEqual(older.key);
+      expect((await historyVm.find(collectionVm.items[0].content.key))?.scrollOffset).assertEqual(200);
+      expect((await historyVm.find(collectionVm.items[1].content.key))?.scrollOffset).assertEqual(100);
 
       collectionVm.setMode(LibraryCollectionMode.RECENT);
       await Promise.resolve();
-      await Promise.resolve();
-      expect(collectionVm.items.length).assertEqual(3);
-      for (let index = 0; index < collectionVm.items.length; index++) {
-        expect(collectionVm.items[index].content.key === 'main:scp-055').assertFalse();
-      }
+      expect(collectionVm.items.length).assertEqual(READING_HISTORY_LIMIT);
+      expect(containsKey(historyVm.items, older.key)).assertFalse();
+      expect(containsKey(historyVm.items, newer.key)).assertFalse();
       collectionVm.dispose();
     });
 

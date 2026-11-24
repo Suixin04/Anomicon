@@ -27,7 +27,8 @@ export class DailyActivityBar {
     ratio: number,
     isToday: boolean
   ) {
-    this.key = `day:${dayKey}`;
+    // ForEach must update the bar when its height or today highlight changes.
+    this.key = `day:${dayKey}:${ratio}:${isToday}`;
     this.dayKey = dayKey;
     this.label = label;
     this.activeMs = activeMs;
@@ -51,13 +52,9 @@ function weekdayLabelForDayKey(dayKey: number): string {
   return WEEKDAY_LABELS[weekday];
 }
 
-/**
- * Builds the trailing 7 civil-day bars ending at today, combining ledger history
- * with live `todayActiveMs` so updates appear immediately.
- */
+/** Builds the trailing seven civil days from the date-keyed ledger. */
 export function buildRecentSevenDayActivity(
   daily: ResearchDailyProgress[],
-  todayActiveMs: number,
   nowMs: number = Date.now(),
   timeZoneOffsetMinutes: number = -new Date(nowMs).getTimezoneOffset()
 ): DailyActivityBar[] {
@@ -70,8 +67,6 @@ export function buildRecentSevenDayActivity(
       byDayKey.set(entry.dayKey, Math.max(byDayKey.get(entry.dayKey) ?? 0, normalized));
     }
   }
-  const normalizedToday = normalizePositiveDuration(todayActiveMs);
-  byDayKey.set(todayKey, Math.max(byDayKey.get(todayKey) ?? 0, normalizedToday));
 
   const windowDays: number[] = [];
   let maxMs: number = 0;

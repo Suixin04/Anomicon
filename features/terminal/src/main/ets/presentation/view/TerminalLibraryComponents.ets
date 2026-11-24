@@ -704,7 +704,7 @@ export struct TerminalEnrolledSeriesList {
 
       Column({ space: 3 }) {
         Row({ space: 6 }) {
-          Text(`继续${item.title}`)
+          Text(item.nextEntry !== undefined ? `继续${item.title}` : item.title)
             .fontSize(AppTypography.BODY_M)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('sys.color.font'))
@@ -758,7 +758,7 @@ export struct TerminalEnrolledSeriesList {
         this.onOpenSeriesHub(item.hubId, item.title);
       }
     })
-    .accessibilityText(`继续跟读${item.title}，${item.nextEntryLabel}`)
+    .accessibilityText(`${item.title}，${item.progressText}，${item.nextEntryLabel}`)
   }
 
   build() {

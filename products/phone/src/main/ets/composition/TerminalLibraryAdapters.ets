@@ -186,19 +186,23 @@ export class TerminalStorySeriesAdapter implements TerminalStorySeriesPort {
 
   listEnrolled(): TerminalEnrolledSeriesCard[] {
     const snapshots: StorySeriesProgressSnapshot[] = this.state.listEnrolledSnapshots();
-    return snapshots.map((snapshot: StorySeriesProgressSnapshot): TerminalEnrolledSeriesCard => ({
-      seriesId: snapshot.series.id,
-      hubId: snapshot.series.hubId,
-      title: snapshot.series.title,
-      subtitle: snapshot.series.subtitle,
-      nextEntry: snapshot.resumeEntry !== undefined ? snapshot.resumeEntry.toContentRef() : undefined,
-      nextEntryLabel: snapshot.resumeEntry !== undefined ?
-        `下一篇：${snapshot.resumeEntry.title}` : '主线已全部读完',
-      progressText: `主线 ${snapshot.mainlineCompleted}/${snapshot.mainlineTotal}`,
-      mainlineCompleted: snapshot.mainlineCompleted,
-      mainlineTotal: snapshot.mainlineTotal,
-      updatedAt: snapshot.updatedAt
-    }));
+    return snapshots.map((snapshot: StorySeriesProgressSnapshot): TerminalEnrolledSeriesCard => {
+      // The series cursor also supports rereading the finale. Only promote an unread target here.
+      const resume = snapshot.resumeEntry;
+      const next = resume !== undefined && !this.state.isEntryCompleted(resume.id) ? resume : undefined;
+      return {
+        seriesId: snapshot.series.id,
+        hubId: snapshot.series.hubId,
+        title: snapshot.series.title,
+        subtitle: snapshot.series.subtitle,
+        nextEntry: next?.toContentRef(),
+        nextEntryLabel: next !== undefined ? `下一篇：${next.title}` : '主线已全部读完 · 查看目录',
+        progressText: `主线 ${snapshot.mainlineCompleted}/${snapshot.mainlineTotal}`,
+        mainlineCompleted: snapshot.mainlineCompleted,
+        mainlineTotal: snapshot.mainlineTotal,
+        updatedAt: snapshot.updatedAt
+      };
+    });
   }
 
   initialize(): Promise<void> {
