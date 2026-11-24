@@ -149,6 +149,7 @@ export class ScpContentBlock {
   readonly preferredWidth: number;
   readonly acs: ScpAcsMetadata | undefined;
   readonly textAlign: ScpTextAlign;
+  readonly anchors: string[];
 
   constructor(
     key: string,
@@ -165,7 +166,8 @@ export class ScpContentBlock {
     calloutTone: ScpCalloutTone = ScpCalloutTone.NEUTRAL,
     preferredWidth: number = 0,
     acs: ScpAcsMetadata | undefined = undefined,
-    textAlign: ScpTextAlign = ScpTextAlign.DEFAULT
+    textAlign: ScpTextAlign = ScpTextAlign.DEFAULT,
+    anchors: string[] = []
   ) {
     this.key = key;
     this.type = type;
@@ -182,6 +184,7 @@ export class ScpContentBlock {
     this.preferredWidth = preferredWidth;
     this.acs = acs;
     this.textAlign = textAlign;
+    this.anchors = anchors;
   }
 }
 
@@ -198,9 +201,9 @@ export class ScpFootnote {
 }
 
 export class ScpArticleDocument {
-  /** v8：新增页面复杂度/多迭代信号检测与端内原版网页模式支持。 */
-  static readonly CURRENT_SCHEMA_VERSION: number = 8;
-  static readonly CURRENT_PARSER_VERSION: number = 8;
+  /** v9：保留原文锚点 id/name，支持章节目录与锚点/查找定位。 */
+  static readonly CURRENT_SCHEMA_VERSION: number = 9;
+  static readonly CURRENT_PARSER_VERSION: number = 9;
 
   readonly schemaVersion: number;
   readonly itemId: string;

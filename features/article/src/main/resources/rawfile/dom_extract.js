@@ -3,7 +3,7 @@
 // 所有样式标签与结构映射见 ScpDocument.ets 的 ScpBlockType/ScpTextStyle。
 function __anomiconExtract() {
   var out = {
-    parserVersion: 8,
+    parserVersion: 9,
     ok: false,
     error: '',
     title: '',
@@ -49,6 +49,109 @@ function __anomiconExtract() {
         return value;
       }
       return value.baseVal || '';
+    }
+
+    var NOISE_ANCHOR_EXACT = [
+      'page-content', 'page-title', 'page-info', 'ads', 'adend',
+      'toc-action-bar', 'toc-list', 'u-credit-view', 'u-credit-otherwise',
+      'u-adult-warning'
+    ];
+    var BLOCK_STRUCTURE_SET = {
+      div: 1, p: 1, blockquote: 1, table: 1, ul: 1, ol: 1, pre: 1, hr: 1,
+      section: 1, article: 1, h1: 1, h2: 1, h3: 1, h4: 1, h5: 1, h6: 1,
+      header: 1, footer: 1, nav: 1, figure: 1, figcaption: 1, form: 1,
+      audio: 1, video: 1, canvas: 1, svg: 1, object: 1, math: 1
+    };
+
+    function normalizeAnchor(raw) {
+      var text = String(raw || '').trim();
+      while (text.charAt(0) === '#') {
+        text = text.substring(1).trim();
+      }
+      if (!text) {
+        return '';
+      }
+      try {
+        text = decodeURIComponent(text);
+      } catch (err) {
+      }
+      return text.trim().toLowerCase();
+    }
+
+    function isNoiseAnchor(normalized) {
+      if (!normalized || normalized.length > 128) {
+        return true;
+      }
+      if (NOISE_ANCHOR_EXACT.indexOf(normalized) >= 0) {
+        return true;
+      }
+      return normalized.indexOf('prw') === 0 ||
+        normalized.indexOf('footnote-') === 0 ||
+        normalized.indexOf('footnoteref-') === 0;
+    }
+
+    function mergeAnchors(target, incoming) {
+      for (var i = 0; i < incoming.length && target.length < 16; i++) {
+        var norm = normalizeAnchor(incoming[i]);
+        if (norm && !isNoiseAnchor(norm) && target.indexOf(norm) < 0) {
+          target.push(norm);
+        }
+      }
+    }
+
+    function directNodeAnchors(node) {
+      var list = [];
+      var idAttr = node.getAttribute ? (node.getAttribute('id') || '') : '';
+      if (idAttr) {
+        mergeAnchors(list, [idAttr]);
+      }
+      if (node.tagName && node.tagName.toLowerCase() === 'a') {
+        var nameAttr = node.getAttribute('name') || '';
+        if (nameAttr) {
+          mergeAnchors(list, [nameAttr]);
+        }
+      }
+      return list;
+    }
+
+    function collectInlineAnchors(node, output) {
+      mergeAnchors(output, directNodeAnchors(node));
+      for (var child = node.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType !== 1) {
+          continue;
+        }
+        var childTag = child.tagName.toLowerCase();
+        if (BLOCK_STRUCTURE_SET[childTag]) {
+          continue;
+        }
+        collectInlineAnchors(child, output);
+      }
+    }
+
+    function attachAnchors(block, anchors) {
+      if (!block || !anchors || anchors.length === 0) {
+        return;
+      }
+      var list = block.anchors ? block.anchors.slice() : [];
+      mergeAnchors(list, anchors);
+      if (list.length > 0) {
+        block.anchors = list;
+      }
+    }
+
+    function consumeAnchors(block, pending, extra) {
+      if (!block) {
+        return;
+      }
+      var combined = [];
+      if (pending && pending.length > 0) {
+        mergeAnchors(combined, pending);
+        pending.length = 0;
+      }
+      if (extra && extra.length > 0) {
+        mergeAnchors(combined, extra);
+      }
+      attachAnchors(block, combined);
     }
 
     function imageSourceOf(image) {
@@ -315,17 +418,25 @@ function __anomiconExtract() {
       addWarning('unsupported:' + tag);
     }
 
-    function walkBlocks(root, blocks) {
+    function walkBlocks(root, blocks, pendingAnchors) {
+      if (!pendingAnchors) {
+        pendingAnchors = [];
+      }
       for (var node = root.firstChild; node; node = node.nextSibling) {
-        walkBlockNode(node, blocks);
+        walkBlockNode(node, blocks, pendingAnchors);
       }
     }
 
-    function walkBlockNode(node, blocks) {
+    function walkBlockNode(node, blocks, pendingAnchors) {
+        if (!pendingAnchors) {
+          pendingAnchors = [];
+        }
         if (node.nodeType === 3) {
           var rawText = node.nodeValue;
           if (rawText && rawText.trim().length > 0) {
-            blocks.push({ k: 'paragraph', spans: [{ s: 'plain', t: rawText }] });
+            var txtBlock = { k: 'paragraph', spans: [{ s: 'plain', t: rawText }] };
+            consumeAnchors(txtBlock, pendingAnchors);
+            blocks.push(txtBlock);
           }
           return;
         }
@@ -347,46 +458,81 @@ function __anomiconExtract() {
         if (tag === 'style' || tag === 'script' || tag === 'noscript') {
           return;
         }
+        var ownDirect = directNodeAnchors(node);
         if (cls.indexOf('list-pages-box') >= 0) {
           var blockCountBefore = blocks.length;
           var imageCountBefore = out.images.length;
-          walkBlocks(node, blocks);
+          mergeAnchors(pendingAnchors, ownDirect);
+          walkBlocks(node, blocks, pendingAnchors);
           if (blocks.length > blockCountBefore || out.images.length > imageCountBefore) {
             addWarning('compat:list-pages-box-content');
           }
           return;
         }
         if (tag === 'ul' || tag === 'ol') {
+          var listAnchors = [];
+          mergeAnchors(listAnchors, ownDirect);
+          var prevBlockLen = blocks.length;
           walkList(node, blocks, 0);
+          if (blocks.length > prevBlockLen) {
+            consumeAnchors(blocks[prevBlockLen], pendingAnchors, listAnchors);
+          } else {
+            mergeAnchors(pendingAnchors, listAnchors);
+          }
           return;
         }
         if (tag === 'pre') {
+          var preAnchors = [];
+          collectInlineAnchors(node, preAnchors);
           var preText = node.textContent || '';
           if (preText.length > 0) {
-            blocks.push({ k: 'paragraph', spans: [{ s: 'code', t: preText }] });
+            var preBlock = { k: 'paragraph', spans: [{ s: 'code', t: preText }] };
+            consumeAnchors(preBlock, pendingAnchors, preAnchors);
+            blocks.push(preBlock);
+          } else {
+            mergeAnchors(pendingAnchors, preAnchors);
           }
           addWarning('degraded:pre-layout');
           return;
         }
         if (tag === 'p') {
+          var pAnchors = [];
+          collectInlineAnchors(node, pAnchors);
           var pSpans = spansOf(node);
           if (pSpans.length > 0) {
-            blocks.push({ k: 'paragraph', spans: pSpans });
+            var pBlock = { k: 'paragraph', spans: pSpans };
+            consumeAnchors(pBlock, pendingAnchors, pAnchors);
+            blocks.push(pBlock);
+          } else {
+            mergeAnchors(pendingAnchors, pAnchors);
           }
           return;
         }
         if (/^h[1-6]$/.test(tag)) {
-          blocks.push({ k: 'heading', level: parseInt(tag.charAt(1), 10), spans: spansOf(node) });
+          var hAnchors = [];
+          collectInlineAnchors(node, hAnchors);
+          var hBlock = { k: 'heading', level: parseInt(tag.charAt(1), 10), spans: spansOf(node) };
+          consumeAnchors(hBlock, pendingAnchors, hAnchors);
+          blocks.push(hBlock);
           return;
         }
         if (tag === 'blockquote') {
           var quoteBlocks = [];
-          walkBlocks(node, quoteBlocks);
-          blocks.push({ k: 'quote', blocks: quoteBlocks });
+          var quotePending = [];
+          walkBlocks(node, quoteBlocks, quotePending);
+          if (quoteBlocks.length > 0 && quotePending.length > 0) {
+            consumeAnchors(quoteBlocks[quoteBlocks.length - 1], quotePending);
+          }
+          var quoteBlock = { k: 'quote', blocks: quoteBlocks };
+          consumeAnchors(quoteBlock, pendingAnchors, ownDirect);
+          attachAnchors(quoteBlock, quotePending);
+          blocks.push(quoteBlock);
           return;
         }
         if (tag === 'hr') {
-          blocks.push({ k: 'divider' });
+          var hrBlock = { k: 'divider' };
+          consumeAnchors(hrBlock, pendingAnchors, ownDirect);
+          blocks.push(hrBlock);
           return;
         }
         if (tag === 'table') {
@@ -396,11 +542,17 @@ function __anomiconExtract() {
             var cells = [];
             var tds = trs[r].querySelectorAll('th,td');
             for (var c = 0; c < tds.length; c++) {
-              cells.push({ k: 'cell', spans: spansOf(tds[c]) });
+              var cellAnchors = [];
+              collectInlineAnchors(tds[c], cellAnchors);
+              var cellBlock = { k: 'cell', spans: spansOf(tds[c]) };
+              attachAnchors(cellBlock, cellAnchors);
+              cells.push(cellBlock);
             }
             rows.push({ k: 'row', blocks: cells });
           }
-          blocks.push({ k: 'table', blocks: rows });
+          var tableBlock = { k: 'table', blocks: rows };
+          consumeAnchors(tableBlock, pendingAnchors, ownDirect);
+          blocks.push(tableBlock);
           return;
         }
         if (tag === 'iframe') {
@@ -408,7 +560,9 @@ function __anomiconExtract() {
           if (frameSrc.indexOf('interwikiFrame') >= 0 || frameSrc.indexOf('styleFrame') >= 0) {
             return;
           }
-          blocks.push({ k: 'embed', src: frameSrc });
+          var embedBlock = { k: 'embed', src: frameSrc };
+          consumeAnchors(embedBlock, pendingAnchors, ownDirect);
+          blocks.push(embedBlock);
           return;
         }
         if (tag === 'div' && cls.indexOf('scp-image-block') >= 0) {
@@ -421,32 +575,60 @@ function __anomiconExtract() {
           return;
         }
         if (tag === 'div' && cls.indexOf('collapsible-block') >= 0) {
+          var foldedDiv = node.querySelector(':scope > .collapsible-block-folded');
+          var unfoldedDiv = node.querySelector(':scope > .collapsible-block-unfolded');
+          var initiallyExpanded = !!(foldedDiv &&
+            (foldedDiv.getAttribute('style') || '').toLowerCase().indexOf('display:none') >= 0 &&
+            unfoldedDiv &&
+            (unfoldedDiv.getAttribute('style') || '').toLowerCase().indexOf('display:none') < 0);
           var linkEl = node.querySelector('.collapsible-block-link');
-          var contentEl = node.querySelector('.collapsible-block-content') ||
-            node.querySelector('.collapsible-block-unfolded');
+          var contentEl = node.querySelector('.collapsible-block-content') || unfoldedDiv;
           var innerBlocks = [];
+          var innerPending = [];
           if (contentEl) {
-            walkBlocks(contentEl, innerBlocks);
+            walkBlocks(contentEl, innerBlocks, innerPending);
+            if (innerBlocks.length > 0 && innerPending.length > 0) {
+              consumeAnchors(innerBlocks[innerBlocks.length - 1], innerPending);
+            }
           }
-          blocks.push({
+          var colBlock = {
             k: 'collapsible',
             title: linkEl ? linkEl.textContent.trim() : '',
+            expanded: initiallyExpanded,
             blocks: innerBlocks
-          });
+          };
+          consumeAnchors(colBlock, pendingAnchors, ownDirect);
+          attachAnchors(colBlock, innerPending);
+          blocks.push(colBlock);
           return;
         }
         if (tag === 'div') {
-          walkBlocks(node, blocks);
+          mergeAnchors(pendingAnchors, ownDirect);
+          walkBlocks(node, blocks, pendingAnchors);
           return;
         }
         if (tag === 'audio' || tag === 'video' || tag === 'canvas' || tag === 'svg' ||
           tag === 'object' || tag === 'math') {
+          var mediaAnchors = [];
+          collectInlineAnchors(node, mediaAnchors);
+          var beforeUnsupported = blocks.length;
           unsupportedFallback(node, tag, blocks);
+          if (blocks.length > beforeUnsupported) {
+            consumeAnchors(blocks[beforeUnsupported], pendingAnchors, mediaAnchors);
+          } else {
+            mergeAnchors(pendingAnchors, mediaAnchors);
+          }
           return;
         }
+        var fbAnchors = [];
+        collectInlineAnchors(node, fbAnchors);
         var fallbackSpans = spansOf(node);
         if (fallbackSpans.length > 0) {
-          blocks.push({ k: 'paragraph', spans: fallbackSpans });
+          var fbBlock = { k: 'paragraph', spans: fallbackSpans };
+          consumeAnchors(fbBlock, pendingAnchors, fbAnchors);
+          blocks.push(fbBlock);
+        } else {
+          mergeAnchors(pendingAnchors, fbAnchors);
         }
     }
 

@@ -164,7 +164,7 @@ export default function articleDocumentMapperTest(): void {
       let rejected = false;
       try {
         parser.parse(
-          '{"parserVersion":8,"ok":true,"error":"","title":"bad","rating":"","pageVersion":"","tags":[],"images":[],"blocks":[null],"footnotes":[],"warnings":[]}',
+          '{"parserVersion":9,"ok":true,"error":"","title":"bad","rating":"","pageVersion":"","tags":[],"images":[],"blocks":[null],"footnotes":[],"warnings":[]}',
           'https://scp-wiki-cn.wikidot.com/scp-173',
           1_600_000_000_000
         );
@@ -177,7 +177,7 @@ export default function articleDocumentMapperTest(): void {
     it('normalizes Traditional prose and removes empty footnote rows', 0, () => {
       const parser = createArticleDocumentParser();
       const document = parser.parse(
-        '{"parserVersion":8,"ok":true,"error":"","title":"測試項目","rating":"","pageVersion":"","tags":["scp","containment-class-safe","異常"],"images":[],"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"特別收容措施"}]}],"footnotes":[{"id":"empty","index":1,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"   "}]},{"k":"divider"}]},{"id":"readable","index":2,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"腳註內容"}]}]}],"warnings":[]}',
+        '{"parserVersion":9,"ok":true,"error":"","title":"測試項目","rating":"","pageVersion":"","tags":["scp","containment-class-safe","異常"],"images":[],"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"特別收容措施"}]}],"footnotes":[{"id":"empty","index":1,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"   "}]},{"k":"divider"}]},{"id":"readable","index":2,"blocks":[{"k":"paragraph","spans":[{"s":"plain","t":"腳註內容"}]}]}],"warnings":[]}',
         'https://scp-wiki-cn.wikidot.com/scp-999',
         1_700_000_000_000
       );
@@ -297,7 +297,7 @@ export default function articleDocumentMapperTest(): void {
 
     it('deduplicates legacy cached footnote numbering without harming plain numbers', 0, () => {
       const parser = createArticleDocumentParser();
-      const payload = '{"parserVersion":8,"ok":true,"error":"","title":"SCP-049",' +
+      const payload = '{"parserVersion":9,"ok":true,"error":"","title":"SCP-049",' +
         '"rating":"","pageVersion":"","tags":[],"images":[],' +
         '"blocks":[{"k":"paragraph","spans":[{"s":"footnote","t":"[1]","r":"1"}]}],' +
         '"footnotes":[' +
@@ -603,6 +603,42 @@ export default function articleDocumentMapperTest(): void {
       const cleanPayload = ScpNativeHtmlParser.parse(cleanBhlHtml);
       expect(cleanPayload.warnings.indexOf('format-screw:custom-css') >= 0).assertFalse();
       expect(cleanPayload.warnings.indexOf('interactive:listpages-offset') >= 0).assertFalse();
+    });
+
+    it('preserves anchors across preceding empty blocks and detects pre-expanded collapsibles', 0, () => {
+      const html = '<div id="page-title">机动特遣队</div>' +
+        '<div id="page-content">' +
+        '<blockquote><div class="collapsible-block">' +
+        '<div class="collapsible-block-folded" style="display:none"><a class="collapsible-block-link" href="javascript:;">+ 展开目录</a></div>' +
+        '<div class="collapsible-block-unfolded"><div class="collapsible-block-unfolded-link"><a class="collapsible-block-link" href="javascript:;">- 收起目录</a></div>' +
+        '<div class="collapsible-block-content"><p><a href="#alpha-1">红右手</a></p></div></div>' +
+        '</div></blockquote>' +
+        '<div class="collapsible-block">' +
+        '<div class="collapsible-block-folded"><a class="collapsible-block-link" href="javascript:;">+ 默认折叠</a></div>' +
+        '<div class="collapsible-block-unfolded" style="display:none"><div class="collapsible-block-content"><p>秘密内容</p></div></div>' +
+        '</div>' +
+        '<p><a name="alpha-1"></a></p>' +
+        '<div class="content-panel standalone series"><div><h1 id="toc0"><span>机动特遣队Alpha-1</span></h1><p>详细档案</p></div></div>' +
+        '</div>';
+      const doc = createArticleDocumentParser().parse(
+        JSON.stringify(ScpNativeHtmlParser.parse(html)),
+        'https://scp-wiki-cn.wikidot.com/task-forces',
+        1_700_000_000_000
+      );
+
+      expect(doc.blocks.length).assertEqual(3);
+      expect(doc.blocks[0].type).assertEqual(ScpBlockType.QUOTE);
+      expect(doc.blocks[0].children[0].type).assertEqual(ScpBlockType.COLLAPSIBLE);
+      expect(doc.blocks[0].children[0].initiallyExpanded).assertTrue();
+      expect(doc.blocks[0].children[0].children[0].spans[0].target).assertEqual('#alpha-1');
+
+      expect(doc.blocks[1].type).assertEqual(ScpBlockType.COLLAPSIBLE);
+      expect(doc.blocks[1].initiallyExpanded).assertFalse();
+
+      expect(doc.blocks[2].type).assertEqual(ScpBlockType.CALLOUT);
+      expect(doc.blocks[2].anchors.indexOf('alpha-1') >= 0).assertTrue();
+      expect(doc.blocks[2].children[0].type).assertEqual(ScpBlockType.HEADING);
+      expect(doc.blocks[2].children[0].anchors.indexOf('toc0') >= 0).assertTrue();
     });
   });
 }

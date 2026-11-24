@@ -28,6 +28,22 @@ export {
   ScpTextSpan,
   ScpTextStyle
 } from './domain/ScpDocument';
+export {
+  ArticleBlockLocation,
+  ArticleIndexSectionInput,
+  ArticleNavigationIndex,
+  ArticleSearchHit,
+  ArticleTabTarget,
+  ArticleTocItem,
+  ArticleTocKind,
+  HighlightedTextSegment,
+  buildArticleNavigationIndex,
+  extractUrlAnchorFragment,
+  normalizeArticleAnchor,
+  resolveAnchorLocation,
+  searchArticleDocument,
+  splitTextForSearchHighlight
+} from './domain/ArticleNavigation';
 // Composition returns only domain ports and screen factories. Gateway,
 // cache/view-state adapters and the schema mapper remain private to Article.
 export {

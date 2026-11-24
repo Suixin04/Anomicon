@@ -1,5 +1,9 @@
 import { ScpExtractPayload } from './ScpDocumentMapper';
 import { ScpArticleDocument } from '../domain/ScpDocument';
+import {
+  isNoiseArticleAnchor,
+  normalizeArticleAnchor
+} from '../domain/ArticleNavigation';
 
 /**
  * A deliberately small, dependency-free HTML parser for the article surface.
@@ -64,6 +68,7 @@ interface NativeBlock {
   blocks?: NativeBlock[];
   src?: string;
   caption?: string;
+  anchors?: string[];
 }
 
 interface ParsedRgba {
@@ -423,6 +428,69 @@ export class ScpNativeHtmlParser {
   private static hasNoiseId(node: HtmlNode): boolean {
     const id = ScpNativeHtmlParser.attr(node, 'id').trim().toLowerCase();
     return id.length > 0 && NOISE_IDS.indexOf(id) >= 0;
+  }
+
+  private static mergeAnchorsInto(target: string[], incoming: string[]): void {
+    for (let index: number = 0; index < incoming.length && target.length < 16; index++) {
+      const normalized = normalizeArticleAnchor(incoming[index]);
+      if (normalized.length > 0 && !isNoiseArticleAnchor(normalized) &&
+        target.indexOf(normalized) < 0) {
+        target.push(normalized);
+      }
+    }
+  }
+
+  private static collectDirectNodeAnchors(node: HtmlNode): string[] {
+    const collected: string[] = [];
+    const idAttr = ScpNativeHtmlParser.attr(node, 'id');
+    if (idAttr.length > 0) {
+      ScpNativeHtmlParser.mergeAnchorsInto(collected, [idAttr]);
+    }
+    if (node.tag === 'a') {
+      const nameAttr = ScpNativeHtmlParser.attr(node, 'name');
+      if (nameAttr.length > 0) {
+        ScpNativeHtmlParser.mergeAnchorsInto(collected, [nameAttr]);
+      }
+    }
+    return collected;
+  }
+
+  private static collectInlineDescendantAnchors(node: HtmlNode, output: string[]): void {
+    ScpNativeHtmlParser.mergeAnchorsInto(output, ScpNativeHtmlParser.collectDirectNodeAnchors(node));
+    for (let index: number = 0; index < node.children.length; index++) {
+      const child = node.children[index];
+      if (child.tag === '#text' || BLOCK_STRUCTURE_TAGS.indexOf(child.tag) >= 0) {
+        continue;
+      }
+      ScpNativeHtmlParser.collectInlineDescendantAnchors(child, output);
+    }
+  }
+
+  private static attachAnchorsToBlock(block: NativeBlock, anchors: string[]): void {
+    if (anchors.length === 0) {
+      return;
+    }
+    const existing = block.anchors ?? [];
+    const merged: string[] = existing.slice();
+    ScpNativeHtmlParser.mergeAnchorsInto(merged, anchors);
+    if (merged.length > 0) {
+      block.anchors = merged;
+    }
+  }
+
+  private static consumeAndAttachAnchors(
+    block: NativeBlock,
+    pendingAnchors: string[],
+    extraAnchors: string[] = []
+  ): void {
+    if (pendingAnchors.length === 0 && extraAnchors.length === 0) {
+      return;
+    }
+    const combined: string[] = [];
+    ScpNativeHtmlParser.mergeAnchorsInto(combined, pendingAnchors);
+    ScpNativeHtmlParser.mergeAnchorsInto(combined, extraAnchors);
+    pendingAnchors.length = 0;
+    ScpNativeHtmlParser.attachAnchorsToBlock(block, combined);
   }
 
   private static firstById(root: HtmlNode, id: string): HtmlNode | undefined {
@@ -1503,6 +1571,8 @@ export class ScpNativeHtmlParser {
         }
       }
       if (spans.length > 0 || nestedBlocks.length > 0) {
+        const itemAnchors: string[] = [];
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(li, itemAnchors);
         const itemBlock: NativeBlock = {
           k: 'list_item',
           level: depth,
@@ -1512,6 +1582,7 @@ export class ScpNativeHtmlParser {
         if (liCtx.textAlign.length > 0) {
           itemBlock.align = liCtx.textAlign;
         }
+        ScpNativeHtmlParser.attachAnchorsToBlock(itemBlock, itemAnchors);
         listItems.push(itemBlock);
       }
     }
@@ -1668,7 +1739,8 @@ export class ScpNativeHtmlParser {
     images: NativeImage[],
     warnings: string[],
     creditBlocks?: NativeBlock[],
-    context: BlockStyleContext = ScpNativeHtmlParser.emptyBlockContext()
+    context: BlockStyleContext = ScpNativeHtmlParser.emptyBlockContext(),
+    pendingAnchors: string[] = []
   ): void {
     const nodeCtx = ScpNativeHtmlParser.deriveBlockContext(node, context);
     let inlineBuffer: HtmlNode[] = [];
@@ -1677,11 +1749,19 @@ export class ScpNativeHtmlParser {
         return;
       }
       const wrapper = new HtmlNode('p');
+      const inlineAnchors: string[] = [];
       for (let index: number = 0; index < inlineBuffer.length; index++) {
         wrapper.children.push(inlineBuffer[index]);
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(inlineBuffer[index], inlineAnchors);
       }
       inlineBuffer = [];
+      const beforeLen = blocks.length;
       ScpNativeHtmlParser.walkParagraphNode(wrapper, blocks, images, warnings, nodeCtx);
+      if (blocks.length > beforeLen) {
+        ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, inlineAnchors);
+      } else {
+        ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, inlineAnchors);
+      }
     };
 
     for (let index: number = 0; index < node.children.length; index++) {
@@ -1691,7 +1771,15 @@ export class ScpNativeHtmlParser {
         continue;
       }
       flushInline();
-      ScpNativeHtmlParser.walkBlockChild(child, blocks, images, warnings, creditBlocks, nodeCtx);
+      ScpNativeHtmlParser.walkBlockChild(
+        child,
+        blocks,
+        images,
+        warnings,
+        creditBlocks,
+        nodeCtx,
+        pendingAnchors
+      );
     }
     flushInline();
   }
@@ -1913,20 +2001,33 @@ export class ScpNativeHtmlParser {
     for (let index: number = 0; index < count; index++) {
       const title = ScpNativeHtmlParser.textContent(navItems[index]).replace(/\s+/g, ' ').trim();
       const panelBlocks: NativeBlock[] = [];
+      const panelPending: string[] = [];
       ScpNativeHtmlParser.walkBlocks(
         panelDivs[index],
         panelBlocks,
         images,
         warnings,
         creditBlocks,
-        tabsCtx
+        tabsCtx,
+        panelPending
       );
+      if (panelBlocks.length > 0 && panelPending.length > 0) {
+        ScpNativeHtmlParser.consumeAndAttachAnchors(
+          panelBlocks[panelBlocks.length - 1],
+          panelPending
+        );
+      }
       if (panelBlocks.length > 0) {
-        panels.push({
+        const panelBlock: NativeBlock = {
           k: 'tab_panel',
           title: title.length > 0 ? title : `标签 ${index + 1}`,
           blocks: panelBlocks
-        });
+        };
+        ScpNativeHtmlParser.attachAnchorsToBlock(
+          panelBlock,
+          ScpNativeHtmlParser.collectDirectNodeAnchors(panelDivs[index])
+        );
+        panels.push(panelBlock);
       }
     }
     if (panels.length === 0) {
@@ -1981,19 +2082,33 @@ export class ScpNativeHtmlParser {
     }
     const contentDiv = ScpNativeHtmlParser.directChildByClass(targetLi, 'colmod-content');
     const inner: NativeBlock[] = [];
+    const innerPending: string[] = [];
     if (contentDiv !== undefined) {
-      ScpNativeHtmlParser.walkBlocks(contentDiv, inner, images, warnings, creditBlocks, colCtx);
+      ScpNativeHtmlParser.walkBlocks(
+        contentDiv,
+        inner,
+        images,
+        warnings,
+        creditBlocks,
+        colCtx,
+        innerPending
+      );
+      if (inner.length > 0 && innerPending.length > 0) {
+        ScpNativeHtmlParser.consumeAndAttachAnchors(inner[inner.length - 1], innerPending);
+      }
     }
     if (inner.length === 0) {
       return undefined;
     }
-    return {
+    const block: NativeBlock = {
       k: 'collapsible',
       title: openTitle,
       closeTitle: closeTitle,
       expanded: unfolded,
       blocks: inner
     };
+    ScpNativeHtmlParser.attachAnchorsToBlock(block, innerPending);
+    return block;
   }
 
   private static extractCreditBlocks(
@@ -2092,7 +2207,8 @@ export class ScpNativeHtmlParser {
     images: NativeImage[],
     warnings: string[],
     creditBlocks?: NativeBlock[],
-    context: BlockStyleContext = ScpNativeHtmlParser.emptyBlockContext()
+    context: BlockStyleContext = ScpNativeHtmlParser.emptyBlockContext(),
+    pendingAnchors: string[] = []
   ): void {
       if (child.tag === '#text') {
         if (child.text.trim().length > 0) {
@@ -2100,6 +2216,7 @@ export class ScpNativeHtmlParser {
           if (context.textAlign.length > 0) {
             textBlock.align = context.textAlign;
           }
+          ScpNativeHtmlParser.consumeAndAttachAnchors(textBlock, pendingAnchors);
           blocks.push(textBlock);
         }
         return;
@@ -2134,13 +2251,25 @@ export class ScpNativeHtmlParser {
         child.tag === 'title') {
         return;
       }
+      const ownDirectAnchors = ScpNativeHtmlParser.collectDirectNodeAnchors(child);
       if (classNames.indexOf(' modal-wrapper ') >= 0 || idLower === 'u-adult-warning') {
-        blocks.push(ScpNativeHtmlParser.parseAdultWarningModal(child));
+        const warningBlock = ScpNativeHtmlParser.parseAdultWarningModal(child);
+        ScpNativeHtmlParser.consumeAndAttachAnchors(warningBlock, pendingAnchors, ownDirectAnchors);
+        blocks.push(warningBlock);
         return;
       }
       const childCtx = ScpNativeHtmlParser.deriveBlockContext(child, context);
       if (classNames.indexOf(' list-pages-box ') >= 0) {
-        ScpNativeHtmlParser.walkBlocks(child, blocks, images, warnings, creditBlocks, childCtx);
+        ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+        ScpNativeHtmlParser.walkBlocks(
+          child,
+          blocks,
+          images,
+          warnings,
+          creditBlocks,
+          childCtx,
+          pendingAnchors
+        );
         ScpNativeHtmlParser.warning(warnings, 'compat:list-pages-box-content');
         return;
       }
@@ -2150,6 +2279,10 @@ export class ScpNativeHtmlParser {
       if (child.tag === 'div' && classNames.indexOf(' collapsible-block ') >= 0) {
         const foldedDiv = ScpNativeHtmlParser.directChildByClass(child, 'collapsible-block-folded');
         const unfoldedDiv = ScpNativeHtmlParser.directChildByClass(child, 'collapsible-block-unfolded');
+        const initiallyExpanded = foldedDiv !== undefined &&
+          ScpNativeHtmlParser.isDisplayNone(foldedDiv) &&
+          unfoldedDiv !== undefined &&
+          !ScpNativeHtmlParser.isDisplayNone(unfoldedDiv);
         const openLinks = foldedDiv !== undefined ?
           ScpNativeHtmlParser.byClass(foldedDiv, 'collapsible-block-link') :
           ScpNativeHtmlParser.byClass(child, 'collapsible-block-link');
@@ -2163,28 +2296,60 @@ export class ScpNativeHtmlParser {
           (ScpNativeHtmlParser.directChildByClass(unfoldedDiv, 'collapsible-block-content') ?? unfoldedDiv) :
           ScpNativeHtmlParser.directChildByClass(child, 'collapsible-block-content');
         const inner: NativeBlock[] = [];
+        const innerPending: string[] = [];
         if (contentNode !== undefined) {
           const innerCtx = ScpNativeHtmlParser.deriveBlockContext(contentNode, childCtx);
-          for (let i: number = 0; i < contentNode.children.length; i++) {
-            const sub = contentNode.children[i];
-            if (ScpNativeHtmlParser.hasClass(sub, 'collapsible-block-unfolded-link')) {
-              continue;
+          if (contentNode === unfoldedDiv) {
+            const filtered = new HtmlNode(contentNode.tag);
+            contentNode.attrs.forEach((value: string, key: string): void => {
+              filtered.attrs.set(key, value);
+            });
+            for (let i: number = 0; i < contentNode.children.length; i++) {
+              const sub = contentNode.children[i];
+              if (!ScpNativeHtmlParser.hasClass(sub, 'collapsible-block-unfolded-link')) {
+                filtered.children.push(sub);
+              }
             }
-            ScpNativeHtmlParser.walkBlockChild(sub, inner, images, warnings, creditBlocks, innerCtx);
+            ScpNativeHtmlParser.walkBlocks(
+              filtered,
+              inner,
+              images,
+              warnings,
+              creditBlocks,
+              innerCtx,
+              innerPending
+            );
+          } else {
+            ScpNativeHtmlParser.walkBlocks(
+              contentNode,
+              inner,
+              images,
+              warnings,
+              creditBlocks,
+              innerCtx,
+              innerPending
+            );
+          }
+          if (inner.length > 0 && innerPending.length > 0) {
+            ScpNativeHtmlParser.consumeAndAttachAnchors(inner[inner.length - 1], innerPending);
           }
         }
-        blocks.push({
+        const collapsibleBlock: NativeBlock = {
           k: 'collapsible',
           title: openLinks.length > 0 ? ScpNativeHtmlParser.textContent(openLinks[0]).trim() : '',
           closeTitle: closeLinks.length > 0 ? ScpNativeHtmlParser.textContent(closeLinks[0]).trim() : '',
-          expanded: false,
+          expanded: initiallyExpanded,
           blocks: inner
-        });
+        };
+        ScpNativeHtmlParser.consumeAndAttachAnchors(collapsibleBlock, pendingAnchors, ownDirectAnchors);
+        ScpNativeHtmlParser.attachAnchorsToBlock(collapsibleBlock, innerPending);
+        blocks.push(collapsibleBlock);
         return;
       }
       if (child.tag === 'div' && classNames.indexOf(' colmod-block ') >= 0) {
         const colmodBlock = ScpNativeHtmlParser.parseColmodBlock(child, images, warnings, creditBlocks, childCtx);
         if (colmodBlock !== undefined) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(colmodBlock, pendingAnchors, ownDirectAnchors);
           blocks.push(colmodBlock);
           return;
         }
@@ -2192,6 +2357,7 @@ export class ScpNativeHtmlParser {
       if (child.tag === 'div' && classNames.indexOf(' yui-navset ') >= 0) {
         const tabsBlock = ScpNativeHtmlParser.parseTabsBlock(child, images, warnings, creditBlocks, childCtx);
         if (tabsBlock !== undefined) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(tabsBlock, pendingAnchors, ownDirectAnchors);
           blocks.push(tabsBlock);
           return;
         }
@@ -2204,6 +2370,7 @@ export class ScpNativeHtmlParser {
           ScpNativeHtmlParser.byClass(child, 'contain-class').length > 0)) {
         const acsBlock = ScpNativeHtmlParser.parseAcsHeader(child);
         if (acsBlock !== undefined) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(acsBlock, pendingAnchors, ownDirectAnchors);
           blocks.push(acsBlock);
           return;
         }
@@ -2212,15 +2379,37 @@ export class ScpNativeHtmlParser {
         ScpNativeHtmlParser.warning(warnings, 'interactive:html-block-iframe');
       }
       if (child.tag === 'ul' || child.tag === 'ol') {
+        const beforeLen = blocks.length;
         ScpNativeHtmlParser.walkList(child, blocks, images, warnings, 0, creditBlocks, childCtx);
+        if (blocks.length > beforeLen) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, ownDirectAnchors);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+        }
       } else if (child.tag === 'pre') {
+        const preAnchors: string[] = [];
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(child, preAnchors);
         const code = ScpNativeHtmlParser.rawTextContent(child).replace(/^\n+|\n+$/g, '');
         if (code.length > 0) {
-          blocks.push({ k: 'code_block', spans: [{ s: 'code', t: code, m: true }] });
+          const codeBlock: NativeBlock = { k: 'code_block', spans: [{ s: 'code', t: code, m: true }] };
+          ScpNativeHtmlParser.consumeAndAttachAnchors(codeBlock, pendingAnchors, preAnchors);
+          blocks.push(codeBlock);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, preAnchors);
         }
       } else if (child.tag === 'p') {
+        const pAnchors: string[] = [];
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(child, pAnchors);
+        const beforeLen = blocks.length;
         ScpNativeHtmlParser.walkParagraphNode(child, blocks, images, warnings, childCtx);
+        if (blocks.length > beforeLen) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, pAnchors);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, pAnchors);
+        }
       } else if (/^h[1-6]$/.test(child.tag)) {
+        const hAnchors: string[] = [];
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(child, hAnchors);
         const heading: NativeBlock = {
           k: 'heading',
           level: Number.parseInt(child.tag.charAt(1), 10),
@@ -2234,13 +2423,31 @@ export class ScpNativeHtmlParser {
         if (childCtx.textAlign.length > 0) {
           heading.align = childCtx.textAlign;
         }
+        ScpNativeHtmlParser.consumeAndAttachAnchors(heading, pendingAnchors, hAnchors);
         blocks.push(heading);
       } else if (child.tag === 'blockquote') {
         const quote: NativeBlock[] = [];
-        ScpNativeHtmlParser.walkBlocks(child, quote, images, warnings, creditBlocks, childCtx);
-        blocks.push({ k: 'quote', blocks: quote });
+        const quotePending: string[] = [];
+        ScpNativeHtmlParser.walkBlocks(
+          child,
+          quote,
+          images,
+          warnings,
+          creditBlocks,
+          childCtx,
+          quotePending
+        );
+        if (quote.length > 0 && quotePending.length > 0) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(quote[quote.length - 1], quotePending);
+        }
+        const quoteBlock: NativeBlock = { k: 'quote', blocks: quote };
+        ScpNativeHtmlParser.consumeAndAttachAnchors(quoteBlock, pendingAnchors, ownDirectAnchors);
+        ScpNativeHtmlParser.attachAnchorsToBlock(quoteBlock, quotePending);
+        blocks.push(quoteBlock);
       } else if (child.tag === 'hr') {
-        blocks.push({ k: 'divider' });
+        const dividerBlock: NativeBlock = { k: 'divider' };
+        ScpNativeHtmlParser.consumeAndAttachAnchors(dividerBlock, pendingAnchors, ownDirectAnchors);
+        blocks.push(dividerBlock);
       } else if (child.tag === 'table') {
         const rows: NativeBlock[] = [];
         const trs = ScpNativeHtmlParser.collectTableRows(child);
@@ -2251,6 +2458,8 @@ export class ScpNativeHtmlParser {
             const cell = trs[rowIndex].children[cellIndex];
             if (cell.tag === 'th' || cell.tag === 'td') {
               const cellCtx = ScpNativeHtmlParser.deriveBlockContext(cell, rowCtx);
+              const cellAnchors: string[] = [];
+              ScpNativeHtmlParser.collectInlineDescendantAnchors(cell, cellAnchors);
               const cellBlock: NativeBlock = {
                 k: 'cell',
                 isHeader: cell.tag === 'th',
@@ -2264,14 +2473,22 @@ export class ScpNativeHtmlParser {
               if (cellCtx.textAlign.length > 0) {
                 cellBlock.align = cellCtx.textAlign;
               }
+              ScpNativeHtmlParser.attachAnchorsToBlock(cellBlock, cellAnchors);
               cells.push(cellBlock);
             }
           }
           if (cells.length > 0) {
-            rows.push({ k: 'row', blocks: cells });
+            const rowBlock: NativeBlock = { k: 'row', blocks: cells };
+            ScpNativeHtmlParser.attachAnchorsToBlock(
+              rowBlock,
+              ScpNativeHtmlParser.collectDirectNodeAnchors(trs[rowIndex])
+            );
+            rows.push(rowBlock);
           }
         }
-        blocks.push({ k: 'table', blocks: rows });
+        const tableBlock: NativeBlock = { k: 'table', blocks: rows };
+        ScpNativeHtmlParser.consumeAndAttachAnchors(tableBlock, pendingAnchors, ownDirectAnchors);
+        blocks.push(tableBlock);
       } else if (child.tag === 'iframe') {
         const source = ScpNativeHtmlParser.attr(child, 'src');
         const lowerSource = source.toLowerCase();
@@ -2280,7 +2497,9 @@ export class ScpNativeHtmlParser {
           lowerSource.indexOf('credit%3abackmodule') < 0 &&
           lowerSource.indexOf('credit%253abackmodule') < 0 &&
           lowerSource.indexOf('credit:backmodule') < 0) {
-          blocks.push({ k: 'embed', src: source });
+          const embedBlock: NativeBlock = { k: 'embed', src: source };
+          ScpNativeHtmlParser.consumeAndAttachAnchors(embedBlock, pendingAnchors, ownDirectAnchors);
+          blocks.push(embedBlock);
           if (classNames.indexOf(' html-block-iframe ') >= 0 ||
             ScpNativeHtmlParser.attr(child, 'data-interactive') === 'true') {
             ScpNativeHtmlParser.warning(warnings, 'interactive:html-block-iframe');
@@ -2289,6 +2508,7 @@ export class ScpNativeHtmlParser {
       } else if (child.tag === 'img') {
         const alt = (ScpNativeHtmlParser.attr(child, 'alt') ||
           ScpNativeHtmlParser.attr(child, 'title')).trim();
+        const beforeLen = blocks.length;
         ScpNativeHtmlParser.emitImageBlock(
           child,
           ScpNativeHtmlParser.cleanImageCaption(alt, ScpNativeHtmlParser.imageSource(child)),
@@ -2296,10 +2516,16 @@ export class ScpNativeHtmlParser {
           blocks,
           images
         );
+        if (blocks.length > beforeLen) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, ownDirectAnchors);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+        }
       } else if (child.tag === 'div' && classNames.indexOf(' scp-image-block ') >= 0) {
         const foundImages = ScpNativeHtmlParser.descendantsByTag(child, 'img');
         const captions = ScpNativeHtmlParser.byClass(child, 'scp-image-caption');
         const caption = captions.length > 0 ? ScpNativeHtmlParser.textContent(captions[0]).trim() : '';
+        const beforeLen = blocks.length;
         if (foundImages.length > 0) {
           ScpNativeHtmlParser.emitImageBlock(
             foundImages[0],
@@ -2309,8 +2535,14 @@ export class ScpNativeHtmlParser {
             images
           );
         }
+        if (blocks.length > beforeLen) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, ownDirectAnchors);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+        }
       } else if (child.tag === 'div' && classNames.indexOf(' image-container ') >= 0) {
         const foundImages = ScpNativeHtmlParser.descendantsByTag(child, 'img');
+        const beforeLen = blocks.length;
         for (let imgIndex: number = 0; imgIndex < foundImages.length; imgIndex++) {
           const imgNode = foundImages[imgIndex];
           const alt = (ScpNativeHtmlParser.attr(imgNode, 'alt') ||
@@ -2323,13 +2555,33 @@ export class ScpNativeHtmlParser {
             images
           );
         }
+        if (blocks.length > beforeLen) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, ownDirectAnchors);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+        }
       } else if (child.tag === 'audio' || child.tag === 'video' || child.tag === 'canvas' ||
         child.tag === 'svg' || child.tag === 'object' || child.tag === 'math') {
+        const extraAnchors: string[] = [];
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(child, extraAnchors);
+        const beforeLen = blocks.length;
         ScpNativeHtmlParser.unsupportedFallback(child, blocks, images, warnings, childCtx);
+        if (blocks.length > beforeLen) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, extraAnchors);
+        }
       } else if (child.tag === 'html' || child.tag === 'body' || child.tag === 'main' ||
         child.tag === 'header' || child.tag === 'footer' || child.tag === 'nav' ||
         child.tag === 'figure' || child.tag === 'figcaption' || child.tag === 'center') {
-        ScpNativeHtmlParser.walkBlocks(child, blocks, images, warnings, creditBlocks, childCtx);
+        ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+        ScpNativeHtmlParser.walkBlocks(
+          child,
+          blocks,
+          images,
+          warnings,
+          creditBlocks,
+          childCtx,
+          pendingAnchors
+        );
       } else if (child.tag === 'div' || child.tag === 'section' || child.tag === 'article') {
         const tone = ScpNativeHtmlParser.detectCalloutTone(child);
         if (tone.length > 0) {
@@ -2338,18 +2590,57 @@ export class ScpNativeHtmlParser {
             inDarkContainer: childCtx.inDarkContainer || tone === 'terminal'
           };
           const inner: NativeBlock[] = [];
-          ScpNativeHtmlParser.walkBlocks(child, inner, images, warnings, creditBlocks, calloutCtx);
+          const innerPending: string[] = [];
+          ScpNativeHtmlParser.walkBlocks(
+            child,
+            inner,
+            images,
+            warnings,
+            creditBlocks,
+            calloutCtx,
+            innerPending
+          );
+          if (inner.length > 0 && innerPending.length > 0) {
+            ScpNativeHtmlParser.consumeAndAttachAnchors(inner[inner.length - 1], innerPending);
+          }
           if (inner.length === 1 && inner[0].k === 'callout' && inner[0].tone === tone) {
+            ScpNativeHtmlParser.consumeAndAttachAnchors(inner[0], pendingAnchors, ownDirectAnchors);
+            ScpNativeHtmlParser.attachAnchorsToBlock(inner[0], innerPending);
             blocks.push(inner[0]);
           } else if (inner.length > 0) {
-            blocks.push({ k: 'callout', tone: tone, blocks: inner });
+            const calloutBlock: NativeBlock = { k: 'callout', tone: tone, blocks: inner };
+            ScpNativeHtmlParser.consumeAndAttachAnchors(calloutBlock, pendingAnchors, ownDirectAnchors);
+            ScpNativeHtmlParser.attachAnchorsToBlock(calloutBlock, innerPending);
+            blocks.push(calloutBlock);
+          } else {
+            ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+            ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, innerPending);
           }
         } else {
-          ScpNativeHtmlParser.walkBlocks(child, blocks, images, warnings, creditBlocks, childCtx);
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, ownDirectAnchors);
+          ScpNativeHtmlParser.walkBlocks(
+            child,
+            blocks,
+            images,
+            warnings,
+            creditBlocks,
+            childCtx,
+            pendingAnchors
+          );
         }
       } else if (ScpNativeHtmlParser.hasDirectImgContent(child)) {
+        const imgAnchors: string[] = [];
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(child, imgAnchors);
+        const beforeLen = blocks.length;
         ScpNativeHtmlParser.walkParagraphNode(child, blocks, images, warnings, childCtx);
+        if (blocks.length > beforeLen) {
+          ScpNativeHtmlParser.consumeAndAttachAnchors(blocks[beforeLen], pendingAnchors, imgAnchors);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, imgAnchors);
+        }
       } else {
+        const inlineAnchors: string[] = [];
+        ScpNativeHtmlParser.collectInlineDescendantAnchors(child, inlineAnchors);
         const spans = ScpNativeHtmlParser.inlineSpans(
           child,
           images,
@@ -2361,7 +2652,10 @@ export class ScpNativeHtmlParser {
           if (childCtx.textAlign.length > 0) {
             fallbackBlock.align = childCtx.textAlign;
           }
+          ScpNativeHtmlParser.consumeAndAttachAnchors(fallbackBlock, pendingAnchors, inlineAnchors);
           blocks.push(fallbackBlock);
+        } else {
+          ScpNativeHtmlParser.mergeAnchorsInto(pendingAnchors, inlineAnchors);
         }
       }
   }
@@ -2484,6 +2778,8 @@ export class ScpNativeHtmlParser {
       }
       if (ScpNativeHtmlParser.isPureWhisperParagraph(block)) {
         const mergedSpans: NativeSpan[] = [];
+        const mergedAnchors: string[] = [];
+        ScpNativeHtmlParser.mergeAnchorsInto(mergedAnchors, block.anchors ?? []);
         const srcSpans = block.spans ?? [];
         for (let s: number = 0; s < srcSpans.length; s++) {
           mergedSpans.push(srcSpans[s]);
@@ -2491,6 +2787,7 @@ export class ScpNativeHtmlParser {
         let cursor = index + 1;
         while (cursor < blocks.length && ScpNativeHtmlParser.isPureWhisperParagraph(blocks[cursor])) {
           mergedSpans.push({ s: 'plain', t: '\n', u: '', r: '', h: 'zero_size_whisper' });
+          ScpNativeHtmlParser.mergeAnchorsInto(mergedAnchors, blocks[cursor].anchors ?? []);
           const nextSpans = blocks[cursor].spans ?? [];
           for (let s: number = 0; s < nextSpans.length; s++) {
             mergedSpans.push(nextSpans[s]);
@@ -2504,6 +2801,7 @@ export class ScpNativeHtmlParser {
         if (block.align !== undefined && block.align.length > 0) {
           mergedBlock.align = block.align;
         }
+        ScpNativeHtmlParser.attachAnchorsToBlock(mergedBlock, mergedAnchors);
         out.push(mergedBlock);
         index = cursor - 1;
         continue;

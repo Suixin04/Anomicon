@@ -30,9 +30,13 @@ export struct ArticleReadingStatusBar {
   @Param sidePanelLabel: string = '';
   @Param revealHiddenActive: boolean = false;
   @Param webModeActive: boolean = false;
+  @Param tocCount: number = 0;
+  @Param searchOpen: boolean = false;
   @Event onToggleSidePanel: () => void = () => {};
   @Event onDisableRevealHidden: () => void = () => {};
   @Event onExitWebMode: () => void = () => {};
+  @Event onOpenToc: () => void = () => {};
+  @Event onToggleSearch: () => void = () => {};
 
   @Local private barContainerWidth: number = 0;
 
@@ -61,9 +65,29 @@ export struct ArticleReadingStatusBar {
     return adaptivePageMarginForWidth(measured);
   }
 
+  private effectiveWidth(): number {
+    return this.barContainerWidth > 0 ? this.barContainerWidth : windowWidthVp();
+  }
+
+  private showCompactTools(): boolean {
+    return this.contentReady && !this.webModeActive;
+  }
+
+  private showTocPill(): boolean {
+    return this.showCompactTools() && this.tocCount > 0 && !this.sidePanelAvailable;
+  }
+
+  private showTocLabel(): boolean {
+    return this.effectiveWidth() >= 320 && !this.revealHiddenActive;
+  }
+
+  private useTightRightPadding(): boolean {
+    return (this.sidePanelAvailable && !this.webModeActive) || this.showCompactTools();
+  }
+
   build() {
     Row() {
-      Row({ space: 8 }) {
+      Row({ space: 6 }) {
         if (this.webModeActive) {
           SymbolGlyph($r('sys.symbol.website'))
             .fontSize(16)
@@ -155,7 +179,7 @@ export struct ArticleReadingStatusBar {
             .maxLines(1)
         }
 
-        if (this.sidePanelAvailable && !this.webModeActive) {
+        if (this.showCompactTools()) {
           Divider()
             .vertical(true)
             .height(14)
@@ -163,6 +187,45 @@ export struct ArticleReadingStatusBar {
             .color($r('sys.color.comp_divider'))
             .margin({ left: 2, right: 2 })
 
+          if (this.showTocPill()) {
+            Row({ space: 4 }) {
+              SymbolGlyph($r('sys.symbol.list_bullet'))
+                .fontSize(13)
+                .fontColor([$r('sys.color.icon_emphasize')])
+              if (this.showTocLabel()) {
+                Text('目录')
+                  .fontSize(AppTypography.CAPTION_M)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor($r('sys.color.font_emphasize'))
+                  .maxLines(1)
+              }
+            }
+            .height(24)
+            .padding({ left: 8, right: 8 })
+            .borderRadius(12)
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .animation(pressAnimation())
+            .onClick(() => this.onOpenToc())
+            .accessibilityText('打开章节目录')
+          }
+
+          Row() {
+            SymbolGlyph($r('sys.symbol.magnifyingglass'))
+              .fontSize(13)
+              .fontColor([this.searchOpen ? accentPillForegroundColor() : $r('sys.color.icon_emphasize')])
+          }
+          .width(24)
+          .height(24)
+          .justifyContent(FlexAlign.Center)
+          .borderRadius(12)
+          .backgroundColor(this.searchOpen ?
+            accentPillBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+          .animation(pressAnimation())
+          .onClick(() => this.onToggleSearch())
+          .accessibilityText(this.searchOpen ? '关闭文内查找' : '文内查找')
+        }
+
+        if (this.sidePanelAvailable && !this.webModeActive) {
           Row({ space: 4 }) {
             SymbolGlyph(this.sidePanelOpen ? $r('sys.symbol.close_sidebar') : $r('sys.symbol.open_sidebar'))
               .fontSize(14)
@@ -186,7 +249,7 @@ export struct ArticleReadingStatusBar {
       .width('100%')
       .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
       .height(32)
-      .padding({ left: 12, right: (this.sidePanelAvailable && !this.webModeActive) ? 4 : 12 })
+      .padding({ left: 12, right: this.useTightRightPadding() ? 4 : 12 })
       .borderRadius(16)
       .backgroundColor(this.materialEnabled ?
         Color.Transparent : $r('sys.color.comp_background_primary'))

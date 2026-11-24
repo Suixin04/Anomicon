@@ -10,6 +10,10 @@ import {
   ScpTextSpan,
   ScpTextStyle
 } from '../domain/ScpDocument';
+import {
+  isNoiseArticleAnchor,
+  normalizeArticleAnchor
+} from '../domain/ArticleNavigation';
 const TRADITIONAL_TO_SIMPLIFIED: Map<string, string> = new Map<string, string>([
   ['萬', '万'], ['與', '与'], ['為', '为'], ['這', '这'], ['個', '个'], ['來', '来'],
   ['後', '后'], ['從', '从'], ['發', '发'], ['國', '国'], ['學', '学'], ['會', '会'],
@@ -88,6 +92,7 @@ interface RawBlock {
   blocks?: RawBlock[];
   src?: string;
   caption?: string;
+  anchors?: string[];
 }
 
 interface RawImage {
@@ -270,6 +275,15 @@ export class ScpDocumentMapper {
     return true;
   }
 
+  private validateAnchors(anchors: string[]): boolean {
+    for (let index: number = 0; index < anchors.length; index++) {
+      if (typeof anchors[index] !== 'string' || anchors[index].length > 128) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   private validateImages(images: RawImage[]): boolean {
     for (let index: number = 0; index < images.length; index++) {
       const image = images[index];
@@ -366,6 +380,11 @@ export class ScpDocumentMapper {
       }
       if (block.caption !== undefined &&
         (typeof block.caption !== 'string' || block.caption.length > MAX_PAYLOAD_STRING_LENGTH)) {
+        return false;
+      }
+      if (block.anchors !== undefined &&
+        (!Array.isArray(block.anchors) || block.anchors.length > 32 ||
+          !this.validateAnchors(block.anchors))) {
         return false;
       }
       if (block.spans !== undefined &&
@@ -572,7 +591,8 @@ export class ScpDocumentMapper {
       block.calloutTone,
       block.preferredWidth,
       block.acs,
-      block.textAlign
+      block.textAlign,
+      block.anchors
     );
   }
 
@@ -729,9 +749,25 @@ export class ScpDocumentMapper {
     return /^#[0-9A-Fa-f]{6}$/.test(trimmed) ? trimmed.toUpperCase() : '';
   }
 
+  private mapAnchors(raw: string[] | undefined): string[] {
+    const result: string[] = [];
+    if (raw === undefined) {
+      return result;
+    }
+    for (let index: number = 0; index < raw.length && result.length < 32; index++) {
+      const normalized = normalizeArticleAnchor(raw[index]);
+      if (normalized.length > 0 && !isNoiseArticleAnchor(normalized) &&
+        result.indexOf(normalized) < 0) {
+        result.push(normalized);
+      }
+    }
+    return result;
+  }
+
   private mapBlock(itemId: string, key: string, raw: RawBlock): ScpContentBlock {
     const spans = this.mapSpans(raw.spans);
     const textAlign = this.mapTextAlign(raw.align);
+    const anchors = this.mapAnchors(raw.anchors);
     switch (raw.k) {
       case 'paragraph':
         return new ScpContentBlock(
@@ -749,7 +785,8 @@ export class ScpDocumentMapper {
           ScpCalloutTone.NEUTRAL,
           0,
           undefined,
-          textAlign
+          textAlign,
+          anchors
         );
       case 'heading':
         return new ScpContentBlock(
@@ -767,11 +804,28 @@ export class ScpDocumentMapper {
           ScpCalloutTone.NEUTRAL,
           0,
           undefined,
-          textAlign
+          textAlign,
+          anchors
         );
       case 'quote':
-        return new ScpContentBlock(key, ScpBlockType.QUOTE, spans, '', '', 0,
-          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.QUOTE,
+          spans,
+          '',
+          '',
+          0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
       case 'collapsible':
         return new ScpContentBlock(
           key,
@@ -782,11 +836,34 @@ export class ScpDocumentMapper {
           0,
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
           this.displayText(raw.closeTitle ?? ''),
-          raw.expanded ?? false
+          raw.expanded ?? false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
         );
       case 'tabs':
-        return new ScpContentBlock(key, ScpBlockType.TABS, [], '', '', 0,
-          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.TABS,
+          [],
+          '',
+          '',
+          0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
       case 'tab_panel':
         return new ScpContentBlock(
           key,
@@ -795,7 +872,16 @@ export class ScpDocumentMapper {
           '',
           this.displayText(raw.title ?? ''),
           0,
-          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key)
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
         );
       case 'callout':
         return new ScpContentBlock(
@@ -810,10 +896,31 @@ export class ScpDocumentMapper {
           false,
           false,
           false,
-          this.mapCalloutTone(raw.tone)
+          this.mapCalloutTone(raw.tone),
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
         );
       case 'code_block':
-        return new ScpContentBlock(key, ScpBlockType.CODE_BLOCK, spans);
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.CODE_BLOCK,
+          spans,
+          '',
+          '',
+          0,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
       case 'list':
         return new ScpContentBlock(
           key,
@@ -825,7 +932,13 @@ export class ScpDocumentMapper {
           this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
           '',
           false,
-          raw.ordered ?? false
+          raw.ordered ?? false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
         );
       case 'list_item':
         return new ScpContentBlock(
@@ -843,7 +956,8 @@ export class ScpDocumentMapper {
           ScpCalloutTone.NEUTRAL,
           0,
           undefined,
-          textAlign
+          textAlign,
+          anchors
         );
       case 'acs_header': {
         const rawAcs = raw.acs;
@@ -870,15 +984,49 @@ export class ScpDocumentMapper {
           false,
           ScpCalloutTone.NEUTRAL,
           0,
-          acs
+          acs,
+          ScpTextAlign.DEFAULT,
+          anchors
         );
       }
       case 'table':
-        return new ScpContentBlock(key, ScpBlockType.TABLE, [], '', '', 0,
-          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.TABLE,
+          [],
+          '',
+          '',
+          0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
       case 'row':
-        return new ScpContentBlock(key, ScpBlockType.TABLE_ROW, [], '', '', 0,
-          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key));
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.TABLE_ROW,
+          [],
+          '',
+          '',
+          0,
+          this.mapBlocksWithPrefix(itemId, raw.blocks ?? [], key),
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
       case 'cell':
         return new ScpContentBlock(
           key,
@@ -895,12 +1043,47 @@ export class ScpDocumentMapper {
           ScpCalloutTone.NEUTRAL,
           0,
           undefined,
-          textAlign
+          textAlign,
+          anchors
         );
       case 'divider':
-        return new ScpContentBlock(key, ScpBlockType.DIVIDER);
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.DIVIDER,
+          [],
+          '',
+          '',
+          0,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
       case 'embed':
-        return new ScpContentBlock(key, ScpBlockType.EMBED, [], raw.src ?? '');
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.EMBED,
+          [],
+          raw.src ?? '',
+          '',
+          0,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
       case 'image':
         return new ScpContentBlock(
           key,
@@ -915,10 +1098,30 @@ export class ScpDocumentMapper {
           false,
           false,
           ScpCalloutTone.NEUTRAL,
-          raw.preferredWidth ?? 0
+          raw.preferredWidth ?? 0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
         );
       default:
-        return new ScpContentBlock(key, ScpBlockType.UNSUPPORTED, spans);
+        return new ScpContentBlock(
+          key,
+          ScpBlockType.UNSUPPORTED,
+          spans,
+          '',
+          '',
+          0,
+          [],
+          '',
+          false,
+          false,
+          false,
+          ScpCalloutTone.NEUTRAL,
+          0,
+          undefined,
+          ScpTextAlign.DEFAULT,
+          anchors
+        );
     }
   }
 

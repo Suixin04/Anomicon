@@ -23,7 +23,9 @@ import {
   ArticleRelatedTale,
   ArticleViewModel,
   ScpArticleDocument,
-  ScpContentBlock
+  ScpContentBlock,
+  extractUrlAnchorFragment,
+  normalizeArticleAnchor
 } from 'article';
 import {
   AppRoutes,
@@ -31,6 +33,7 @@ import {
   Scp3DArchiveRouteParams
 } from '../navigation/AppRoutes';
 import {
+  parseArticleRouteAnchor,
   parseArticleRouteContent
 } from '../navigation/RouteParamAdapters';
 import { AppNavigationCoordinator } from '../navigation/AppNavigationCoordinator';
@@ -169,6 +172,11 @@ struct ScpArticlePage {
   @Local private webReloadEpoch: number = 0;
   @Local private webBackEpoch: number = 0;
   @Local private webModeHint: string = '';
+  @Local private targetAnchor: string = '';
+  @Local private targetAnchorEpoch: number = 0;
+  @Local private tocCount: number = 0;
+  @Local private tocOpenEpoch: number = 0;
+  @Local private searchBarOpen: boolean = false;
   private autoWebEvaluatedItemId: string = '';
   private revealHiddenOverridden: boolean = false;
   private lastAppliedKeepScreenOn: boolean = false;
@@ -369,6 +377,9 @@ struct ScpArticlePage {
     this.webModeCanGoBack = false;
     this.webModeHint = '';
     this.autoWebEvaluatedItemId = '';
+    this.targetAnchor = '';
+    this.tocCount = 0;
+    this.searchBarOpen = false;
     this.galleryReturnEpoch++;
   }
 
@@ -395,6 +406,12 @@ struct ScpArticlePage {
     this.routeResolved = true;
     this.routeErrorMessage = '';
     this.resetContentProjection();
+    const routeAnchor = parseArticleRouteAnchor(param);
+    if (routeAnchor.length > 0) {
+      this.scrollRestore.cancelForInteraction();
+      this.targetAnchor = routeAnchor;
+      this.targetAnchorEpoch++;
+    }
     this.itemName = content.title;
     this.contentKind = content.kind;
     // 内容主键统一小写；SCP 标题栏仍沿用站点惯例展示大写编号。
@@ -495,6 +512,24 @@ struct ScpArticlePage {
     this.hapticService.playSelection(this.settings.hapticEnabled);
     this.noteReadingInteraction();
     this.viewModel.toggleExpanded(block.key);
+  }
+
+  private ensureExpandedBlocks(keysToToggle: string[]): void {
+    if (keysToToggle.length === 0) {
+      return;
+    }
+    this.noteReadingInteraction();
+    this.viewModel.ensureExpanded(keysToToggle);
+  }
+
+  private triggerTargetAnchor(rawAnchor: string): void {
+    const normalized = normalizeArticleAnchor(rawAnchor);
+    if (normalized.length === 0) {
+      return;
+    }
+    this.scrollRestore.cancelForInteraction();
+    this.targetAnchor = normalized;
+    this.targetAnchorEpoch++;
   }
 
   /** Product coordination after the feature-owned native body has a layout. */
@@ -606,9 +641,9 @@ struct ScpArticlePage {
    * a decorative image or a management page can never become a fake article.
    */
   private openArticleLink(rawUrl: string, linkTitle: string): void {
-    if (rawUrl.trim().startsWith('#')) {
-      // Same-page anchors are intentionally left to the reader document; do
-      // not bounce them out to an external browser.
+    const trimmed = rawUrl.trim();
+    if (trimmed.startsWith('#')) {
+      this.triggerTargetAnchor(trimmed.substring(1));
       return;
     }
     if (linkTitle.trim().startsWith('[图片')) {
@@ -621,26 +656,36 @@ struct ScpArticlePage {
       this.enterWebMode(offsetUrl, '已切换原版网页加载迭代页面');
       return;
     }
+    const anchor = extractUrlAnchorFragment(rawUrl);
+    const targetPath = this.resolveWikiArticlePath(rawUrl);
+    if (targetPath.length > 0 && targetPath.toLowerCase() === this.itemId.toLowerCase()) {
+      if (anchor.length > 0) {
+        this.triggerTargetAnchor(anchor);
+      }
+      return;
+    }
     const content = this.resolveInternalArticle(rawUrl, linkTitle);
     if (content === undefined) {
       this.openUrl(rawUrl);
       return;
     }
     this.hapticService.playSelection(this.settings.hapticEnabled);
-    const params: ScpArticleRouteParams = { content: content };
+    const params: ScpArticleRouteParams = anchor.length > 0 ?
+      { content: content, anchor: anchor } :
+      { content: content };
     AppNavigationCoordinator.push(this.pageStack, AppRoutes.ARTICLE, params);
   }
 
-  private resolveInternalArticle(rawUrl: string, linkTitle: string): LibraryContentRef | undefined {
+  private resolveWikiArticlePath(rawUrl: string): string {
     let safeUrl: string;
     try {
       safeUrl = ExternalUrlPolicy.resolveHttps(rawUrl, this.sourceUrl);
     } catch (_error) {
-      return undefined;
+      return '';
     }
     const origin = `${WIKI_BASE_URL}/`;
     if (safeUrl.toLowerCase().indexOf(origin.toLowerCase()) !== 0) {
-      return undefined;
+      return '';
     }
     let path = safeUrl.substring(origin.length);
     const queryIndex = path.indexOf('?');
@@ -653,6 +698,14 @@ struct ScpArticlePage {
     }
     path = path.replace(/^\/+|\/+$/g, '').trim();
     if (path.length === 0 || path.indexOf('/') >= 0 || path.indexOf(':') >= 0) {
+      return '';
+    }
+    return path;
+  }
+
+  private resolveInternalArticle(rawUrl: string, linkTitle: string): LibraryContentRef | undefined {
+    const path = this.resolveWikiArticlePath(rawUrl);
+    if (path.length === 0) {
       return undefined;
     }
     const normalized = path.toLowerCase();
@@ -872,6 +925,30 @@ struct ScpArticlePage {
     } else {
       items.push({
         content: {
+          icon: $r('sys.symbol.list_bullet'),
+          label: '章节目录',
+          isEnabled: this.document !== undefined && this.tocCount > 0,
+          action: () => {
+            if (this.tocCount > 0) {
+              this.hapticService.playSelection(this.settings.hapticEnabled);
+              this.tocOpenEpoch++;
+            }
+          }
+        }
+      });
+      items.push({
+        content: {
+          icon: $r('sys.symbol.magnifyingglass'),
+          label: '文内查找',
+          isEnabled: this.document !== undefined,
+          action: () => {
+            this.hapticService.playSelection(this.settings.hapticEnabled);
+            this.searchBarOpen = !this.searchBarOpen;
+          }
+        }
+      });
+      items.push({
+        content: {
           icon: this.revealHiddenText ? $r('sys.symbol.eye_slash') : $r('sys.symbol.eye'),
           label: this.revealHiddenText ? '关闭反白透视' : '反白透视',
           isEnabled: this.document !== undefined,
@@ -913,6 +990,8 @@ struct ScpArticlePage {
       sidePanelLabel: this.sidePanelLabel,
       revealHiddenActive: this.revealHiddenText,
       webModeActive: this.webModeActive,
+      tocCount: this.tocCount,
+      searchOpen: this.searchBarOpen,
       onToggleSidePanel: (): void => {
         this.getUIContext().animateTo(AppMotion.layoutAnimateParam(), (): void => {
           this.sidePanelOpen = !this.sidePanelOpen;
@@ -925,6 +1004,16 @@ struct ScpArticlePage {
       },
       onExitWebMode: (): void => {
         this.exitWebMode();
+      },
+      onOpenToc: (): void => {
+        if (this.tocCount > 0) {
+          this.hapticService.playSelection(this.settings.hapticEnabled);
+          this.tocOpenEpoch++;
+        }
+      },
+      onToggleSearch: (): void => {
+        this.hapticService.playSelection(this.settings.hapticEnabled);
+        this.searchBarOpen = !this.searchBarOpen;
       }
     })
   }
@@ -1003,6 +1092,10 @@ struct ScpArticlePage {
             revealHiddenText: this.revealHiddenText,
             justifyBodyText: this.justifyBodyText,
             webModeHint: this.webModeHint,
+            targetAnchor: this.targetAnchor,
+            targetAnchorEpoch: this.targetAnchorEpoch,
+            tocOpenEpoch: this.tocOpenEpoch,
+            searchBarOpen: this.searchBarOpen,
             onSwitchToWebMode: (): void => {
               this.hapticService.playSelection(this.settings.hapticEnabled);
               this.enterWebMode(this.sourceUrl);
@@ -1018,9 +1111,19 @@ struct ScpArticlePage {
             onSidePanelOpenChange: (open: boolean): void => {
               this.sidePanelOpen = open;
             },
+            onTocAvailabilityChange: (count: number): void => {
+              this.tocCount = count;
+            },
+            onSearchBarOpenChange: (open: boolean): void => {
+              this.searchBarOpen = open;
+            },
+            onAnchorNotFound: (_anchor: string): void => {
+              this.showToast('未在当前档案中找到该章节');
+            },
             onRetryPartial: () => this.retryArticle(),
             onReadingProgressChange: (percent: number) => this.applyReadingPercent(percent),
             onAnchorJump: () => {
+              this.scrollRestore.cancelForInteraction();
               this.hapticService.playSelection(this.settings.hapticEnabled);
               this.noteReadingInteraction();
             },
@@ -1048,6 +1151,7 @@ struct ScpArticlePage {
             onOpenArticleLink: (url: string, title: string) => this.openArticleLink(url, title),
             onOpenImage: (index: number) => this.openPreview(index),
             onToggleExpanded: (block: ScpContentBlock) => this.toggleRendererBlock(block),
+            onEnsureExpanded: (keysToToggle: string[]) => this.ensureExpandedBlocks(keysToToggle),
             onOpenRelatedTale: (tale: ArticleRelatedTale) => this.openTale(tale),
             onContentLaidOut: () => this.onRendererContentLaidOut()
           })
@@ -1245,6 +1349,10 @@ struct ScpArticlePage {
       }
       if (this.webModeActive && this.webModeCanGoBack) {
         this.webBackEpoch++;
+        return true;
+      }
+      if (!this.webModeActive && this.searchBarOpen) {
+        this.searchBarOpen = false;
         return true;
       }
       return false;

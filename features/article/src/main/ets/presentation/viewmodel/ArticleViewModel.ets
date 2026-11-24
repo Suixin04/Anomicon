@@ -696,6 +696,41 @@ export class ArticleViewModel implements ViewModelLifecycle {
     }
   }
 
+  /** Atomically toggles a set of collapsible keys (e.g. expanding ancestors for an anchor/search jump). */
+  ensureExpanded(keysToToggle: string[]): void {
+    if (this.disposed || !this.active || keysToToggle.length === 0) {
+      return;
+    }
+    const next = this.expandedKeys.slice();
+    const seen: Set<string> = new Set();
+    let changed = false;
+    for (let index: number = 0; index < keysToToggle.length; index++) {
+      const key = keysToToggle[index];
+      if (key.length === 0 || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      const existingIndex = next.indexOf(key);
+      if (existingIndex >= 0) {
+        next.splice(existingIndex, 1);
+      } else {
+        next.push(key);
+      }
+      changed = true;
+    }
+    if (!changed) {
+      return;
+    }
+    this.expandedStateMutation += 1;
+    this.expandedKeys = next;
+    this.notifyListeners();
+    const itemId = this.content?.id;
+    if (itemId !== undefined && this.viewState !== undefined) {
+      this.viewState.save(itemId, next).catch((): void => {
+      });
+    }
+  }
+
   setReadingPercent(percent: number): void {
     if (this.disposed) {
       return;

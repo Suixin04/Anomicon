@@ -39,6 +39,7 @@ export interface Scp3DArchiveRouteParams {
 /** Unified article route payload. Every article route carries one content ref. */
 export interface ScpArticleRouteParams {
   readonly content: LibraryContentRef;
+  readonly anchor?: string;
 }
 
 interface SerializedArticleRouteContent {

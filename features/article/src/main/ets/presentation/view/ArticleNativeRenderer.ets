@@ -36,6 +36,19 @@ import {
   ScpTextSpan,
   ScpTextStyle
 } from '../../domain/ScpDocument';
+import {
+  ArticleBlockLocation,
+  ArticleIndexSectionInput,
+  ArticleNavigationIndex,
+  ArticleSearchHit,
+  ArticleTocItem,
+  ArticleTocKind,
+  buildArticleNavigationIndex,
+  normalizeArticleAnchor,
+  resolveAnchorLocation,
+  searchArticleDocument,
+  splitTextForSearchHighlight
+} from '../../domain/ArticleNavigation';
 import { ArticleRenderer, FootnoteSheetHeader } from './ArticleRenderer';
 import { ScpArticleImage } from './ScpArticleImage';
 
@@ -247,6 +260,19 @@ function syncArticleBlockRows(
   return next;
 }
 
+function indexBlockRowsRecursive(
+  rows: ArticleBlockRowState[],
+  output: Map<string, ArticleBlockRowState>
+): void {
+  for (let index: number = 0; index < rows.length; index++) {
+    const row = rows[index];
+    output.set(row.key, row);
+    if (row.children.length > 0) {
+      indexBlockRowsRecursive(row.children, output);
+    }
+  }
+}
+
 function syncArticleFootnoteRows(
   previous: ArticleFootnoteRowState[],
   footnotes: ScpFootnote[]
@@ -301,7 +327,39 @@ enum ArticleSectionKind {
   FOOTNOTE = 6,
   RELATED_TALES = 7,
   FOOTER = 8,
-  WEB_RECOMMEND_BANNER = 9
+  WEB_RECOMMEND_BANNER = 9,
+  CALLOUT_CHILD = 10
+}
+
+enum ArticleSheetMode {
+  NONE = 0,
+  FOOTNOTE = 1,
+  TOC = 2
+}
+
+class WorkbenchTab {
+  static readonly FOOTNOTES: number = 0;
+  static readonly RELATED_TALES: number = 1;
+  static readonly TOC: number = 2;
+}
+
+class SearchRenderSpanSlice {
+  readonly key: string;
+  readonly spanRow: ArticleSpanRowState;
+  readonly text: string;
+  readonly isSearchMatch: boolean;
+
+  constructor(
+    key: string,
+    spanRow: ArticleSpanRowState,
+    text: string,
+    isSearchMatch: boolean
+  ) {
+    this.key = key;
+    this.spanRow = spanRow;
+    this.text = text;
+    this.isSearchMatch = isSearchMatch;
+  }
 }
 
 @ObservedV2
@@ -314,6 +372,7 @@ class ArticleSectionRow {
   @Trace quoteFirst: boolean;
   @Trace quoteLast: boolean;
   @Trace bottomGap: number;
+  @Trace calloutTone: ScpCalloutTone;
 
   constructor(
     key: string,
@@ -323,7 +382,8 @@ class ArticleSectionRow {
     footnoteRow: ArticleFootnoteRowState | undefined = undefined,
     quoteFirst: boolean = false,
     quoteLast: boolean = false,
-    bottomGap: number = 16
+    bottomGap: number = 16,
+    calloutTone: ScpCalloutTone = ScpCalloutTone.NEUTRAL
   ) {
     this.key = key;
     this.kind = kind;
@@ -333,6 +393,7 @@ class ArticleSectionRow {
     this.quoteFirst = quoteFirst;
     this.quoteLast = quoteLast;
     this.bottomGap = bottomGap;
+    this.calloutTone = calloutTone;
   }
 
   sync(
@@ -340,7 +401,8 @@ class ArticleSectionRow {
     footnoteRow: ArticleFootnoteRowState | undefined,
     quoteFirst: boolean,
     quoteLast: boolean,
-    bottomGap: number
+    bottomGap: number,
+    calloutTone: ScpCalloutTone = ScpCalloutTone.NEUTRAL
   ): void {
     if (this.blockRow !== blockRow) {
       this.blockRow = blockRow;
@@ -356,6 +418,9 @@ class ArticleSectionRow {
     }
     if (this.bottomGap !== bottomGap) {
       this.bottomGap = bottomGap;
+    }
+    if (this.calloutTone !== calloutTone) {
+      this.calloutTone = calloutTone;
     }
   }
 }
@@ -458,6 +523,10 @@ export struct ArticleNativeRenderer {
   @Param revealHiddenText: boolean = false;
   @Param justifyBodyText: boolean = true;
   @Param webModeHint: string = '';
+  @Param targetAnchor: string = '';
+  @Param targetAnchorEpoch: number = 0;
+  @Param tocOpenEpoch: number = 0;
+  @Param searchBarOpen: boolean = false;
 
   @Event onRetryPartial: () => void = () => {};
   @Event onHiddenRevealInteraction: () => void = () => {};
@@ -472,11 +541,15 @@ export struct ArticleNativeRenderer {
   @Event onOpenArticleLink: (url: string, title: string) => void;
   @Event onOpenImage: (index: number) => void;
   @Event onToggleExpanded: (block: ScpContentBlock) => void;
+  @Event onEnsureExpanded: (keysToToggle: string[]) => void = () => {};
   @Event onOpenRelatedTale: (tale: ArticleRelatedTale) => void;
   @Event onContentLaidOut: () => void;
   @Event onSidePanelAvailabilityChange: (available: boolean, label: string) => void =
     (_available: boolean, _label: string): void => {};
   @Event onSidePanelOpenChange: (open: boolean) => void = (_open: boolean): void => {};
+  @Event onTocAvailabilityChange: (count: number) => void = (_count: number): void => {};
+  @Event onSearchBarOpenChange: (open: boolean) => void = (_open: boolean): void => {};
+  @Event onAnchorNotFound: (anchor: string) => void = (_anchor: string): void => {};
 
   @Local private galleryIndex: number = 0;
   @Local private sectionRows: ArticleSectionRow[] = [];
@@ -484,19 +557,31 @@ export struct ArticleNativeRenderer {
   @Local private imageRows: ArticleBlockRowState[] = [];
   @Local private footnoteRows: ArticleFootnoteRowState[] = [];
   @Local private relatedTaleRows: ArticleRelatedTaleRowState[] = [];
+  @Local private tocItems: ArticleTocItem[] = [];
+  @Local private tocFilterQuery: string = '';
+  @Local private searchQuery: string = '';
+  @Local private searchHits: ArticleSearchHit[] = [];
+  @Local private activeSearchHitIndex: number = -1;
+  @Local private visibleSectionIndex: number = 0;
   @Local private highlightedAnchorKey: string = '';
   @Local private highlightOpacity: number = 0;
-  @Local private footnoteSheetVisible: boolean = false;
+  @Local private sheetMode: ArticleSheetMode = ArticleSheetMode.NONE;
   @Local private activeFootnoteIndex: number = -1;
   @Local private containerWidth: number = 0;
-  @Local private activeWorkbenchTab: number = 0;
+  @Local private activeWorkbenchTab: number = WorkbenchTab.FOOTNOTES;
   @Local private userClosedSidePanel: boolean = false;
   @Local private revealedHiddenKeys: string[] = [];
   private readonly galleryController: SwiperController = new SwiperController();
   private readonly footnoteSheetScroller: Scroller = new Scroller();
+  private readonly tocSheetScroller: Scroller = new Scroller();
   private readonly sidePanelScroller: Scroller = new Scroller();
-  private readonly footnoteSheetDetents: [SheetSize, SheetSize, SheetSize] =
+  private readonly sidePanelTocScroller: Scroller = new Scroller();
+  private readonly sheetDetents: [SheetSize, SheetSize, SheetSize] =
     [SheetSize.FIT_CONTENT, SheetSize.MEDIUM, SheetSize.LARGE];
+  private readonly tocSheetDetents: [SheetSize, SheetSize] =
+    [SheetSize.MEDIUM, SheetSize.LARGE];
+  private readonly longTocSheetDetents: [SheetSize, SheetSize] =
+    [SheetSize.LARGE, SheetSize.MEDIUM];
   private readonly footnoteSheetMaterial: uiMaterial.ImmersiveMaterial =
     new uiMaterial.ImmersiveMaterial({
       style: uiMaterial.ImmersiveStyle.THICK,
@@ -504,6 +589,7 @@ export struct ArticleNativeRenderer {
     });
   private lastDocumentItemId: string = '';
   private lastNotifiedAvailabilityKey: string = '';
+  private lastNotifiedTocCount: number = -1;
   private viewportHeight: number = 0;
   private visibleStartIndex: number = -1;
   private visibleEndIndex: number = -1;
@@ -511,33 +597,50 @@ export struct ArticleNativeRenderer {
   private cumulativeWeights: number[] = [0];
   private totalWeight: number = 0;
   private readonly anchorIndexByKey: Map<string, number> = new Map();
+  private readonly blockRowByKey: Map<string, ArticleBlockRowState> = new Map();
+  private navigationIndex: ArticleNavigationIndex =
+    new ArticleNavigationIndex(new Map(), new Map(), []);
   private highlightTimer: number = -1;
+  private pendingAnchorTimer: number = -1;
+  private pendingRouteAnchor: string = '';
+  private hasLaidOutCurrentDoc: boolean = false;
 
   aboutToAppear(): void {
     this.syncDocumentAndSections();
     this.lastDocumentItemId = this.document.itemId;
     this.syncWorkbenchTabDefault();
     this.syncSidePanelAvailability();
+    if (this.targetAnchor.trim().length > 0) {
+      this.pendingRouteAnchor = normalizeArticleAnchor(this.targetAnchor);
+    }
   }
 
   aboutToDisappear(): void {
     this.clearHighlightTimer();
-    this.closeFootnoteSheet();
+    this.clearPendingAnchorTimer();
+    this.closeSheet();
   }
 
   @Monitor('document')
   onDocumentChange(): void {
     const sameItem = this.lastDocumentItemId.length > 0 &&
       this.lastDocumentItemId === this.document.itemId;
-    const activeId = (sameItem && (this.footnoteSheetVisible || this.sidePanelOpen)) ?
+    const activeId = (sameItem && (this.sheetMode === ArticleSheetMode.FOOTNOTE || this.sidePanelOpen)) ?
       (this.currentFootnoteRow()?.footnote.id ?? '') : '';
     const previousIndex = this.activeFootnoteIndex;
 
     if (!sameItem) {
       this.userClosedSidePanel = false;
       this.revealedHiddenKeys = [];
+      this.tocFilterQuery = '';
+      this.searchQuery = '';
+      this.searchHits = [];
+      this.activeSearchHitIndex = -1;
+      this.hasLaidOutCurrentDoc = false;
+      this.visibleSectionIndex = 0;
     }
     this.clearHighlightTimer();
+    this.clearPendingAnchorTimer();
     this.highlightedAnchorKey = '';
     this.highlightOpacity = 0;
     this.galleryIndex = 0;
@@ -546,6 +649,9 @@ export struct ArticleNativeRenderer {
     this.lastReportedPercent = -1;
     this.syncDocumentAndSections();
     this.lastDocumentItemId = this.document.itemId;
+    if (this.searchBarOpen && this.searchQuery.trim().length > 0) {
+      this.updateSearchResults(this.searchQuery, false);
+    }
     if (this.shouldRenderGallerySection()) {
       try {
         this.galleryController.changeIndex(0, false);
@@ -554,7 +660,8 @@ export struct ArticleNativeRenderer {
     }
     this.syncWorkbenchTabDefault();
 
-    if (sameItem && (this.footnoteSheetVisible || this.sidePanelOpen) && this.footnoteRows.length > 0) {
+    if (sameItem && (this.sheetMode === ArticleSheetMode.FOOTNOTE || this.sidePanelOpen) &&
+      this.footnoteRows.length > 0) {
       const remapped = activeId.length > 0 ?
         ArticleRenderer.findFootnoteIndex(this.document.footnotes, activeId) : -1;
       if (remapped >= 0) {
@@ -565,10 +672,13 @@ export struct ArticleNativeRenderer {
           Math.min(previousIndex, this.footnoteRows.length - 1)
         );
       }
-    } else if (!sameItem || !this.footnoteSheetVisible || this.footnoteRows.length === 0) {
-      this.closeFootnoteSheet();
+    } else if (!sameItem ||
+      (this.sheetMode === ArticleSheetMode.FOOTNOTE && this.footnoteRows.length === 0) ||
+      (this.sheetMode === ArticleSheetMode.TOC && this.tocItems.length === 0)) {
+      this.closeSheet();
     }
     this.syncSidePanelAvailability();
+    this.tryFlushPendingRouteAnchor();
   }
 
   @Monitor('relatedTales', 'partialNoticeVisible', 'galleryAfterBody', 'webModeHint')
@@ -578,11 +688,50 @@ export struct ArticleNativeRenderer {
     this.syncSidePanelAvailability();
   }
 
+  @Monitor('targetAnchorEpoch')
+  onTargetAnchorRequested(): void {
+    const normalized = normalizeArticleAnchor(this.targetAnchor);
+    if (normalized.length === 0) {
+      return;
+    }
+    this.pendingRouteAnchor = normalized;
+    this.tryFlushPendingRouteAnchor();
+  }
+
+  @Monitor('tocOpenEpoch')
+  onTocOpenRequested(): void {
+    if (this.tocOpenEpoch <= 0 || this.tocItems.length === 0) {
+      return;
+    }
+    if (this.canUseSidePanel()) {
+      this.userClosedSidePanel = false;
+      this.activeWorkbenchTab = WorkbenchTab.TOC;
+      this.sheetMode = ArticleSheetMode.NONE;
+      if (!this.sidePanelOpen) {
+        this.getUIContext().animateTo(AppMotion.layoutAnimateParam(), (): void => {
+          this.onSidePanelOpenChange(true);
+        });
+      }
+      return;
+    }
+    this.tocFilterQuery = '';
+    this.sheetMode = ArticleSheetMode.TOC;
+  }
+
+  @Monitor('searchBarOpen')
+  onSearchBarOpenChanged(): void {
+    if (!this.searchBarOpen) {
+      this.searchQuery = '';
+      this.searchHits = [];
+      this.activeSearchHitIndex = -1;
+    }
+  }
+
   @Monitor('sidePanelOpen')
   onExternalSidePanelOpenChange(): void {
     if (this.sidePanelOpen) {
       this.userClosedSidePanel = false;
-      this.footnoteSheetVisible = false;
+      this.sheetMode = ArticleSheetMode.NONE;
     } else if (this.canUseSidePanel()) {
       this.userClosedSidePanel = true;
     }
@@ -637,6 +786,8 @@ export struct ArticleNativeRenderer {
     if (!sameArticleBlockRows(this.blockRows, nextBlocks)) {
       this.blockRows = nextBlocks;
     }
+    this.blockRowByKey.clear();
+    indexBlockRowsRecursive(this.blockRows, this.blockRowByKey);
     const nextImages = syncArticleBlockRows(this.imageRows, this.document.images);
     if (!sameArticleBlockRows(this.imageRows, nextImages)) {
       this.imageRows = nextImages;
@@ -656,6 +807,8 @@ export struct ArticleNativeRenderer {
     }
 
     const nextSections: ArticleSectionRow[] = [];
+    const navInputs: ArticleIndexSectionInput[] = [];
+    let footnotesHeaderSectionIndex: number = -1;
     this.anchorIndexByKey.clear();
     const pushSection = (
       key: string,
@@ -665,7 +818,8 @@ export struct ArticleNativeRenderer {
       footnoteRow: ArticleFootnoteRowState | undefined,
       quoteFirst: boolean,
       quoteLast: boolean,
-      bottomGap: number
+      bottomGap: number,
+      calloutTone: ScpCalloutTone = ScpCalloutTone.NEUTRAL
     ): number => {
       let existing = previousByKey.get(key);
       if (existing === undefined || existing.kind !== kind || existing.weight !== weight) {
@@ -677,10 +831,11 @@ export struct ArticleNativeRenderer {
           footnoteRow,
           quoteFirst,
           quoteLast,
-          bottomGap
+          bottomGap,
+          calloutTone
         );
       } else {
-        existing.sync(blockRow, footnoteRow, quoteFirst, quoteLast, bottomGap);
+        existing.sync(blockRow, footnoteRow, quoteFirst, quoteLast, bottomGap, calloutTone);
       }
       const sectionIndex = nextSections.length;
       nextSections.push(existing);
@@ -752,6 +907,40 @@ export struct ArticleNativeRenderer {
             childIndex === childCount - 1,
             childIndex === childCount - 1 ? 16 : 0
           );
+          navInputs.push({
+            sectionIndex: sectionIndex,
+            block: child.block,
+            extraAnchors: childIndex === 0 ? blockRow.block.anchors : undefined
+          });
+          const refIds: string[] = [];
+          collectFootnoteRefIdsRecursive(child.block, refIds);
+          for (let r: number = 0; r < refIds.length; r++) {
+            const refKey = `ref:${refIds[r]}`;
+            if (!this.anchorIndexByKey.has(refKey)) {
+              this.anchorIndexByKey.set(refKey, sectionIndex);
+            }
+          }
+        }
+      } else if (blockRow.block.type === ScpBlockType.CALLOUT && blockRow.children.length > 0) {
+        const childCount = blockRow.children.length;
+        for (let childIndex: number = 0; childIndex < childCount; childIndex++) {
+          const child = blockRow.children[childIndex];
+          const sectionIndex = pushSection(
+            `${blockRow.key}:c:${child.key}`,
+            ArticleSectionKind.CALLOUT_CHILD,
+            measureBlockWeight(child.block),
+            child,
+            undefined,
+            childIndex === 0,
+            childIndex === childCount - 1,
+            childIndex === childCount - 1 ? 16 : 0,
+            blockRow.block.calloutTone
+          );
+          navInputs.push({
+            sectionIndex: sectionIndex,
+            block: child.block,
+            extraAnchors: childIndex === 0 ? blockRow.block.anchors : undefined
+          });
           const refIds: string[] = [];
           collectFootnoteRefIdsRecursive(child.block, refIds);
           for (let r: number = 0; r < refIds.length; r++) {
@@ -772,6 +961,10 @@ export struct ArticleNativeRenderer {
           false,
           16
         );
+        navInputs.push({
+          sectionIndex: sectionIndex,
+          block: blockRow.block
+        });
         const refIds: string[] = [];
         collectFootnoteRefIdsRecursive(blockRow.block, refIds);
         for (let r: number = 0; r < refIds.length; r++) {
@@ -784,7 +977,7 @@ export struct ArticleNativeRenderer {
     }
 
     if (this.footnoteRows.length > 0) {
-      pushSection(
+      footnotesHeaderSectionIndex = pushSection(
         '__footnotes_header__',
         ArticleSectionKind.FOOTNOTES_HEADER,
         50,
@@ -808,6 +1001,13 @@ export struct ArticleNativeRenderer {
           index === count - 1 ? 16 : 12
         );
         this.anchorIndexByKey.set(`fn:${fnRow.footnote.id}`, sectionIndex);
+        for (let fb: number = 0; fb < fnRow.footnote.blocks.length; fb++) {
+          navInputs.push({
+            sectionIndex: sectionIndex,
+            block: fnRow.footnote.blocks[fb],
+            extraAnchors: fb === 0 ? [`footnote-${fnRow.footnote.id}`] : undefined
+          });
+        }
       }
     }
 
@@ -858,6 +1058,17 @@ export struct ArticleNativeRenderer {
     }
     this.cumulativeWeights = prefixSums;
     this.totalWeight = running;
+
+    this.navigationIndex = buildArticleNavigationIndex(
+      navInputs,
+      this.document.footnotes,
+      footnotesHeaderSectionIndex
+    );
+    this.tocItems = this.navigationIndex.tocItems;
+    if (this.lastNotifiedTocCount !== this.tocItems.length) {
+      this.lastNotifiedTocCount = this.tocItems.length;
+      this.onTocAvailabilityChange(this.tocItems.length);
+    }
 
     if (!sameArticleSectionRows(this.sectionRows, nextSections)) {
       this.sectionRows = nextSections;
@@ -926,6 +1137,184 @@ export struct ArticleNativeRenderer {
     }
   }
 
+  private clearPendingAnchorTimer(): void {
+    if (this.pendingAnchorTimer >= 0) {
+      clearTimeout(this.pendingAnchorTimer);
+      this.pendingAnchorTimer = -1;
+    }
+  }
+
+  private tryFlushPendingRouteAnchor(): void {
+    if (!this.hasLaidOutCurrentDoc || this.sectionRows.length === 0 ||
+      this.pendingRouteAnchor.length === 0) {
+      return;
+    }
+    const anchor = this.pendingRouteAnchor;
+    this.pendingRouteAnchor = '';
+    this.clearPendingAnchorTimer();
+    this.pendingAnchorTimer = setTimeout((): void => {
+      this.pendingAnchorTimer = -1;
+      this.jumpToDocumentAnchor(anchor);
+    }, 60);
+  }
+
+  private scrollToSectionIndex(targetIndex: number): void {
+    if (targetIndex < 0 || targetIndex >= this.sectionRows.length) {
+      return;
+    }
+    const distance = this.visibleStartIndex >= 0 ?
+      Math.min(
+        Math.abs(targetIndex - this.visibleStartIndex),
+        Math.abs(targetIndex - this.visibleEndIndex)
+      ) :
+      999;
+    this.scroller.scrollToIndex(
+      targetIndex,
+      distance <= 18,
+      ScrollAlign.START,
+      { extraOffset: LengthMetrics.vp(-12) }
+    );
+  }
+
+  private jumpToBlockLocation(location: ArticleBlockLocation): void {
+    const keysToToggle: string[] = [];
+    for (let index: number = 0; index < location.expandCollapsibleKeys.length; index++) {
+      const collapsibleKey = location.expandCollapsibleKeys[index];
+      const row = this.blockRowByKey.get(collapsibleKey);
+      if (row !== undefined && !this.isExpanded(row.block) &&
+        keysToToggle.indexOf(collapsibleKey) < 0) {
+        keysToToggle.push(collapsibleKey);
+      }
+    }
+    if (keysToToggle.length > 0) {
+      this.onEnsureExpanded(keysToToggle);
+    }
+
+    let tabMutated: boolean = false;
+    for (let index: number = 0; index < location.tabTargets.length; index++) {
+      const targetTab = location.tabTargets[index];
+      const tabsRow = this.blockRowByKey.get(targetTab.tabsBlockKey);
+      if (tabsRow !== undefined && tabsRow.activeTabIndex !== targetTab.tabIndex) {
+        tabsRow.activeTabIndex = targetTab.tabIndex;
+        tabMutated = true;
+      }
+    }
+
+    this.onAnchorJump();
+    const highlightKey = `block:${location.blockKey}`;
+    if (keysToToggle.length > 0 || tabMutated) {
+      this.clearPendingAnchorTimer();
+      this.pendingAnchorTimer = setTimeout((): void => {
+        this.pendingAnchorTimer = -1;
+        this.scrollToSectionIndex(location.sectionIndex);
+        this.triggerAnchorHighlight(highlightKey);
+      }, 90);
+      return;
+    }
+    this.scrollToSectionIndex(location.sectionIndex);
+    this.triggerAnchorHighlight(highlightKey);
+  }
+
+  private jumpToDocumentAnchor(rawAnchor: string): boolean {
+    const target = normalizeArticleAnchor(rawAnchor);
+    if (target.length === 0) {
+      return false;
+    }
+    if (target.startsWith('footnote-')) {
+      const fnId = target.substring(9);
+      this.openFootnoteSheet(fnId, fnId);
+      return true;
+    }
+    if (target.startsWith('footnoteref-')) {
+      const refKey = `ref:${target.substring(12)}`;
+      if (this.anchorIndexByKey.has(refKey)) {
+        this.jumpTo(refKey);
+        return true;
+      }
+    }
+    const location = resolveAnchorLocation(this.navigationIndex, target);
+    if (location !== undefined) {
+      this.jumpToBlockLocation(location);
+      return true;
+    }
+    if (target === 'page-top' || target === 'top') {
+      this.onAnchorJump();
+      this.scroller.scrollToIndex(0, true, ScrollAlign.START);
+      return true;
+    }
+    this.onAnchorNotFound(target);
+    return false;
+  }
+
+  private updateSearchResults(rawQuery: string, jumpToFirst: boolean): void {
+    this.searchQuery = rawQuery;
+    if (rawQuery.trim().length === 0) {
+      this.searchHits = [];
+      this.activeSearchHitIndex = -1;
+      return;
+    }
+    const hits = searchArticleDocument(this.document, this.navigationIndex, rawQuery);
+    this.searchHits = hits;
+    if (hits.length === 0) {
+      this.activeSearchHitIndex = -1;
+      return;
+    }
+    if (jumpToFirst) {
+      this.activeSearchHitIndex = 0;
+      this.jumpToSearchHit(hits[0]);
+    } else if (this.activeSearchHitIndex >= hits.length) {
+      this.activeSearchHitIndex = 0;
+    }
+  }
+
+  private stepSearchHit(delta: number): void {
+    const count = this.searchHits.length;
+    if (count === 0) {
+      return;
+    }
+    const base = this.activeSearchHitIndex < 0 ? 0 : this.activeSearchHitIndex;
+    const next = (base + delta + count) % count;
+    this.activeSearchHitIndex = next;
+    this.jumpToSearchHit(this.searchHits[next]);
+  }
+
+  private jumpToSearchHit(hit: ArticleSearchHit): void {
+    if (hit.isFootnote && this.canUseSidePanel() && hit.footnoteIndex >= 0 &&
+      hit.footnoteIndex < this.footnoteRows.length) {
+      this.activeFootnoteIndex = hit.footnoteIndex;
+      this.userClosedSidePanel = false;
+      this.activeWorkbenchTab = WorkbenchTab.FOOTNOTES;
+      if (!this.sidePanelOpen) {
+        this.onSidePanelOpenChange(true);
+      }
+      this.scrollSidePanelToFootnote(hit.footnoteIndex);
+    }
+    this.jumpToBlockLocation(hit.location);
+  }
+
+  private filteredTocItems(): ArticleTocItem[] {
+    const filter = this.tocFilterQuery.trim().toLowerCase();
+    if (filter.length === 0) {
+      return this.tocItems;
+    }
+    return this.tocItems.filter((item: ArticleTocItem): boolean =>
+      item.title.toLowerCase().indexOf(filter) >= 0);
+  }
+
+  private isTocItemActive(index: number, items: ArticleTocItem[]): boolean {
+    if (index < 0 || index >= items.length) {
+      return false;
+    }
+    const currentIdx = this.visibleSectionIndex;
+    let activeIdx = 0;
+    for (let i: number = 0; i < items.length; i++) {
+      if (items[i].location.sectionIndex <= currentIdx + 1) {
+        activeIdx = i;
+      }
+    }
+    return index === activeIdx;
+  }
+
   private clearHighlightTimer(): void {
     if (this.highlightTimer >= 0) {
       clearTimeout(this.highlightTimer);
@@ -970,18 +1359,7 @@ export struct ArticleNativeRenderer {
       return;
     }
     this.onAnchorJump();
-    const distance = this.visibleStartIndex >= 0 ?
-      Math.min(
-        Math.abs(targetIndex - this.visibleStartIndex),
-        Math.abs(targetIndex - this.visibleEndIndex)
-      ) :
-      999;
-    this.scroller.scrollToIndex(
-      targetIndex,
-      distance <= 18,
-      ScrollAlign.START,
-      { extraOffset: LengthMetrics.vp(-12) }
-    );
+    this.scrollToSectionIndex(targetIndex);
     this.triggerAnchorHighlight(key);
   }
 
@@ -1005,7 +1383,9 @@ export struct ArticleNativeRenderer {
   }
 
   private hasWorkbenchContent(): boolean {
-    return this.footnoteRows.length > 0 || this.relatedTaleRows.length > 0;
+    return this.footnoteRows.length > 0 ||
+      this.relatedTaleRows.length > 0 ||
+      this.tocItems.length > 0;
   }
 
   private canUseSidePanel(): boolean {
@@ -1016,22 +1396,58 @@ export struct ArticleNativeRenderer {
     return this.canUseSidePanel() && this.sidePanelOpen;
   }
 
+  private workbenchTabAvailable(tab: number): boolean {
+    if (tab === WorkbenchTab.FOOTNOTES) {
+      return this.footnoteRows.length > 0;
+    }
+    if (tab === WorkbenchTab.RELATED_TALES) {
+      return this.relatedTaleRows.length > 0;
+    }
+    if (tab === WorkbenchTab.TOC) {
+      return this.tocItems.length > 0;
+    }
+    return false;
+  }
+
+  private availableWorkbenchTabCount(): number {
+    let count = 0;
+    if (this.footnoteRows.length > 0) {
+      count++;
+    }
+    if (this.tocItems.length > 0) {
+      count++;
+    }
+    if (this.relatedTaleRows.length > 0) {
+      count++;
+    }
+    return count;
+  }
+
   private syncWorkbenchTabDefault(): void {
-    if (this.footnoteRows.length === 0 && this.relatedTaleRows.length > 0) {
-      this.activeWorkbenchTab = 1;
-    } else if (this.relatedTaleRows.length === 0) {
-      this.activeWorkbenchTab = 0;
+    if (this.workbenchTabAvailable(this.activeWorkbenchTab)) {
+      return;
+    }
+    if (this.footnoteRows.length > 0) {
+      this.activeWorkbenchTab = WorkbenchTab.FOOTNOTES;
+    } else if (this.tocItems.length > 0) {
+      this.activeWorkbenchTab = WorkbenchTab.TOC;
+    } else if (this.relatedTaleRows.length > 0) {
+      this.activeWorkbenchTab = WorkbenchTab.RELATED_TALES;
     }
   }
 
   private sidePanelBadgeLabel(): string {
     const fnCount = this.footnoteRows.length;
     const taleCount = this.relatedTaleRows.length;
-    if (fnCount > 0 && taleCount > 0) {
-      return `研读 ${fnCount + taleCount}`;
+    const tocCount = this.tocItems.length;
+    if (this.availableWorkbenchTabCount() > 1) {
+      return '研读';
     }
     if (fnCount > 0) {
       return `脚注 ${fnCount}`;
+    }
+    if (tocCount > 0) {
+      return `目录 ${tocCount}`;
     }
     if (taleCount > 0) {
       return `故事 ${taleCount}`;
@@ -1089,9 +1505,9 @@ export struct ArticleNativeRenderer {
     }
     this.activeFootnoteIndex = targetIndex;
     if (this.canUseSidePanel()) {
-      this.footnoteSheetVisible = false;
+      this.sheetMode = ArticleSheetMode.NONE;
       this.userClosedSidePanel = false;
-      this.activeWorkbenchTab = 0;
+      this.activeWorkbenchTab = WorkbenchTab.FOOTNOTES;
       if (!this.sidePanelOpen) {
         this.onSidePanelOpenChange(true);
       }
@@ -1100,13 +1516,13 @@ export struct ArticleNativeRenderer {
       this.scrollSidePanelToFootnote(targetIndex);
       return;
     }
-    this.footnoteSheetVisible = true;
+    this.sheetMode = ArticleSheetMode.FOOTNOTE;
     this.onAnchorJump();
     this.scrollFootnoteSheetToTop();
   }
 
-  private closeFootnoteSheet(): void {
-    this.footnoteSheetVisible = false;
+  private closeSheet(): void {
+    this.sheetMode = ArticleSheetMode.NONE;
     if (!this.sidePanelVisible()) {
       this.activeFootnoteIndex = -1;
     }
@@ -1141,7 +1557,7 @@ export struct ArticleNativeRenderer {
       return;
     }
     this.activeFootnoteIndex = next;
-    if (this.footnoteSheetVisible) {
+    if (this.sheetMode === ArticleSheetMode.FOOTNOTE) {
       this.scrollFootnoteSheetToTop();
     }
     if (this.sidePanelVisible()) {
@@ -1159,15 +1575,23 @@ export struct ArticleNativeRenderer {
   }
 
   private handleOpenArticleLink(url: string, title: string): void {
-    if (this.footnoteSheetVisible && !url.trim().startsWith('#')) {
-      this.closeFootnoteSheet();
+    const trimmed = url.trim();
+    if (trimmed.startsWith('#')) {
+      if (this.sheetMode !== ArticleSheetMode.NONE) {
+        this.closeSheet();
+      }
+      this.jumpToDocumentAnchor(trimmed.substring(1));
+      return;
+    }
+    if (this.sheetMode !== ArticleSheetMode.NONE) {
+      this.closeSheet();
     }
     this.onOpenArticleLink(url, title);
   }
 
   private handleOpenUrl(url: string): void {
-    if (this.footnoteSheetVisible) {
-      this.closeFootnoteSheet();
+    if (this.sheetMode !== ArticleSheetMode.NONE) {
+      this.closeSheet();
     }
     this.onOpenUrl(url);
   }
@@ -1182,35 +1606,47 @@ export struct ArticleNativeRenderer {
     return adaptivePageMarginForWidth(this.mainReadingAreaWidth());
   }
 
-  private footnoteSheetOptions(): SheetOptions {
-    const row = this.currentFootnoteRow();
-    const header: FootnoteSheetHeader = row !== undefined ?
-      ArticleRenderer.footnoteSheetHeader(
-        row.footnote,
-        this.activeFootnoteIndex,
-        this.footnoteRows.length
-      ) :
-      { title: '脚注', subtitle: '' };
+  private activeSheetOptions(): SheetOptions {
+    const isToc = this.sheetMode === ArticleSheetMode.TOC;
     const useCenter = shouldUseCenterSheet(windowWidthVp());
+    let sheetTitle = '脚注';
+    let sheetSubtitle = '';
+    if (isToc) {
+      sheetTitle = '章节目录';
+      sheetSubtitle = `共 ${this.tocItems.length} 项`;
+    } else {
+      const row = this.currentFootnoteRow();
+      const header: FootnoteSheetHeader = row !== undefined ?
+        ArticleRenderer.footnoteSheetHeader(
+          row.footnote,
+          this.activeFootnoteIndex,
+          this.footnoteRows.length
+        ) :
+        { title: '脚注', subtitle: '' };
+      sheetTitle = header.title;
+      sheetSubtitle = header.subtitle;
+    }
     const options: SheetOptions = {
       preferType: useCenter ? SheetType.CENTER : SheetType.BOTTOM,
       dragBar: true,
       showClose: true,
-      title: header.subtitle.length > 0 ?
-        { title: header.title, subtitle: header.subtitle } :
-        { title: header.title },
+      title: sheetSubtitle.length > 0 ?
+        { title: sheetTitle, subtitle: sheetSubtitle } :
+        { title: sheetTitle },
       onWillDismiss: (action: DismissSheetAction): void => {
-        this.closeFootnoteSheet();
+        this.closeSheet();
         action.dismiss();
       },
       onDisappear: (): void => {
-        this.closeFootnoteSheet();
+        this.closeSheet();
       }
     };
     if (useCenter) {
-      options.height = SheetSize.FIT_CONTENT;
+      options.height = isToc ? SheetSize.LARGE : SheetSize.FIT_CONTENT;
     } else {
-      options.detents = this.footnoteSheetDetents;
+      options.detents = isToc ?
+        (this.tocItems.length >= 10 ? this.longTocSheetDetents : this.tocSheetDetents) :
+        this.sheetDetents;
       options.scrollSizeMode = ScrollSizeMode.CONTINUOUS;
     }
     if (this.materialEnabled) {
@@ -1226,9 +1662,12 @@ export struct ArticleNativeRenderer {
     return options;
   }
 
-  private isParagraphHighlighted(block: ScpContentBlock): boolean {
+  private isBlockHighlighted(block: ScpContentBlock): boolean {
     if (this.highlightedAnchorKey.length === 0) {
       return false;
+    }
+    if (this.highlightedAnchorKey === `block:${block.key}`) {
+      return true;
     }
     const refIds = this.footnoteRefIds(block);
     for (let index: number = 0; index < refIds.length; index++) {
@@ -1251,6 +1690,17 @@ export struct ArticleNativeRenderer {
       .backgroundColor(badgeInfoBackgroundColor())
       .borderRadius(8)
       .opacity(visible ? this.highlightOpacity * 0.75 : 0)
+  }
+
+  @Builder
+  private anchorHighlightOverlay(visible: boolean) {
+    Column() {}
+      .width('100%')
+      .height('100%')
+      .backgroundColor(badgeInfoBackgroundColor())
+      .borderRadius(10)
+      .opacity(visible ? this.highlightOpacity * 0.55 : 0)
+      .hitTestBehavior(HitTestMode.None)
   }
 
   private isExpanded(block: ScpContentBlock): boolean {
@@ -1514,6 +1964,163 @@ export struct ArticleNativeRenderer {
     return '#475569';
   }
 
+  private isSearchHighlightActive(): boolean {
+    return this.searchBarOpen && this.searchQuery.trim().length > 0;
+  }
+
+  private isBlockActiveSearchHit(blockKey: string): boolean {
+    if (this.activeSearchHitIndex < 0 || this.activeSearchHitIndex >= this.searchHits.length) {
+      return false;
+    }
+    return this.searchHits[this.activeSearchHitIndex].blockKey === blockKey;
+  }
+
+  private hasActiveSearchHit(): boolean {
+    return this.activeSearchHitIndex >= 0 && this.activeSearchHitIndex < this.searchHits.length;
+  }
+
+  private activeSearchHitContextLabel(): string {
+    if (!this.hasActiveSearchHit()) {
+      return '';
+    }
+    return this.searchHits[this.activeSearchHitIndex].contextLabel;
+  }
+
+  private activeSearchHitSnippet(): string {
+    if (!this.hasActiveSearchHit()) {
+      return '';
+    }
+    return this.searchHits[this.activeSearchHitIndex].snippet;
+  }
+
+  private resolvedSliceFontColor(
+    slice: SearchRenderSpanSlice,
+    inTerminal: boolean,
+    isActiveHitBlock: boolean
+  ): ResourceColor {
+    if (slice.isSearchMatch && isActiveHitBlock) {
+      return '#111827';
+    }
+    return this.resolvedVisibleSpanColor(slice.spanRow.span, inTerminal);
+  }
+
+  private resolvedSliceBackground(
+    slice: SearchRenderSpanSlice,
+    inTerminal: boolean,
+    isActiveHitBlock: boolean
+  ): TextBackgroundStyle {
+    if (slice.isSearchMatch) {
+      return {
+        color: isActiveHitBlock ? '#F59E0B' : '#55F59E0B',
+        radius: 4
+      };
+    }
+    return this.resolvedSpanBackground(slice.spanRow.span, inTerminal);
+  }
+
+  private resolvedHiddenSliceFontColor(
+    slice: SearchRenderSpanSlice,
+    inTerminal: boolean,
+    forceReveal: boolean,
+    isActiveHitBlock: boolean
+  ): ResourceColor {
+    if (slice.isSearchMatch && isActiveHitBlock) {
+      return '#111827';
+    }
+    return this.resolvedHiddenForeground(
+      slice.spanRow.span,
+      slice.spanRow.key,
+      inTerminal,
+      forceReveal
+    );
+  }
+
+  private resolvedHiddenSliceBackground(
+    slice: SearchRenderSpanSlice,
+    inTerminal: boolean,
+    forceReveal: boolean,
+    isActiveHitBlock: boolean
+  ): TextBackgroundStyle {
+    if (slice.isSearchMatch) {
+      return {
+        color: isActiveHitBlock ? '#F59E0B' : '#55F59E0B',
+        radius: 4
+      };
+    }
+    return this.resolvedHiddenBackground(
+      slice.spanRow.span,
+      slice.spanRow.key,
+      inTerminal,
+      forceReveal
+    );
+  }
+
+  private buildHighlightedSpanSlices(
+    row: ArticleBlockRowState,
+    forceReveal: boolean
+  ): SearchRenderSpanSlice[] {
+    const query = this.searchBarOpen ? this.searchQuery.trim() : '';
+    const slices: SearchRenderSpanSlice[] = [];
+    for (let i: number = 0; i < row.spans.length; i++) {
+      const spanRow = row.spans[i];
+      const span = spanRow.span;
+      const isHidden = span.hiddenKind !== ScpHiddenTextKind.NONE;
+      const hiddenRevealed = !isHidden || forceReveal || this.isHiddenKeyRevealed(spanRow.key);
+      if (query.length === 0 ||
+        span.style === ScpTextStyle.FOOTNOTE_REFERENCE ||
+        !hiddenRevealed) {
+        slices.push(new SearchRenderSpanSlice(spanRow.key, spanRow, span.text, false));
+        continue;
+      }
+      const segments = splitTextForSearchHighlight(span.text, query);
+      if (segments.length <= 1 && (segments.length === 0 || !segments[0].matched)) {
+        slices.push(new SearchRenderSpanSlice(spanRow.key, spanRow, span.text, false));
+        continue;
+      }
+      const normalizedQuery = query.toLowerCase();
+      for (let s: number = 0; s < segments.length; s++) {
+        const seg = segments[s];
+        slices.push(new SearchRenderSpanSlice(
+          `${spanRow.key}::m::${normalizedQuery}::${s}:${seg.matched ? '1' : '0'}`,
+          spanRow,
+          seg.text,
+          seg.matched
+        ));
+      }
+    }
+    return slices;
+  }
+
+  private activeTocItemKey(): string {
+    const items = this.filteredTocItems();
+    const currentIdx = this.visibleSectionIndex;
+    let activeKey = '';
+    for (let i: number = 0; i < items.length; i++) {
+      if (items[i].location.sectionIndex <= currentIdx + 1) {
+        activeKey = items[i].key;
+      }
+    }
+    return activeKey;
+  }
+
+  private tocItemLeftPadding(item: ArticleTocItem): number {
+    if (item.kind === ArticleTocKind.FOOTNOTES) {
+      return 12;
+    }
+    const clampedLevel = Math.max(1, Math.min(4, item.level));
+    return 12 + (clampedLevel - 1) * 12;
+  }
+
+  private sidePanelHeaderTitle(): string {
+    if (this.footnoteRows.length > 0) {
+      return `脚注 (${this.footnoteRows.length})`;
+    }
+    if (this.tocItems.length > 0) {
+      return `章节目录 (${this.tocItems.length})`;
+    }
+    return `关联故事 (${this.relatedTaleRows.length})`;
+  }
+
   @Builder
   private spanText(
     row: ArticleBlockRowState,
@@ -1524,56 +2131,90 @@ export struct ArticleNativeRenderer {
     forceReveal: boolean = false
   ) {
     Text() {
-      ForEach(row.spans, (spanRow: ArticleSpanRowState) => {
-        if (spanRow.span.style === ScpTextStyle.FOOTNOTE_REFERENCE) {
-          Span(`[${spanRow.span.text}]`)
+      ForEach(this.buildHighlightedSpanSlices(row, forceReveal), (slice: SearchRenderSpanSlice) => {
+        if (slice.spanRow.span.style === ScpTextStyle.FOOTNOTE_REFERENCE) {
+          Span(`[${slice.spanRow.span.text}]`)
             .fontSize((baseSizeOverride > 0 ? baseSizeOverride : this.fontSize) * 0.75)
             .fontWeight(FontWeight.Medium)
             .fontColor(inTerminal ? '#67E8F9' : $r('sys.color.font_emphasize'))
             .baselineOffset(LengthMetrics.fp((baseSizeOverride > 0 ? baseSizeOverride : this.fontSize) * 0.24))
-            .onClick(() => this.openFootnoteSheet(spanRow.span.referenceId, spanRow.span.text))
-        } else if (spanRow.span.hiddenKind === ScpHiddenTextKind.NONE) {
-          Span(spanRow.span.text)
+            .onClick(() => this.openFootnoteSheet(
+              slice.spanRow.span.referenceId,
+              slice.spanRow.span.text
+            ))
+        } else if (slice.spanRow.span.hiddenKind === ScpHiddenTextKind.NONE) {
+          Span(slice.text)
             .fontSize(this.resolvedSpanFontSize(
-              spanRow.span,
+              slice.spanRow.span,
               baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
             ))
-            .fontWeight(boldAll || spanRow.span.bold ? FontWeight.Bold : FontWeight.Regular)
-            .fontStyle(spanRow.span.italic ? FontStyle.Italic : FontStyle.Normal)
-            .fontFamily(spanRow.span.monospace ? 'monospace' : 'HarmonyOS Sans')
+            .fontWeight(boldAll || slice.spanRow.span.bold ? FontWeight.Bold : FontWeight.Regular)
+            .fontStyle(slice.spanRow.span.italic ? FontStyle.Italic : FontStyle.Normal)
+            .fontFamily(slice.spanRow.span.monospace ? 'monospace' : 'HarmonyOS Sans')
             .baselineOffset(this.resolvedSpanBaseline(
-              spanRow.span,
+              slice.spanRow.span,
               baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
             ))
-            .decoration(this.resolvedSpanDecoration(spanRow.span, inTerminal))
-            .fontColor(this.resolvedVisibleSpanColor(spanRow.span, inTerminal))
-            .textBackgroundStyle(this.resolvedSpanBackground(spanRow.span, inTerminal))
-            .onClick(spanRow.span.style === ScpTextStyle.LINK ?
-              () => this.handleOpenArticleLink(spanRow.span.target, spanRow.span.text) : () => {
+            .decoration(this.resolvedSpanDecoration(slice.spanRow.span, inTerminal))
+            .fontColor(this.resolvedSliceFontColor(
+              slice,
+              inTerminal,
+              this.isBlockActiveSearchHit(row.block.key)
+            ))
+            .textBackgroundStyle(this.resolvedSliceBackground(
+              slice,
+              inTerminal,
+              this.isBlockActiveSearchHit(row.block.key)
+            ))
+            .onClick(slice.spanRow.span.style === ScpTextStyle.LINK ?
+              () => this.handleOpenArticleLink(slice.spanRow.span.target, slice.spanRow.span.text) :
+              () => {
               })
         } else {
-          Span((spanRow.span.hiddenKind !== ScpHiddenTextKind.ZERO_SIZE_WHISPER ||
-            forceReveal || this.isHiddenKeyRevealed(spanRow.key)) ? spanRow.span.text : ' [···] ')
-            .fontSize((spanRow.span.hiddenKind === ScpHiddenTextKind.ZERO_SIZE_WHISPER &&
-              !forceReveal && !this.isHiddenKeyRevealed(spanRow.key)) ?
+          Span((slice.spanRow.span.hiddenKind !== ScpHiddenTextKind.ZERO_SIZE_WHISPER ||
+            forceReveal || this.isHiddenKeyRevealed(slice.spanRow.key)) ? slice.text : ' [···] ')
+            .fontSize((slice.spanRow.span.hiddenKind === ScpHiddenTextKind.ZERO_SIZE_WHISPER &&
+              !forceReveal && !this.isHiddenKeyRevealed(slice.spanRow.key)) ?
               Math.max(11, (baseSizeOverride > 0 ? baseSizeOverride : this.fontSize) * 0.78) :
               this.resolvedSpanFontSize(
-                spanRow.span,
+                slice.spanRow.span,
                 baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
               ))
-            .fontWeight(boldAll || spanRow.span.bold ? FontWeight.Bold : FontWeight.Regular)
-            .fontStyle(spanRow.span.italic ? FontStyle.Italic : FontStyle.Normal)
-            .fontFamily(spanRow.span.monospace ? 'monospace' : 'HarmonyOS Sans')
+            .fontWeight(boldAll || slice.spanRow.span.bold ? FontWeight.Bold : FontWeight.Regular)
+            .fontStyle(slice.spanRow.span.italic ? FontStyle.Italic : FontStyle.Normal)
+            .fontFamily(slice.spanRow.span.monospace ? 'monospace' : 'HarmonyOS Sans')
             .baselineOffset(this.resolvedSpanBaseline(
-              spanRow.span,
+              slice.spanRow.span,
               baseSizeOverride > 0 ? baseSizeOverride : this.fontSize
             ))
-            .decoration(this.resolvedHiddenDecoration(spanRow.span, spanRow.key, inTerminal, forceReveal))
-            .fontColor(this.resolvedHiddenForeground(spanRow.span, spanRow.key, inTerminal, forceReveal))
-            .textBackgroundStyle(this.resolvedHiddenBackground(spanRow.span, spanRow.key, inTerminal, forceReveal))
-            .onClick(() => this.handleHiddenSpanClick(spanRow.span, spanRow.key, forceReveal))
+            .decoration(this.resolvedHiddenDecoration(
+              slice.spanRow.span,
+              slice.spanRow.key,
+              inTerminal,
+              forceReveal
+            ))
+            .fontColor(this.resolvedHiddenSliceFontColor(
+              slice,
+              inTerminal,
+              forceReveal,
+              this.isBlockActiveSearchHit(row.block.key)
+            ))
+            .textBackgroundStyle(this.resolvedHiddenSliceBackground(
+              slice,
+              inTerminal,
+              forceReveal,
+              this.isBlockActiveSearchHit(row.block.key)
+            ))
+            .onClick(() => this.handleHiddenSpanClick(
+              slice.spanRow.span,
+              slice.spanRow.key,
+              forceReveal
+            ))
         }
-      }, (spanRow: ArticleSpanRowState) => spanRow.key)
+      }, (slice: SearchRenderSpanSlice) =>
+        (this.isSearchHighlightActive() && slice.isSearchMatch) ?
+          `${slice.key}:${this.activeSearchHitIndex}` : slice.key
+      )
     }
     .fontSize(baseSizeOverride > 0 ? baseSizeOverride : this.fontSize)
     .lineHeightMultiple(this.lineHeightMultiple)
@@ -1581,7 +2222,7 @@ export struct ArticleNativeRenderer {
     .textAlign(this.resolveBlockTextAlign(row.block.textAlign, startAlign))
     .wordBreak(WordBreak.BREAK_WORD)
     .enableAutoSpacing(true)
-    .background(this.anchorHighlightBackdrop(this.isParagraphHighlighted(row.block)))
+    .background(this.anchorHighlightBackdrop(this.isBlockHighlighted(row.block)))
     .width('100%')
   }
 
@@ -1698,6 +2339,7 @@ export struct ArticleNativeRenderer {
       .padding({ left: 12, right: 12, top: 10, bottom: 10 })
       .backgroundColor(inTerminal ? '#232A34' : $r('sys.color.comp_background_tertiary'))
       .borderRadius(10)
+      .overlay(this.anchorHighlightOverlay(this.isBlockHighlighted(row.block)))
       .onClick(() => {
         this.getUIContext().animateTo(AppMotion.springAnimateParam(false), (): void => {
           this.onToggleExpanded(row.block);
@@ -1934,59 +2576,63 @@ export struct ArticleNativeRenderer {
     row: ArticleBlockRowState,
     parentInTerminal: boolean = false
   ) {
-    if (row.block.calloutTone === ScpCalloutTone.TERMINAL || parentInTerminal) {
-      Column({ space: 10 }) {
-        ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, true)
-        }, (child: ArticleBlockRowState) => child.key)
+    Column() {
+      if (row.block.calloutTone === ScpCalloutTone.TERMINAL || parentInTerminal) {
+        Column({ space: 10 }) {
+          ForEach(row.children, (child: ArticleBlockRowState) => {
+            this.blockView(child, true)
+          }, (child: ArticleBlockRowState) => child.key)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding(14)
+        .backgroundColor('#15191F')
+        .border({ width: 1, color: '#334155' })
+        .borderRadius(12)
+      } else if (row.block.calloutTone === ScpCalloutTone.WARNING) {
+        Column({ space: 10 }) {
+          ForEach(row.children, (child: ArticleBlockRowState) => {
+            this.blockView(child, false)
+          }, (child: ArticleBlockRowState) => child.key)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding({ left: 14, right: 12, top: 12, bottom: 12 })
+        .backgroundColor('#14D9383A')
+        .border({ width: { left: 3 }, color: '#D9383A' })
+        .borderRadius(10)
+      } else if (row.block.calloutTone === ScpCalloutTone.NOTE) {
+        Column({ space: 10 }) {
+          ForEach(row.children, (child: ArticleBlockRowState) => {
+            this.blockView(child, false)
+          }, (child: ArticleBlockRowState) => child.key)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding(12)
+        .backgroundColor($r('sys.color.comp_background_primary'))
+        .border({
+          width: 1,
+          style: BorderStyle.Dashed,
+          color: $r('sys.color.comp_divider')
+        })
+        .borderRadius(10)
+      } else {
+        Column({ space: 10 }) {
+          ForEach(row.children, (child: ArticleBlockRowState) => {
+            this.blockView(child, false)
+          }, (child: ArticleBlockRowState) => child.key)
+        }
+        .width('100%')
+        .alignItems(HorizontalAlign.Start)
+        .padding(12)
+        .backgroundColor($r('sys.color.comp_background_primary'))
+        .border({ width: 0.8, color: materialCardBorderColor(this.materialEnabled) })
+        .borderRadius(10)
       }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding(14)
-      .backgroundColor('#15191F')
-      .border({ width: 1, color: '#334155' })
-      .borderRadius(12)
-    } else if (row.block.calloutTone === ScpCalloutTone.WARNING) {
-      Column({ space: 10 }) {
-        ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false)
-        }, (child: ArticleBlockRowState) => child.key)
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding({ left: 14, right: 12, top: 12, bottom: 12 })
-      .backgroundColor('#14D9383A')
-      .border({ width: { left: 3 }, color: '#D9383A' })
-      .borderRadius(10)
-    } else if (row.block.calloutTone === ScpCalloutTone.NOTE) {
-      Column({ space: 10 }) {
-        ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false)
-        }, (child: ArticleBlockRowState) => child.key)
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding(12)
-      .backgroundColor($r('sys.color.comp_background_primary'))
-      .border({
-        width: 1,
-        style: BorderStyle.Dashed,
-        color: $r('sys.color.comp_divider')
-      })
-      .borderRadius(10)
-    } else {
-      Column({ space: 10 }) {
-        ForEach(row.children, (child: ArticleBlockRowState) => {
-          this.blockView(child, false)
-        }, (child: ArticleBlockRowState) => child.key)
-      }
-      .width('100%')
-      .alignItems(HorizontalAlign.Start)
-      .padding(12)
-      .backgroundColor($r('sys.color.comp_background_primary'))
-      .border({ width: 0.8, color: materialCardBorderColor(this.materialEnabled) })
-      .borderRadius(10)
     }
+    .width('100%')
+    .overlay(this.anchorHighlightOverlay(this.isBlockHighlighted(row.block)))
   }
 
   @Builder
@@ -2007,6 +2653,7 @@ export struct ArticleNativeRenderer {
     .backgroundColor(inTerminal ? '#0F141A' : $r('sys.color.comp_background_tertiary'))
     .border({ width: 0.5, color: inTerminal ? '#334155' : $r('sys.color.comp_divider') })
     .borderRadius(10)
+    .overlay(this.anchorHighlightOverlay(this.isBlockHighlighted(row.block)))
   }
 
   @Builder
@@ -2098,6 +2745,8 @@ export struct ArticleNativeRenderer {
     }
     .width('100%')
     .alignItems(HorizontalAlign.Center)
+    .padding(4)
+    .background(this.anchorHighlightBackdrop(this.isBlockHighlighted(row.block)))
   }
 
   @Builder
@@ -2459,6 +3108,70 @@ export struct ArticleNativeRenderer {
     })
   }
 
+  private calloutChildBackground(tone: ScpCalloutTone): ResourceColor {
+    if (tone === ScpCalloutTone.TERMINAL) {
+      return '#15191F';
+    }
+    if (tone === ScpCalloutTone.WARNING) {
+      return '#14D9383A';
+    }
+    return $r('sys.color.comp_background_primary');
+  }
+
+  private calloutChildBorder(section: ArticleSectionRow): BorderOptions {
+    const tone = section.calloutTone;
+    if (tone === ScpCalloutTone.WARNING) {
+      return { width: { left: 3 }, color: '#D9383A' };
+    }
+    const sideWidth = tone === ScpCalloutTone.TERMINAL || tone === ScpCalloutTone.NOTE ? 1 : 0.8;
+    const borderColor: ResourceColor = tone === ScpCalloutTone.TERMINAL ?
+      '#334155' :
+      (tone === ScpCalloutTone.NOTE ?
+        $r('sys.color.comp_divider') :
+        materialCardBorderColor(this.materialEnabled));
+    return {
+      width: {
+        left: sideWidth,
+        right: sideWidth,
+        top: section.quoteFirst ? sideWidth : 0,
+        bottom: section.quoteLast ? sideWidth : 0
+      },
+      style: tone === ScpCalloutTone.NOTE ? BorderStyle.Dashed : BorderStyle.Solid,
+      color: borderColor
+    };
+  }
+
+  private calloutChildRadius(section: ArticleSectionRow): BorderRadiuses {
+    const r = section.calloutTone === ScpCalloutTone.TERMINAL ? 12 : 10;
+    return {
+      topLeft: section.quoteFirst ? r : 0,
+      topRight: section.quoteFirst ? r : 0,
+      bottomLeft: section.quoteLast ? r : 0,
+      bottomRight: section.quoteLast ? r : 0
+    };
+  }
+
+  @Builder
+  private calloutChildBlock(section: ArticleSectionRow) {
+    Column() {
+      if (section.blockRow !== undefined) {
+        this.blockView(section.blockRow, section.calloutTone === ScpCalloutTone.TERMINAL)
+      }
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Start)
+    .padding({
+      left: section.calloutTone === ScpCalloutTone.WARNING ||
+        section.calloutTone === ScpCalloutTone.TERMINAL ? 14 : 12,
+      right: section.calloutTone === ScpCalloutTone.TERMINAL ? 14 : 12,
+      top: section.quoteFirst ? (section.calloutTone === ScpCalloutTone.TERMINAL ? 14 : 12) : 5,
+      bottom: section.quoteLast ? (section.calloutTone === ScpCalloutTone.TERMINAL ? 14 : 12) : 5
+    })
+    .backgroundColor(this.calloutChildBackground(section.calloutTone))
+    .border(this.calloutChildBorder(section))
+    .borderRadius(this.calloutChildRadius(section))
+  }
+
   @Builder
   private sectionView(section: ArticleSectionRow) {
     if (section.kind === ArticleSectionKind.PARTIAL_NOTICE) {
@@ -2473,6 +3186,8 @@ export struct ArticleNativeRenderer {
       this.blockView(section.blockRow)
     } else if (section.kind === ArticleSectionKind.QUOTE_CHILD) {
       this.quoteChildBlock(section)
+    } else if (section.kind === ArticleSectionKind.CALLOUT_CHILD) {
+      this.calloutChildBlock(section)
     } else if (section.kind === ArticleSectionKind.FOOTNOTES_HEADER) {
       this.footnotesHeaderView()
     } else if (section.kind === ArticleSectionKind.FOOTNOTE && section.footnoteRow !== undefined) {
@@ -2522,9 +3237,160 @@ export struct ArticleNativeRenderer {
   }
 
   @Builder
-  private footnoteSheetBuilder() {
+  private tocFilterBar(horizontalPadding: number) {
+    if (this.tocItems.length >= 10) {
+      Column() {
+        Row({ space: 8 }) {
+          SymbolGlyph($r('sys.symbol.magnifyingglass'))
+            .fontSize(14)
+            .fontColor([$r('sys.color.icon_secondary')])
+          TextInput({ text: this.tocFilterQuery, placeholder: '筛选章节或折叠块…' })
+            .fontSize(AppTypography.BODY_S)
+            .fontColor($r('sys.color.font'))
+            .placeholderColor($r('sys.color.font_tertiary'))
+            .backgroundColor(Color.Transparent)
+            .padding({ left: 0, right: 0 })
+            .height(34)
+            .layoutWeight(1)
+            .onChange((value: string) => {
+              this.tocFilterQuery = value;
+            })
+          if (this.tocFilterQuery.length > 0) {
+            Button({ type: ButtonType.Circle, stateEffect: false }) {
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(11)
+                .fontColor([$r('sys.color.icon_secondary')])
+            }
+            .width(24)
+            .height(24)
+            .backgroundColor($r('sys.color.comp_background_tertiary'))
+            .accessibilityText('清除目录筛选')
+            .onClick(() => {
+              this.tocFilterQuery = '';
+            })
+          }
+        }
+        .width('100%')
+        .padding({ left: 10, right: 8, top: 2, bottom: 2 })
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(12)
+      }
+      .width('100%')
+      .padding({ left: horizontalPadding, right: horizontalPadding, top: 8, bottom: 6 })
+    }
+  }
+
+  @Builder
+  private tocItemCard(item: ArticleTocItem, inSheet: boolean) {
+    Row({ space: 8 }) {
+      if (item.kind === ArticleTocKind.COLLAPSIBLE) {
+        Text('折叠')
+          .fontSize(AppTypography.CAPTION_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(this.activeTocItemKey() === item.key ?
+            $r('sys.color.font_emphasize') : $r('sys.color.font_secondary'))
+          .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+          .backgroundColor(this.activeTocItemKey() === item.key ?
+            badgeInfoBackgroundColor() : $r('sys.color.comp_background_tertiary'))
+          .borderRadius(6)
+      }
+      Text(item.title)
+        .fontSize(item.kind === ArticleTocKind.HEADING && item.level === 1 ?
+          AppTypography.BODY_M : AppTypography.BODY_S)
+        .fontWeight(this.activeTocItemKey() === item.key ||
+          (item.kind === ArticleTocKind.HEADING && item.level === 1) ?
+          FontWeight.Medium : FontWeight.Regular)
+        .fontColor(this.activeTocItemKey() === item.key ?
+          $r('sys.color.font_emphasize') : $r('sys.color.font'))
+        .maxLines(2)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+    }
+    .attributeModifier(ROW_PRESS_MODIFIER)
+    .animation(pressAnimation())
+    .width('100%')
+    .alignItems(VerticalAlign.Center)
+    .padding({
+      left: this.tocItemLeftPadding(item),
+      right: 12,
+      top: 10,
+      bottom: 10
+    })
+    .backgroundColor(this.activeTocItemKey() === item.key ?
+      badgeInfoBackgroundColor() : Color.Transparent)
+    .borderRadius(12)
+    .onClick(() => {
+      if (inSheet) {
+        this.closeSheet();
+        this.clearPendingAnchorTimer();
+        this.pendingAnchorTimer = setTimeout((): void => {
+          this.pendingAnchorTimer = -1;
+          this.jumpToBlockLocation(item.location);
+        }, 150);
+        return;
+      }
+      this.jumpToBlockLocation(item.location);
+    })
+  }
+
+  @Builder
+  private tocEmptyState() {
+    Column({ space: 8 }) {
+      Text('未找到匹配的目录项')
+        .fontSize(AppTypography.BODY_S)
+        .fontColor($r('sys.color.font_secondary'))
+      if (this.tocFilterQuery.length > 0) {
+        Text('清除筛选')
+          .fontSize(AppTypography.CAPTION_L)
+          .fontColor($r('sys.color.font_emphasize'))
+          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(12)
+          .onClick(() => {
+            this.tocFilterQuery = '';
+          })
+      }
+    }
+    .width('100%')
+    .padding({ top: 32, bottom: 32 })
+    .justifyContent(FlexAlign.Center)
+  }
+
+  @Builder
+  private activeSheetBuilder() {
     Column() {
-      if (this.currentFootnoteRow() !== undefined) {
+      if (this.sheetMode === ArticleSheetMode.TOC) {
+        this.tocFilterBar(adaptivePageMarginForWidth(windowWidthVp()))
+
+        if (this.filteredTocItems().length === 0) {
+          this.tocEmptyState()
+        } else {
+          List({ scroller: this.tocSheetScroller, space: 4 }) {
+            ForEach(this.filteredTocItems(), (item: ArticleTocItem) => {
+              ListItem() {
+                this.tocItemCard(item, true)
+              }
+            }, (item: ArticleTocItem) => item.key)
+          }
+          .width('100%')
+          .flexShrink(1)
+          .constraintSize({
+            minHeight: 180,
+            maxHeight: shouldUseCenterSheet(windowWidthVp()) ? 440 : 640
+          })
+          .padding({
+            left: adaptivePageMarginForWidth(windowWidthVp()),
+            right: adaptivePageMarginForWidth(windowWidthVp()),
+            bottom: 24
+          })
+          .scrollBar(BarState.Auto)
+          .edgeEffect(EdgeEffect.Spring)
+          .nestedScroll({
+            scrollForward: NestedScrollMode.PARENT_FIRST,
+            scrollBackward: NestedScrollMode.SELF_FIRST
+          })
+        }
+      } else if (this.currentFootnoteRow() !== undefined) {
         Scroll(this.footnoteSheetScroller) {
           Column({ space: 10 }) {
             ForEach(this.currentFootnoteBlocks(), (block: ArticleBlockRowState) => {
@@ -2580,16 +3446,6 @@ export struct ArticleNativeRenderer {
       }
     }
     .width('100%')
-  }
-
-  private showingFootnotesTab(): boolean {
-    if (this.footnoteRows.length === 0) {
-      return false;
-    }
-    if (this.relatedTaleRows.length === 0) {
-      return true;
-    }
-    return this.activeWorkbenchTab === 0;
   }
 
   @Builder
@@ -2676,16 +3532,21 @@ export struct ArticleNativeRenderer {
   private researchSidePanelBuilder() {
     Column() {
       Row({ space: 8 }) {
-        if (this.footnoteRows.length > 0 && this.relatedTaleRows.length > 0) {
+        if (this.availableWorkbenchTabCount() > 1) {
           Row({ space: 6 }) {
-            this.workbenchTabPill(`脚注 ${this.footnoteRows.length}`, 0)
-            this.workbenchTabPill(`故事 ${this.relatedTaleRows.length}`, 1)
+            if (this.footnoteRows.length > 0) {
+              this.workbenchTabPill(`脚注 ${this.footnoteRows.length}`, WorkbenchTab.FOOTNOTES)
+            }
+            if (this.tocItems.length > 0) {
+              this.workbenchTabPill(`目录 ${this.tocItems.length}`, WorkbenchTab.TOC)
+            }
+            if (this.relatedTaleRows.length > 0) {
+              this.workbenchTabPill(`故事 ${this.relatedTaleRows.length}`, WorkbenchTab.RELATED_TALES)
+            }
           }
           .layoutWeight(1)
         } else {
-          Text(this.footnoteRows.length > 0 ?
-            `脚注 (${this.footnoteRows.length})` :
-            `关联故事 (${this.relatedTaleRows.length})`)
+          Text(this.sidePanelHeaderTitle())
             .fontSize(AppTypography.SUBTITLE_M)
             .fontWeight(FontWeight.Bold)
             .fontColor($r('sys.color.font'))
@@ -2717,7 +3578,7 @@ export struct ArticleNativeRenderer {
         .strokeWidth(0.5)
         .color($r('sys.color.comp_divider'))
 
-      if (this.showingFootnotesTab()) {
+      if (this.activeWorkbenchTab === WorkbenchTab.FOOTNOTES && this.footnoteRows.length > 0) {
         if (this.footnoteRows.length > 1) {
           Row({ space: 8 }) {
             this.footnoteStepButton(-1)
@@ -2758,6 +3619,27 @@ export struct ArticleNativeRenderer {
             this.scrollSidePanelToFootnote(this.activeFootnoteIndex);
           }
         })
+      } else if (this.activeWorkbenchTab === WorkbenchTab.TOC && this.tocItems.length > 0) {
+        this.tocFilterBar(16)
+
+        if (this.filteredTocItems().length === 0) {
+          this.tocEmptyState()
+        } else {
+          List({ scroller: this.sidePanelTocScroller, space: 4 }) {
+            ForEach(this.filteredTocItems(), (item: ArticleTocItem) => {
+              ListItem() {
+                this.tocItemCard(item, false)
+              }
+            }, (item: ArticleTocItem) => item.key)
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .contentStartOffset(8)
+          .contentEndOffset(32)
+          .padding({ left: 12, right: 12 })
+          .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+          .scrollBar(BarState.Auto)
+        }
       } else {
         List({ space: 10 }) {
           ForEach(this.relatedTaleRows, (taleRow: ArticleRelatedTaleRowState) => {
@@ -2783,59 +3665,196 @@ export struct ArticleNativeRenderer {
     .transition(AppMotion.panelEdgeTransition(TransitionEdge.END))
   }
 
+  @Builder
+  private articleSearchBar() {
+    Column() {
+      Column({ space: 4 }) {
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.magnifyingglass'))
+            .fontSize(15)
+            .fontColor([$r('sys.color.icon_secondary')])
+
+          TextInput({ text: this.searchQuery, placeholder: '在文内查找…' })
+            .id('articleSearchInput')
+            .defaultFocus(true)
+            .enterKeyType(EnterKeyType.Search)
+            .fontSize(AppTypography.BODY_S)
+            .fontColor($r('sys.color.font'))
+            .placeholderColor($r('sys.color.font_tertiary'))
+            .backgroundColor(Color.Transparent)
+            .padding({ left: 0, right: 0 })
+            .height(34)
+            .layoutWeight(1)
+            .onChange((value: string) => {
+              this.updateSearchResults(value, true);
+            })
+            .onSubmit(() => {
+              this.stepSearchHit(1);
+            })
+
+          if (this.searchQuery.trim().length > 0) {
+            Text(this.searchHits.length > 0 ?
+              `${this.activeSearchHitIndex + 1} / ${this.searchHits.length}` : '0 处')
+              .fontSize(AppTypography.CAPTION_M)
+              .fontWeight(FontWeight.Medium)
+              .fontColor(this.searchHits.length > 0 ?
+                $r('sys.color.font_secondary') : '#D97706')
+              .maxLines(1)
+          }
+
+          Button({ type: ButtonType.Circle, stateEffect: false }) {
+            SymbolGlyph($r('sys.symbol.chevron_left'))
+              .fontSize(13)
+              .fontColor([$r('sys.color.font')])
+          }
+          .width(28)
+          .height(28)
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .enabled(this.searchHits.length > 0)
+          .opacity(this.searchHits.length > 0 ? 1 : 0.35)
+          .accessibilityText('上一处匹配')
+          .onClick(() => this.stepSearchHit(-1))
+
+          Button({ type: ButtonType.Circle, stateEffect: false }) {
+            SymbolGlyph($r('sys.symbol.chevron_right'))
+              .fontSize(13)
+              .fontColor([$r('sys.color.font')])
+          }
+          .width(28)
+          .height(28)
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .enabled(this.searchHits.length > 0)
+          .opacity(this.searchHits.length > 0 ? 1 : 0.35)
+          .accessibilityText('下一处匹配')
+          .onClick(() => this.stepSearchHit(1))
+
+          Button({ type: ButtonType.Circle, stateEffect: false }) {
+            SymbolGlyph($r('sys.symbol.xmark'))
+              .fontSize(12)
+              .fontColor([$r('sys.color.icon_secondary')])
+          }
+          .width(28)
+          .height(28)
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .accessibilityText('关闭文内查找')
+          .onClick(() => this.onSearchBarOpenChange(false))
+        }
+        .width('100%')
+        .alignItems(VerticalAlign.Center)
+
+        if (this.hasActiveSearchHit()) {
+          Row({ space: 6 }) {
+            if (this.activeSearchHitContextLabel().length > 0) {
+              Text(this.activeSearchHitContextLabel())
+                .fontSize(AppTypography.CAPTION_M)
+                .fontWeight(FontWeight.Medium)
+                .fontColor($r('sys.color.font_emphasize'))
+                .padding({ left: 6, right: 6, top: 2, bottom: 2 })
+                .backgroundColor(badgeInfoBackgroundColor())
+                .borderRadius(6)
+                .maxLines(1)
+            }
+            Text(this.activeSearchHitSnippet())
+              .fontSize(AppTypography.CAPTION_M)
+              .fontColor($r('sys.color.font_secondary'))
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+              .layoutWeight(1)
+          }
+          .width('100%')
+          .alignItems(VerticalAlign.Center)
+          .padding({ top: 2, bottom: 2 })
+        }
+      }
+      .width('100%')
+      .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
+      .padding({ left: 12, right: 10, top: 6, bottom: 6 })
+      .backgroundColor(materialCardSurfaceColor(this.materialEnabled))
+      .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THICK : undefined)
+      .border({ width: 0.5, color: materialCardBorderColor(this.materialEnabled) })
+      .borderRadius(16)
+      .shadow({ radius: 12, color: '#1F000000', offsetY: 4 })
+    }
+    .width('100%')
+    .alignItems(HorizontalAlign.Center)
+    .padding({
+      top: this.topPadding + 6,
+      left: this.mainHorizontalMargin(),
+      right: this.mainHorizontalMargin()
+    })
+    .hitTestBehavior(HitTestMode.Transparent)
+    .zIndex(2)
+    .transition(AppMotion.fadeTransition(AppMotion.MICRO_DURATION))
+  }
+
   build() {
     Row() {
-      List({ scroller: this.scroller }) {
-        Repeat<ArticleSectionRow>(this.sectionRows)
-          .each((item: RepeatItem<ArticleSectionRow>) => {
-            ListItem() {
-              this.sectionView(item.item)
-            }
-            .width('100%')
-            .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
-            .padding({
-              left: this.mainHorizontalMargin(),
-              right: this.mainHorizontalMargin(),
-              bottom: item.item.bottomGap
+      Stack({ alignContent: Alignment.Top }) {
+        List({ scroller: this.scroller }) {
+          Repeat<ArticleSectionRow>(this.sectionRows)
+            .each((item: RepeatItem<ArticleSectionRow>) => {
+              ListItem() {
+                this.sectionView(item.item)
+              }
+              .width('100%')
+              .constraintSize({ maxWidth: READING_CONTENT_MAX_WIDTH })
+              .padding({
+                left: this.mainHorizontalMargin(),
+                right: this.mainHorizontalMargin(),
+                bottom: item.item.bottomGap
+              })
             })
-          })
-          .key((section: ArticleSectionRow) => section.key)
-          .virtualScroll({ reusable: false })
+            .key((section: ArticleSectionRow) => section.key)
+            .virtualScroll({ reusable: false })
+        }
+        .width('100%')
+        .height('100%')
+        .alignListItem(ListItemAlign.Center)
+        .cachedCount(6)
+        .contentStartOffset(this.topPadding + (this.searchBarOpen ? 68 : 0))
+        .contentEndOffset(48)
+        .backgroundColor($r('sys.color.background_secondary'))
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .scrollBar(BarState.Off)
+        .onAreaChange((_oldArea: Area, newArea: Area) => {
+          const height = Number(newArea.height);
+          if (Number.isFinite(height) && height > 0) {
+            this.viewportHeight = height;
+            this.hasLaidOutCurrentDoc = true;
+            this.onContentLaidOut();
+            this.tryFlushPendingRouteAnchor();
+            this.publishReadingProgress();
+          }
+        })
+        .onScrollIndex((start: number, end: number, _center: number) => {
+          this.visibleStartIndex = start;
+          this.visibleEndIndex = end;
+          this.visibleSectionIndex = start;
+          this.publishReadingProgress();
+        })
+        .onDidScroll((_scrollOffset: number, _scrollState: ScrollState) => {
+          this.publishReadingProgress();
+          this.onScrollDidScroll();
+        })
+        .onScrollStart(() => {
+          this.onScrollStart();
+        })
+        .onScrollStop(() => {
+          this.publishReadingProgress();
+          this.onScrollStop();
+        })
+        .bindSheet(
+          this.sheetMode !== ArticleSheetMode.NONE,
+          this.activeSheetBuilder(),
+          this.activeSheetOptions()
+        )
+
+        if (this.searchBarOpen) {
+          this.articleSearchBar()
+        }
       }
       .layoutWeight(1)
       .height('100%')
-      .alignListItem(ListItemAlign.Center)
-      .cachedCount(6)
-      .contentStartOffset(this.topPadding)
-      .contentEndOffset(48)
-      .backgroundColor($r('sys.color.background_secondary'))
-      .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
-      .scrollBar(BarState.Off)
-      .onAreaChange((_oldArea: Area, newArea: Area) => {
-        const height = Number(newArea.height);
-        if (Number.isFinite(height) && height > 0) {
-          this.viewportHeight = height;
-          this.onContentLaidOut();
-          this.publishReadingProgress();
-        }
-      })
-      .onScrollIndex((start: number, end: number, _center: number) => {
-        this.visibleStartIndex = start;
-        this.visibleEndIndex = end;
-        this.publishReadingProgress();
-      })
-      .onDidScroll((_scrollOffset: number, _scrollState: ScrollState) => {
-        this.publishReadingProgress();
-        this.onScrollDidScroll();
-      })
-      .onScrollStart(() => {
-        this.onScrollStart();
-      })
-      .onScrollStop(() => {
-        this.publishReadingProgress();
-        this.onScrollStop();
-      })
-      .bindSheet(this.footnoteSheetVisible, this.footnoteSheetBuilder(), this.footnoteSheetOptions())
 
       if (this.sidePanelVisible()) {
         this.researchSidePanelBuilder()

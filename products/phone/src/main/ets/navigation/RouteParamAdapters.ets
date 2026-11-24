@@ -5,6 +5,7 @@ import {
   LibraryCollectionMode,
   LibraryContentRef
 } from 'library';
+import { normalizeArticleAnchor } from 'article';
 import {
   ExploreCollectionRouteParams,
   LibraryCollectionRouteParams,
@@ -63,6 +64,19 @@ export function parseArticleRouteContent(
   } catch (_error) {
     return undefined;
   }
+}
+
+export function parseArticleRouteAnchor(
+  param: Object | null | undefined
+): string {
+  if (param === undefined || param === null || typeof param !== 'object') {
+    return '';
+  }
+  const candidate = param as ScpArticleRouteParams;
+  if (typeof candidate.anchor !== 'string') {
+    return '';
+  }
+  return normalizeArticleAnchor(candidate.anchor);
 }
 
 /**
