@@ -1,14 +1,15 @@
 import 'models.dart';
 
 class SeedData {
-  static const _sourceRepository = 'https://github.com/Yni-Viar/scp-unity-assets';
+  static const _sourceRepository =
+      'https://github.com/Yni-Viar/scp-unity-assets';
   static const _sourceCommit = '7fda38944f51db7ee3aeb4d9e5ca821263153da5';
   static const _assetsRepository = 'https://github.com/Yni-Viar/scp-assets';
   static const _assetsCommit = '1265487d1978b60398ab71f366bc5a1ba4ce1d0d';
   static const _ccBySa30 = 'CC BY-SA 3.0';
   static const _representationNotice = '社区创作的视觉重建，不代表 SCP 官方形象或实体复原。';
-  static const _bundledRuntimeNotice = '上游自包含 GLB 已随 Flutter Android 包体内置；查看器负责触控旋转、缩放和复位。';
-  static const _remoteRuntimeNotice = '按需下载上游自包含 GLB；下载后校验大小与 SHA-256，并可在本机删除。';
+  static const _bundledRuntimeNotice = '已针对移动端精简并内置：定格观察姿态、压缩贴图并移除冗余动画。';
+  static const _remoteRuntimeNotice = '下载并校验上游原始 GLB 文件。查看器自动适配取景比例，源文件保持不变。';
 
   static final fallbackCatalog = <CatalogEntry>[
     const CatalogEntry(
@@ -86,125 +87,274 @@ class SeedData {
     ExploreEntry(id: 'scp-131', title: 'SCP-131', summary: '友善眼状实体的经典档案。'),
   ];
 
-  static final archiveAssets = <ArchiveAsset>[
-    _bundled(
-      assetId: 'scp-106-upstream-bundled-v1',
+  static final archiveAssets = List<ArchiveAsset>.unmodifiable([
+    ArchiveAsset(
+      assetId: 'scp-106-mobile-v1',
       contentId: 'scp-106',
       resourcePath: 'assets/models/scp-106.glb',
-      rawUrl: _unityRawUrl('Scp106', 'Scp106'),
-      version: '1.0.0-upstream-bundled',
-      byteLength: 34872408,
-      sha256: '04dbfc8ced0e10ec3be39fb1f9a8bfc87282543ba16c80b9afa5c27edb4bec17',
+      source: ArchiveAssetSource.bundled,
+      delivery: ArchiveAssetDelivery.bundled,
+      version: '1.0.0-mobile-pose',
+      byteLength: 8662380,
+      sha256:
+          'b4141e5b4ca03cce7da388a28d0d18d25a8dbb9d88545e79028ebd965fd0d23b',
+      license: _ccBySa30,
       attribution: 'Aruspice（模型/贴图）、Shakles（绑定/动画）、PixelPuffin（概念设计）',
       contentAttribution: '条目来源：SCP Wiki / SCP-106',
       sourceLabel: 'Yni-Viar/scp-unity-assets · Rigged-Ready/Scp106',
       sourceUrl: _unitySourceUrl('Scp106', 'Scp106'),
+      downloadUrl: '',
       contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-106',
       description: '腐蚀性实体的视觉重建档案。警示：仅呈现外观；不模拟腐蚀性接触、口袋空间或收容失效。',
       objectClass: 'KETER',
+      notice: '$_representationNotice 仅呈现外观；不模拟腐蚀性接触、口袋空间或收容失效。',
+      modificationNote: _bundledRuntimeNotice,
       estimatedTriangleCount: 16404,
+      renderTargetMaxPx: 768,
       initialScale: 1.05,
     ),
-    _bundled(
-      assetId: 'scp-049-upstream-bundled-v1',
+    ArchiveAsset(
+      assetId: 'scp-049-mobile-v2',
       contentId: 'scp-049',
       resourcePath: 'assets/models/scp-049.glb',
-      rawUrl: _unityRawUrl('Scp049', 'Scp049'),
-      version: '1.0.0-upstream-bundled',
-      byteLength: 29540408,
-      sha256: 'bc4cfba3e787b66a60801a93c9a539897830073ce9f612fe492b6e1e509bdf99',
+      source: ArchiveAssetSource.bundled,
+      delivery: ArchiveAssetDelivery.bundled,
+      version: '2.1.0-mobile-pose',
+      byteLength: 6947368,
+      sha256:
+          '7d9fd347d38e67ed2e3b8465b62d27674cacfeeb15c4e31b953fef19e97ef962',
+      license: _ccBySa30,
       attribution: 'Aruspice（模型/贴图）、Shakles（绑定/动画）、PixelPuffin（概念设计）',
       contentAttribution: '条目作者：Gabriel Jade；重写：djkaktus、Gabriel Jade',
       sourceLabel: 'Yni-Viar/scp-unity-assets · Rigged-Ready/Scp049',
       sourceUrl: _unitySourceUrl('Scp049', 'Scp049'),
+      downloadUrl: '',
       contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-049',
       description: '瘟疫医生形象的视觉重建档案。警示：仅呈现外观；不模拟接触感染或异常行为。',
       objectClass: 'EUCLID',
+      notice: '$_representationNotice 仅呈现外观；不模拟接触感染或异常行为。',
+      modificationNote: _bundledRuntimeNotice,
       estimatedTriangleCount: 12720,
+      renderTargetMaxPx: 768,
       initialScale: 1.09,
     ),
-    _bundled(
-      assetId: 'scp-173-upstream-bundled-v1',
+    ArchiveAsset(
+      assetId: 'scp-173-mobile-v2',
       contentId: 'scp-173',
       resourcePath: 'assets/models/scp-173.glb',
-      rawUrl: _unityRawUrl('Scp173', 'Scp173'),
-      version: '1.0.0-upstream-bundled',
-      byteLength: 17013568,
-      sha256: '01f6c483d9120ef549eae88e76ca7e66690d6aeef758132aed95665e4f33bc99',
+      source: ArchiveAssetSource.bundled,
+      delivery: ArchiveAssetDelivery.bundled,
+      version: '2.1.0-mobile-pose',
+      byteLength: 3969944,
+      sha256:
+          'f89aefe1f7cf116dc8c12e9c5d554278217afe4744e49e14ab52840ca91f256d',
+      license: _ccBySa30,
       attribution: 'Aruspice（模型/贴图）、Shakles（绑定/动画）、PixelPuffin（概念设计）',
       contentAttribution: '条目作者：Moto42',
       sourceLabel: 'Yni-Viar/scp-unity-assets · Rigged-Ready/Scp173',
       sourceUrl: _unitySourceUrl('Scp173', 'Scp173'),
+      downloadUrl: '',
       contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-173',
       description: '具备观测依赖特征的雕像视觉重建档案。警示：仅呈现静态模型；不模拟眨眼、视线中断或移动事件。',
       objectClass: 'EUCLID',
+      notice:
+          '$_representationNotice 本资源标记为 NEO/版本 2 重制；仅呈现静态模型，不模拟眨眼、视线中断或移动事件。分发前请复核旧版雕塑形象的许可指南。',
+      modificationNote: _bundledRuntimeNotice,
       estimatedTriangleCount: 16104,
+      renderTargetMaxPx: 768,
       initialScale: 1.04,
     ),
-    _bundled(
-      assetId: 'scp-939-upstream-bundled-v1',
+    ArchiveAsset(
+      assetId: 'scp-939-mobile-v2',
       contentId: 'scp-939',
       resourcePath: 'assets/models/scp-939.glb',
-      rawUrl: _unityRawUrl('Scp939', 'Scp939'),
-      version: '1.0.0-upstream-bundled',
-      byteLength: 11557696,
-      sha256: 'a4aed436f38f941690f67b4ac1bfe2f505c4b375d533bd382f89754c3d27d1f0',
+      source: ArchiveAssetSource.bundled,
+      delivery: ArchiveAssetDelivery.bundled,
+      version: '2.1.0-mobile-pose',
+      byteLength: 3209604,
+      sha256:
+          'cd243a640bcba5379609957ebb94beea3c31c2bd8a6e7e8a53e605abe4a33767',
+      license: _ccBySa30,
       attribution: 'Apocryphos（模型）、Shadowscale（贴图）、Shakles（绑定/动画）',
       contentAttribution: '条目作者：Adam Smascher、EchoFourDelta',
       sourceLabel: 'Yni-Viar/scp-unity-assets · Rigged-Ready/Scp939',
       sourceUrl: _unitySourceUrl('Scp939', 'Scp939'),
+      downloadUrl: '',
       contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-939',
       description: '拟态掠食者的视觉重建档案。警示：仅呈现外观；不包含声音拟态、群体行为或感知效果。',
       objectClass: 'KETER',
+      notice: '$_representationNotice 仅呈现外观；不包含声音拟态、群体行为或感知效果。',
+      modificationNote: _bundledRuntimeNotice,
       estimatedTriangleCount: 10368,
+      renderTargetMaxPx: 768,
       initialScale: 1.32,
     ),
-    _remote('scp-131-orange-upstream-v1', 'scp-131', 12429448, '5e01d45bcb75bff4465f3b6418169919ea35ece79346e0e540d085b704a0a32a', 'Scp131', 'Scp131Orange', '友善眼状实体 SCP-131-A 的视觉重建档案。', 'SAFE', 4104, 10.8),
-    _remote('scp-3199-upstream-v1', 'scp-3199', 51054324, 'c83d9cf29b7282827c94924e1ccd6983c8c94a175b1e0df9a9d7a7e9a76800e1', 'Scp3199', 'Scp3199', '鸟类特征异常生物的视觉重建档案。', 'KETER', 16002, 1.03),
-    _remote('scp-650-upstream-v1', 'scp-650', 8180984, '62bf92f0cd131fc0f71268a264c79eb02b9387c360dc60fe88c89226c5620c44', 'Scp650', 'Scp650', '会改变观察位置的雕像视觉重建档案。', 'EUCLID', 8640, 1.19),
-    _remote(
-      'scp-079-cb-v1',
-      'scp-079',
-      2771372,
-      '6cd62bd301387cfbedaa848c93fbad06cab8c1730702816a94e88b34593a5e83',
-      'GFX/SCP-CB/EditedByYni/scp079/079',
-      'Scp079',
-      '早期自适应计算机实体的视觉重建档案。',
-      'EUCLID',
-      13228,
-      4.8,
-      assetsRepository: true,
+    ArchiveAsset(
+      assetId: 'scp-131-orange-mobile-v1',
+      contentId: 'scp-131',
+      resourcePath: '',
+      source: ArchiveAssetSource.remote,
+      delivery: ArchiveAssetDelivery.onDemand,
+      version: '1.0.0-upstream',
+      byteLength: 12429448,
+      sha256:
+          '5e01d45bcb75bff4465f3b6418169919ea35ece79346e0e540d085b704a0a32a',
+      license: _ccBySa30,
+      attribution: 'Aruspice（模型/贴图）、Shakles（绑定/动画）',
+      contentAttribution: '条目作者：Lt Masipag；SCP-131-A 橙色成员',
+      sourceLabel:
+          'Yni-Viar/scp-unity-assets · Rigged-Ready/Scp131/Scp131Orange',
+      sourceUrl: _unitySourceUrl('Scp131', 'Scp131Orange'),
+      downloadUrl: _unityRawUrl('Scp131', 'Scp131Orange'),
+      contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-131',
+      description: '友善眼状实体 SCP-131-A 的视觉重建档案。警示：仅呈现单体 A；不模拟双体协同行为。',
+      objectClass: 'SAFE',
+      notice: '$_representationNotice 仅呈现单体 A；不模拟双体协同行为。',
+      modificationNote: _remoteRuntimeNotice,
+      estimatedTriangleCount: 4104,
+      renderTargetMaxPx: 768,
+      initialScale: 10.8,
     ),
-    _remote(
-      'scp-178-cb-v1',
-      'scp-178',
-      2330788,
-      '9a2eb124b43470a8208c1235d52a528c9be1ced0c4c2fa509a06e57bbbc62f1e',
-      'GFX/SCP-CB/Characters/Scp178-1',
-      'Scp178-1',
-      'SCP-178 相关三维实体的视觉重建档案。',
-      'SAFE',
-      27958,
-      1.12,
-      assetsRepository: true,
+    ArchiveAsset(
+      assetId: 'scp-3199-mobile-v1',
+      contentId: 'scp-3199',
+      resourcePath: '',
+      source: ArchiveAssetSource.remote,
+      delivery: ArchiveAssetDelivery.onDemand,
+      version: '1.0.0-upstream',
+      byteLength: 51054324,
+      sha256:
+          'c83d9cf29b7282827c94924e1ccd6983c8c94a175b1e0df9a9d7a7e9a76800e1',
+      license: _ccBySa30,
+      attribution: 'Aruspice（模型/贴图）、Shakles（绑定/动画）',
+      contentAttribution: '条目来源：SCP Wiki / SCP-3199',
+      sourceLabel: 'Yni-Viar/scp-unity-assets · Rigged-Ready/Scp3199',
+      sourceUrl: _unitySourceUrl('Scp3199', 'Scp3199'),
+      downloadUrl: _unityRawUrl('Scp3199', 'Scp3199'),
+      contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-3199',
+      description: '鸟类特征异常生物的视觉重建档案。警示：仅呈现外观；不模拟繁殖、攻击或生物危害。',
+      objectClass: 'KETER',
+      notice: '$_representationNotice 仅呈现外观；不模拟繁殖、攻击或生物危害。',
+      modificationNote: _remoteRuntimeNotice,
+      estimatedTriangleCount: 16002,
+      renderTargetMaxPx: 768,
+      initialScale: 1.03,
     ),
-    _remote(
-      'scp-686-icard-v1',
-      'scp-686',
-      129020,
-      '2b90bc9eb186054dc8ed6200a1195b9444c526460ba4699baead9def1cb8f207',
-      'GFX/By_Pop_Pop_Icard/Items/Scp686',
-      'Scp686',
-      '感染性乳状液体容器的视觉重建档案。',
-      'SAFE',
-      2242,
-      8.8,
-      assetsRepository: true,
+    ArchiveAsset(
+      assetId: 'scp-650-mobile-v1',
+      contentId: 'scp-650',
+      resourcePath: '',
+      source: ArchiveAssetSource.remote,
+      delivery: ArchiveAssetDelivery.onDemand,
+      version: '1.0.0-upstream',
+      byteLength: 8180984,
+      sha256:
+          '62bf92f0cd131fc0f71268a264c79eb02b9387c360dc60fe88c89226c5620c44',
+      license: _ccBySa30,
+      attribution: 'Shadowscale（模型/贴图）',
+      contentAttribution: '条目作者：Dr Talson',
+      sourceLabel: 'Yni-Viar/scp-unity-assets · Rigged-Ready/Scp650',
+      sourceUrl: _unitySourceUrl('Scp650', 'Scp650'),
+      downloadUrl: _unityRawUrl('Scp650', 'Scp650'),
+      contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-650',
+      description: '会改变观察位置的雕像视觉重建档案。警示：仅呈现静态外观；不模拟视线外位移或惊吓事件。',
+      objectClass: 'EUCLID',
+      notice: '$_representationNotice 仅呈现静态外观；不模拟视线外位移或惊吓事件。',
+      modificationNote: _remoteRuntimeNotice,
+      estimatedTriangleCount: 8640,
+      renderTargetMaxPx: 768,
+      initialScale: 1.19,
     ),
-  ];
+    ArchiveAsset(
+      assetId: 'scp-079-cb-v1',
+      contentId: 'scp-079',
+      resourcePath: '',
+      source: ArchiveAssetSource.remote,
+      delivery: ArchiveAssetDelivery.onDemand,
+      version: '1.0.0-upstream',
+      byteLength: 2771372,
+      sha256:
+          '6cd62bd301387cfbedaa848c93fbad06cab8c1730702816a94e88b34593a5e83',
+      license: _ccBySa30,
+      attribution: 'Hakkla（模型/贴图）、Yni（重混）',
+      contentAttribution: '条目来源：SCP Wiki / SCP-079',
+      sourceLabel: 'Yni-Viar/scp-assets · GFX/SCP-CB/EditedByYni/scp079/079',
+      sourceUrl: _assetsSourceUrl(
+        'GFX/SCP-CB/EditedByYni/scp079/079/Scp079.glb',
+      ),
+      downloadUrl: _assetsRawUrl(
+        'GFX/SCP-CB/EditedByYni/scp079/079/Scp079.glb',
+      ),
+      contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-079',
+      description: '早期自适应计算机实体的视觉重建档案。警示：仅呈现硬件外观；不连接网络、不执行其异常智能行为。',
+      objectClass: 'EUCLID',
+      notice: '$_representationNotice 仅呈现硬件外观；不连接网络、不执行其异常智能行为。',
+      modificationNote: _remoteRuntimeNotice,
+      estimatedTriangleCount: 13228,
+      renderTargetMaxPx: 768,
+      initialScale: 4.8,
+    ),
+    ArchiveAsset(
+      assetId: 'scp-178-cb-v1',
+      contentId: 'scp-178',
+      resourcePath: '',
+      source: ArchiveAssetSource.remote,
+      delivery: ArchiveAssetDelivery.onDemand,
+      version: '1.0.0-upstream',
+      byteLength: 2330788,
+      sha256:
+          '9a2eb124b43470a8208c1235d52a528c9be1ced0c4c2fa509a06e57bbbc62f1e',
+      license: _ccBySa30,
+      attribution: 'Kenneth crooker（模型）',
+      contentAttribution: '条目来源：SCP Wiki / SCP-178',
+      sourceLabel: 'Yni-Viar/scp-assets · GFX/SCP-CB/Characters/Scp178-1',
+      sourceUrl: _assetsSourceUrl(
+        'GFX/SCP-CB/Characters/Scp178-1/Scp178-1.glb',
+      ),
+      downloadUrl: _assetsRawUrl('GFX/SCP-CB/Characters/Scp178-1/Scp178-1.glb'),
+      contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-178',
+      description: 'SCP-178 相关三维实体的视觉重建档案。警示：仅呈现模型；不模拟佩戴眼镜后的异常可见性或认知危害。',
+      objectClass: 'SAFE',
+      notice: '$_representationNotice 仅呈现模型；不模拟佩戴眼镜后的异常可见性或认知危害。',
+      modificationNote: _remoteRuntimeNotice,
+      estimatedTriangleCount: 27958,
+      renderTargetMaxPx: 768,
+      initialScale: 1.12,
+    ),
+    ArchiveAsset(
+      assetId: 'scp-686-icard-v1',
+      contentId: 'scp-686',
+      resourcePath: '',
+      source: ArchiveAssetSource.remote,
+      delivery: ArchiveAssetDelivery.onDemand,
+      version: '1.0.0-upstream',
+      byteLength: 129020,
+      sha256:
+          '2b90bc9eb186054dc8ed6200a1195b9444c526460ba4699baead9def1cb8f207',
+      license: _ccBySa30,
+      attribution: 'pop_pop_icard（模型）',
+      contentAttribution: '条目来源：SCP Wiki / SCP-686',
+      sourceLabel: 'Yni-Viar/scp-assets · GFX/By_Pop_Pop_Icard/Items/Scp686',
+      sourceUrl: _assetsSourceUrl(
+        'GFX/By_Pop_Pop_Icard/Items/Scp686/Scp686.glb',
+      ),
+      downloadUrl: _assetsRawUrl(
+        'GFX/By_Pop_Pop_Icard/Items/Scp686/Scp686.glb',
+      ),
+      contentSourceUrl: 'https://scp-wiki.wikidot.com/scp-686',
+      description: '感染性乳状液体容器的视觉重建档案。警示：仅呈现容器外观；不要接触或摄入内容物。',
+      objectClass: 'SAFE',
+      notice: '$_representationNotice 仅呈现容器外观；不要接触或摄入实体内容物，应用不模拟其感染效应。',
+      modificationNote: _remoteRuntimeNotice,
+      estimatedTriangleCount: 2242,
+      renderTargetMaxPx: 768,
+      initialScale: 8.8,
+    ),
+  ]);
 
-  static bool hasArchiveAsset(String itemId) =>
-      archiveAssets.any((asset) => asset.contentId.toLowerCase() == itemId.trim().toLowerCase());
+  static bool hasArchiveAsset(String itemId) => archiveAssets.any(
+    (asset) => asset.contentId.toLowerCase() == itemId.trim().toLowerCase(),
+  );
 
   static ArchiveAsset? archiveAssetFor(String itemId) {
     for (final asset in archiveAssets) {
@@ -215,100 +365,14 @@ class SeedData {
     return null;
   }
 
-  static ArchiveAsset _bundled({
-    required String assetId,
-    required String contentId,
-    required String resourcePath,
-    required String rawUrl,
-    required String version,
-    required int byteLength,
-    required String sha256,
-    required String attribution,
-    required String contentAttribution,
-    required String sourceLabel,
-    required String sourceUrl,
-    required String contentSourceUrl,
-    required String description,
-    required String objectClass,
-    required int estimatedTriangleCount,
-    required double initialScale,
-  }) => ArchiveAsset(
-    assetId: assetId,
-    contentId: contentId,
-    resourcePath: resourcePath,
-    source: ArchiveAssetSource.bundled,
-    delivery: ArchiveAssetDelivery.bundled,
-    version: version,
-    byteLength: byteLength,
-    sha256: sha256,
-    license: _ccBySa30,
-    attribution: attribution,
-    contentAttribution: contentAttribution,
-    sourceLabel: sourceLabel,
-    sourceUrl: sourceUrl,
-    downloadUrl: rawUrl,
-    contentSourceUrl: contentSourceUrl,
-    description: description,
-    objectClass: objectClass,
-    notice: '$_representationNotice $description',
-    modificationNote: _bundledRuntimeNotice,
-    estimatedTriangleCount: estimatedTriangleCount,
-    renderTargetMaxPx: 768,
-    initialScale: initialScale,
-  );
-
-  static ArchiveAsset _remote(
-    String assetId,
-    String contentId,
-    int byteLength,
-    String sha256,
-    String folder,
-    String fileName,
-    String description,
-    String objectClass,
-    int estimatedTriangleCount,
-    double initialScale, {
-    bool assetsRepository = false,
-  }) {
-    final path = '$folder/$fileName.glb';
-    final sourceUrl = assetsRepository ? _assetsSourceUrl(path) : _unitySourceUrl(folder, fileName);
-    final rawUrl = assetsRepository ? _assetsRawUrl(path) : _unityRawUrl(folder, fileName);
-    final sourceLabel = assetsRepository
-        ? 'Yni-Viar/scp-assets · $path'
-        : 'Yni-Viar/scp-unity-assets · Rigged-Ready/$folder/$fileName';
-    return ArchiveAsset(
-      assetId: assetId,
-      contentId: contentId,
-      resourcePath: '',
-      source: ArchiveAssetSource.remote,
-      delivery: ArchiveAssetDelivery.onDemand,
-      version: '1.0.0-upstream',
-      byteLength: byteLength,
-      sha256: sha256,
-      license: _ccBySa30,
-      attribution: '社区三维资源作者，详见来源仓库',
-      contentAttribution: '条目来源：SCP Wiki / ${contentId.toUpperCase()}',
-      sourceLabel: sourceLabel,
-      sourceUrl: sourceUrl,
-      downloadUrl: rawUrl,
-      contentSourceUrl: 'https://scp-wiki.wikidot.com/$contentId',
-      description: description,
-      objectClass: objectClass,
-      notice: '$_representationNotice $description',
-      modificationNote: _remoteRuntimeNotice,
-      estimatedTriangleCount: estimatedTriangleCount,
-      renderTargetMaxPx: 768,
-      initialScale: initialScale,
-    );
-  }
-
   static String _unitySourceUrl(String folder, String fileName) =>
       '$_sourceRepository/blob/$_sourceCommit/Rigged-Ready/$folder/$fileName.glb';
 
   static String _unityRawUrl(String folder, String fileName) =>
       'https://raw.githubusercontent.com/Yni-Viar/scp-unity-assets/$_sourceCommit/Rigged-Ready/$folder/$fileName.glb';
 
-  static String _assetsSourceUrl(String path) => '$_assetsRepository/blob/$_assetsCommit/$path';
+  static String _assetsSourceUrl(String path) =>
+      '$_assetsRepository/blob/$_assetsCommit/$path';
 
   static String _assetsRawUrl(String path) =>
       'https://raw.githubusercontent.com/Yni-Viar/scp-assets/$_assetsCommit/$path';
