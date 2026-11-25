@@ -1,7 +1,38 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val uploadKeyStore = providers.environmentVariable("ANOMICON_UPLOAD_KEYSTORE")
+val uploadStorePassword = providers.environmentVariable("ANOMICON_UPLOAD_STORE_PASSWORD")
+val uploadKeyAlias = providers.environmentVariable("ANOMICON_UPLOAD_KEY_ALIAS")
+val uploadKeyPassword = providers.environmentVariable("ANOMICON_UPLOAD_KEY_PASSWORD")
+
+val validateReleaseUploadSigning = tasks.register("validateReleaseUploadSigning") {
+    doLast {
+        val storePath = uploadKeyStore.orNull
+        if (storePath.isNullOrBlank() || uploadStorePassword.orNull.isNullOrBlank() ||
+            uploadKeyAlias.orNull.isNullOrBlank() || uploadKeyPassword.orNull.isNullOrBlank()
+        ) {
+            throw GradleException(
+                "Set ANOMICON_UPLOAD_KEYSTORE, ANOMICON_UPLOAD_STORE_PASSWORD, " +
+                    "ANOMICON_UPLOAD_KEY_ALIAS and ANOMICON_UPLOAD_KEY_PASSWORD to build an Android release."
+            )
+        }
+        val keyStore = File(storePath)
+        if (!keyStore.isAbsolute || !keyStore.isFile) {
+            throw GradleException("ANOMICON_UPLOAD_KEYSTORE must point to an existing absolute file path.")
+        }
+    }
+}
+
+tasks.configureEach {
+    if (name == "preReleaseBuild" || name == "validateSigningRelease") {
+        dependsOn(validateReleaseUploadSigning)
+    }
 }
 
 android {
@@ -26,10 +57,18 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        create("upload") {
+            storeFile = uploadKeyStore.orNull?.let(::File)
+            storePassword = uploadStorePassword.orNull
+            keyAlias = uploadKeyAlias.orNull
+            keyPassword = uploadKeyPassword.orNull
+        }
+    }
+
     buildTypes {
         release {
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.getByName("upload")
         }
     }
 }
