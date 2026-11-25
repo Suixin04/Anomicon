@@ -29,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import dev.chrisbanes.haze.*
+import com.suixin.anomicon.designsystem.archiveGlassEdge
 import io.github.sceneview.*
 import io.github.sceneview.math.Position
 import io.github.sceneview.node.ModelNode
@@ -79,14 +80,10 @@ fun StageProbe(
     val view = LocalView.current
     DisposableEffect(window, view, fullscreen) {
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        val insets = androidx.core.view.ViewCompat.getRootWindowInsets(view)
         val status = WindowInsetsCompat.Type.statusBars()
         val nav = WindowInsetsCompat.Type.navigationBars()
-        if (fullscreen) controller?.hide(status or nav)
-        onDispose { if (fullscreen) {
-            if (insets?.isVisible(status) != false) controller?.show(status)
-            if (insets?.isVisible(nav) != false) controller?.show(nav)
-        } }
+        if (fullscreen) controller?.hide(status or nav) else controller?.show(status or nav)
+        onDispose { if (fullscreen) controller?.show(status or nav) }
     }
     val back = { if (fullscreen) fullscreen = false else onBack() }
     BackHandler(onBack = back)
@@ -149,7 +146,8 @@ private fun StageControls(modifier: Modifier, surface: SceneView?, material: Boo
         }
     }
     val background = MaterialTheme.colorScheme.surface
-    Box(modifier.fillMaxWidth().height(56.dp).clip(RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp))) {
+    val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
+    Box(modifier.fillMaxWidth().height(56.dp).clip(shape).archiveGlassEdge(blur, shape)) {
         Box(Modifier.fillMaxSize().hazeSource(haze).background(background)) {
             frame?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
         }

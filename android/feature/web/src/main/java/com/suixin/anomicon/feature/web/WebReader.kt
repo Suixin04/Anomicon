@@ -5,11 +5,25 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ScrollState
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.draw.clip
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.suixin.anomicon.core.data.NativeData
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import com.suixin.anomicon.core.network.parseWikiPreview
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -42,7 +56,9 @@ fun WebReader(entry: String, onBack: () -> Unit, modifier: Modifier = Modifier) 
 @Composable
 internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier,
     loadOriginal: (WebView, String) -> Unit) {
-    val initial = remember(entry) { wikiSlug(entry) }
+    val fromShelf = entry.startsWith("offline:")
+    val initial = remember(entry) { wikiSlug(entry.removePrefix("offline:")) }
+    val data = NativeData.open(LocalContext.current)
     if (initial == null) {
         Column(modifier.padding(20.dp)) {
             Text("无法识别此 Wiki 条目")
@@ -71,43 +87,106 @@ internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier
         else onBack()
     }
     BackHandler(onBack = back)
-    key(slug) {
+    val offline = fromShelf && history.size == 1
+    key(slug, offline) {
+        val session = rememberReaderSession(slug, data)
+        val favorites by data.favorites.collectAsStateWithLifecycle(initialValue = null)
+        val favorite = favorites?.any { it.id == slug }
         var attempt by remember { mutableIntStateOf(0) }
         var document by remember { mutableStateOf<WikiPreview?>(null) }
         var message by remember { mutableStateOf<String?>(null) }
-        val position = rememberLazyListState()
+
         LaunchedEffect(slug, attempt) {
             message = null
             try {
-                document = wiki.preview(slug)
+                document = if (offline) offlinePreview(data, slug) else wiki.preview(slug)
             } catch (error: IOException) {
-                message = "当前无法读取正文，请检查网络后重试。"
+                message = if (offline) "无法读取离线副本。" else "当前无法读取正文，请检查网络后重试。"
             }
         }
-        Column(modifier.fillMaxSize()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                TextButton(onClick = back) { Text("返回") }
-                Text(document?.title ?: slug.uppercase(), Modifier.weight(1f), maxLines = 1,
-                    overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                TextButton(onClick = {
-                    original = !original
-                }) { Text(if (original) "原生视图" else "原版网页") }
+        val assets = LocalContext.current.assets
+        val catalogTitle by produceState<String?>(null, slug) {
+            val match = Regex("scp-(cn-)?([0-9]+)").matchEntire(slug) ?: return@produceState
+            val number = match.groupValues[2].toIntOrNull() ?: return@produceState
+            val base = if (match.groupValues[1].isEmpty()) "scp-series" else "scp-series-cn"
+            val series = number / 1000 + 1
+            val name = (if (series == 1) base else "$base-$series") + ".html"
+            value = withContext(Dispatchers.IO) {
+                if (name !in assets.list("discovery").orEmpty()) null else assets.open("discovery/$name").bufferedReader().use {
+                    com.suixin.anomicon.core.network.seriesSubtitle(it.readText(), slug)
+                }
             }
-            HorizontalDivider()
+        }
+        val title = document?.title ?: slug.uppercase()
+        SideEffect { if (session != null) session.title = title }
+        val scroll = rememberScrollState()
+        val offsets = remember(document) { mutableMapOf<Int, Int>() }
+        val scope = rememberCoroutineScope()
+        val profile by data.research.collectAsStateWithLifecycle(initialValue = null)
+        var tool by remember { mutableStateOf<ReaderTool?>(null) }
+        Column(modifier.fillMaxSize()) {
+            ReaderToolbar(slug, catalogTitle ?: title, favorite, original, offline, back,
+                toggleFavorite = { session?.favorite(favorite != true) }, toggleMode = { original = !original })
+            if (!original && document != null) {
+                ReaderStatus(session?.position?.progress ?: 0f, profile, onTool = { tool = it })
+            }
+            tool?.let { selected ->
+                ReaderTools(selected, document, onClose = { tool = null }, onSelect = { index ->
+                    tool = null
+                    offsets[index]?.let { offset -> scope.launch { scroll.scrollTo(offset) } }
+                })
+            }
             when {
-                original -> OriginalPage(slug, { webView = it }, openNative, loadOriginal)
+                session == null -> CircularProgressIndicator()
+                original -> OriginalPage(session, slug, { webView = it }, openNative, loadOriginal)
                 message != null -> Column(Modifier.padding(20.dp)) {
                     Text(message!!)
                     TextButton(onClick = { attempt++ }) { Text("重新加载") }
                 }
                 document == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                else -> LazyColumn(state = position, contentPadding = PaddingValues(horizontal = 20.dp, vertical = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    items(document!!.blocks) { block -> NativeBlock(block) { next ->
-                        if (next != slug) openNative(next)
-                    } }
-                }
+                else -> NativePage(document!!, session, scroll, offsets, !offline, { original = true }, openNative)
+
             }
+        }
+    }
+}
+
+private suspend fun offlinePreview(data: NativeData, slug: String): WikiPreview = withContext(Dispatchers.IO) {
+    val row = data.library.shelf().first().firstOrNull { it.id == slug } ?: throw IOException("离线副本不存在")
+    val images = data.library.images(slug).associate { it.url.replaceFirst("http://", "https://") to data.offlineFile(it.path).toURI().toString() }
+    val html = data.offlineFile(row.htmlPath).readText()
+    val preview = parseWikiPreview("<main id='page-content'>$html</main>", slug)
+    preview.copy(title = row.title, blocks = preview.blocks.mapNotNull { block ->
+        if (block is PreviewBlock.Image) images[block.url]?.let { block.copy(url = it) } else block
+    })
+}
+
+@Composable
+private fun NativePage(document: WikiPreview, session: ReaderSession, scroll: ScrollState,
+    offsets: MutableMap<Int, Int>, online: Boolean, onOriginal: () -> Unit, open: (String) -> Unit) {
+    val density = LocalDensity.current.density
+    TrackReading(session)
+    LaunchedEffect(session, scroll) {
+        val range = snapshotFlow { scroll.maxValue }.first { it != Int.MAX_VALUE }
+        scroll.scrollTo(session.position.restore(range, density))
+        snapshotFlow { scroll.value }.drop(1).collect { y ->
+            session.interact()
+            session.move(ReaderPosition.at(y, scroll.maxValue, density))
+        }
+    }
+    Column(Modifier.fillMaxSize().pointerInput(session) {
+        awaitPointerEventScope { while (true) { awaitPointerEvent(PointerEventPass.Initial); session.interact() } }
+    }.verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        ReaderArticleInfo(document, online, onOriginal)
+        document.blocks.forEachIndexed { index, block ->
+            Box(Modifier.fillMaxWidth().onGloballyPositioned { offsets[index] = it.positionInParent().y.toInt() }) {
+                NativeBlock(block) { if (it != document.slug) open(it) }
+            }
+        }
+        if (document.credits.isNotBlank()) {
+            var expanded by remember { mutableStateOf(false) }
+            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起署名与许可" else "查看署名与许可") }
+            if (expanded) Text(document.credits, style = MaterialTheme.typography.bodySmall)
         }
     }
 }
@@ -124,8 +203,13 @@ private fun NativeBlock(block: PreviewBlock, open: (String) -> Unit) {
                     TextLinkStyles(style = SpanStyle(color = color)), { open(link.slug) }), link.start, link.end) }
             }, style = MaterialTheme.typography.bodyLarge)
         }
-        is PreviewBlock.Image -> AsyncImage(model = block.url, contentDescription = block.description.ifBlank { null },
-            contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth())
+        is PreviewBlock.Image -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            AsyncImage(model = block.url, contentDescription = block.description.ifBlank { null },
+            contentScale = ContentScale.FillWidth, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).clip(MaterialTheme.shapes.large))
+            if (block.caption.isNotBlank()) Text(block.caption, Modifier.fillMaxWidth().padding(top = 6.dp),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall)
+        }
         is PreviewBlock.Table -> Surface(shape = MaterialTheme.shapes.medium,
             color = MaterialTheme.colorScheme.surfaceContainerLow) {
             Column(Modifier.horizontalScroll(rememberScrollState()).padding(8.dp)) {
@@ -140,11 +224,25 @@ private fun NativeBlock(block: PreviewBlock, open: (String) -> Unit) {
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun OriginalPage(slug: String, bind: (WebView?) -> Unit, openNative: (String) -> Unit,
+private fun OriginalPage(session: ReaderSession, slug: String, bind: (WebView?) -> Unit, openNative: (String) -> Unit,
     loadOriginal: (WebView, String) -> Unit) {
+    var readable by remember { mutableStateOf(false) }
+    if (readable) TrackReading(session)
     AndroidView(
         modifier = Modifier.fillMaxSize(),
-        factory = { context -> WebView(context).apply {
+        factory = { context -> object : WebView(context) {
+            val range get() = (computeVerticalScrollRange() - height).coerceAtLeast(0)
+        }.apply {
+            val page = this
+            var touched = false
+            setOnTouchListener { _, event ->
+                if (event.actionMasked == android.view.MotionEvent.ACTION_DOWN) touched = true
+                session.interact()
+                false
+            }
+            setOnScrollChangeListener { _, _, y, _, _ ->
+                if (readable && touched) session.move(ReaderPosition.at(y.coerceAtLeast(0), range, resources.displayMetrics.density))
+            }
             settings.javaScriptEnabled = true // Wikidot collapsibles and tabs require script execution.
             settings.allowFileAccess = false
             settings.allowContentAccess = false
@@ -164,13 +262,24 @@ private fun OriginalPage(slug: String, bind: (WebView?) -> Unit, openNative: (St
                     }
                     return uri.scheme != "https"
                 }
+                override fun onPageStarted(view: WebView, url: String, icon: android.graphics.Bitmap?) {
+                    readable = false
+                    touched = false
+                }
                 override fun onPageFinished(view: WebView, url: String) {
+                    if (wikiSlug(url) != slug || readable) return
+                    view.evaluateJavascript("!!document.querySelector('#page-content') && !document.querySelector('#page-content #edit-page-form')") { hasBody ->
+                        if (hasBody == "true" && view.isAttachedToWindow) {
+                            page.scrollTo(0, session.position.restore(page.range, page.resources.displayMetrics.density))
+                            readable = true
+                        }
+                    }
                     view.evaluateJavascript("""(function(){document.querySelectorAll('#page-content table').forEach(function(t){if(t.parentElement.dataset.anomiconScroll)return;var w=document.createElement('div');w.dataset.anomiconScroll='1';w.style.cssText='max-width:100%;overflow-x:auto';t.parentNode.insertBefore(w,t);w.appendChild(t)})})();""", null)
                 }
             }
             bind(this)
             loadOriginal(this, WIKI_BASE + slug)
         } },
-        onRelease = { view -> bind(null); view.stopLoading(); view.destroy() },
+        onRelease = { view -> bind(null); view.setOnScrollChangeListener(null); view.stopLoading(); view.destroy() },
     )
 }

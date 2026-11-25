@@ -2,6 +2,8 @@ package com.suixin.anomicon
 
 import android.app.Application
 import android.os.Bundle
+import androidx.activity.SystemBarStyle
+import android.graphics.Color
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -29,7 +31,13 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        setContent { ArchiveApp(model) }
+        setContent {
+            ArchiveApp(model) { dark ->
+                val style = if (dark) SystemBarStyle.dark(Color.TRANSPARENT)
+                    else SystemBarStyle.light(Color.TRANSPARENT, Color.BLACK)
+                enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+            }
+        }
     }
 }
 
@@ -49,6 +57,11 @@ internal class ShellViewModel @Inject constructor(@ApplicationContext context: C
     val bootstrap = migration.asStateFlow()
     val tab = saved.getStateFlow("tab", Tab.Explore)
     val detail = saved.getStateFlow<Detail?>("detail", null)
+    val entry = saved.getStateFlow("entry", "")
+    fun openEntry(slug: String) {
+        saved["entry"] = slug
+        open(Detail.Web)
+    }
     init { migrate() }
     fun migrate() {
         migration.value = Bootstrap.Loading

@@ -44,6 +44,10 @@ val checkUpload by tasks.registering {
 }
 tasks.matching { it.name == "preReleaseBuild" }.configureEach { dependsOn(checkUpload) }
 dependencies {
+    implementation(project(":feature:discovery"))
+    implementation(project(":feature:foundation"))
+    implementation(project(":feature:stories"))
+    implementation(project(":feature:terminal"))
     implementation(project(":core:designsystem"))
     implementation(project(":core:data"))
     implementation(project(":feature:web"))

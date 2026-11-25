@@ -35,6 +35,17 @@ class WikiRepositoryTest {
         assertEquals(preview, Json.decodeFromString<WikiPreview>(Json.encodeToString(preview)))
     }
 
+    @Test fun foldedCreditsDoNotDisplaceTheArticlePhoto() {
+        val page = parseWikiPreview("""<div id='page-content'>
+            <div class='info-container'><div class='collapsible-block-content'><p>作者示例</p><div class='translation_block'>其他语言</div><div class='u-faq'>常见问题</div></div></div>
+            <div class='scp-image-block'><img src='/photo.jpg'><div class='scp-image-caption'>图注</div></div>
+            <div class='licensebox'><div class='collapsible-block-content'>CC BY-SA</div></div></div>""", "scp-049")
+        assertEquals("图注", (page.blocks.single() as PreviewBlock.Image).caption)
+        assertEquals("作者示例\n\nCC BY-SA", page.credits)
+        assertNull(page.rating)
+        assertEquals("疫医", seriesSubtitle("<div id='page-content'><ul><li><a href='/scp-049'>SCP-049</a> - 疫医</li></ul></div>", "scp-049"))
+    }
+
     @Test fun repositoryRequestsNormalizedPageAndPropagatesHttpFailure() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(html))

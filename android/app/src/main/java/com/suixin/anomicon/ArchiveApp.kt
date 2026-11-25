@@ -7,16 +7,15 @@ import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.*
-import androidx.compose.foundation.interaction.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
 import androidx.compose.material3.adaptive.layout.*
 import androidx.compose.material3.adaptive.navigation.rememberListDetailPaneScaffoldNavigator
-import androidx.compose.material3.adaptive.navigationsuite.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.*
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -29,7 +28,7 @@ import com.suixin.anomicon.designsystem.*
 import com.suixin.anomicon.feature.web.WebReader
 
 @Composable
-internal fun ArchiveApp(model: ShellViewModel) {
+internal fun ArchiveApp(model: ShellViewModel, applyBarStyle: (Boolean) -> Unit) {
     val bootstrap by model.bootstrap.collectAsStateWithLifecycle()
     val tab by model.tab.collectAsStateWithLifecycle()
     val detail by model.detail.collectAsStateWithLifecycle()
@@ -39,6 +38,8 @@ internal fun ArchiveApp(model: ShellViewModel) {
         ThemeMode.DARK -> true
         else -> isSystemInDarkTheme()
     }
+    LaunchedEffect(dark) { applyBarStyle(dark) }
+    val tabState = rememberSaveableStateHolder()
     ArchiveTheme(dark) {
         Surface(Modifier.fillMaxSize()) {
             if (settings == null) {
@@ -57,45 +58,47 @@ internal fun ArchiveApp(model: ShellViewModel) {
                 BackHandler(enabled = detail != null && !fullStage) { model.open(null) }
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val split = maxWidth >= 840.dp
-                    NavigationSuiteScaffold(
-                        layoutType = when {
-                            fullStage -> NavigationSuiteType.None
-                            split -> NavigationSuiteType.NavigationRail
-                            else -> NavigationSuiteType.NavigationBar
-                        },
-                        navigationSuiteItems = {
-                            Tab.entries.forEach { destination -> item(
-                                selected = tab == destination,
-                                onClick = { model.select(destination) },
-                                icon = { TabIcon(destination) }, label = { Text(destination.title) },
-                            ) }
-                        },
-                    ) {
-                        SharedTransitionLayout(Modifier.fillMaxSize().then(if (fullStage) Modifier else Modifier.safeDrawingPadding())) {
-                            if (split) {
-                                val navigator = rememberListDetailPaneScaffoldNavigator<Nothing>()
-                                ListDetailPaneScaffold(directive = navigator.scaffoldDirective.copy(maxHorizontalPartitions = 2),
-                                    value = ThreePaneScaffoldValue(
-                                        primary = PaneAdaptedValue.Expanded,
-                                        secondary = if (fullStage) PaneAdaptedValue.Hidden else PaneAdaptedValue.Expanded,
-                                        tertiary = PaneAdaptedValue.Hidden,
-                                    ),
-                                    listPane = { TabPage(tab, settings, model::open) },
-                                    detailPane = {
-                                        if (detail != null) DetailPage(detail!!, settings, model, onFullscreenChange = { fullStage = it })
-                                        else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("选择档案查看详情", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                                    },
-                                )
-                            } else {
-                                AnimatedContent(targetState = detail, label = "档案详情") { target ->
-                                    if (target == null) {
-                                        TabPage(tab, settings, model::open) { key -> Modifier.sharedElement(rememberSharedContentState(key), this@AnimatedContent) }
+                    var secondary by remember(tab) { mutableStateOf(false) }
+                    val reportSecondary = remember(tab) { { active: Boolean -> secondary = active } }
+                    Row(Modifier.fillMaxSize()) {
+                        if (split && !fullStage) NavigationRail {
+                            Tab.entries.forEach { item -> NavigationRailItem(
+                                selected = item == tab, onClick = { model.select(item) },
+                                icon = { TabIcon(item, item == tab) }, label = { Text(item.title) }) }
+                        }
+                        val showBar = !split && detail == null && !secondary
+                        ArchiveFloatingNav(Modifier.fillMaxSize(), visible = showBar, material = settings.immersiveMaterial,
+                            bar = { PhoneTabs(tab, model::select, settings.haptics) }, content = {
+                            val insets = if (fullStage) Modifier else Modifier.windowInsetsPadding(
+                                WindowInsets.safeDrawing.only(if (showBar) WindowInsetsSides.Top + WindowInsetsSides.Horizontal else WindowInsetsSides.Horizontal + WindowInsetsSides.Vertical))
+                            CompositionLocalProvider(LocalArchiveSecondary provides reportSecondary) {
+                                Box(Modifier.fillMaxSize().then(insets)) {
+                                    if (split) {
+                                        val navigator = rememberListDetailPaneScaffoldNavigator<Nothing>()
+                                        ListDetailPaneScaffold(directive = navigator.scaffoldDirective.copy(maxHorizontalPartitions = 2),
+                                            value = ThreePaneScaffoldValue(
+                                                primary = PaneAdaptedValue.Expanded,
+                                                secondary = if (fullStage) PaneAdaptedValue.Hidden else PaneAdaptedValue.Expanded,
+                                                tertiary = PaneAdaptedValue.Hidden,
+                                            ),
+                                            listPane = { tabState.SaveableStateProvider(tab.name) { TabPage(tab, model) } },
+                                            detailPane = {
+                                                if (detail != null) DetailPage(detail!!, settings, model, onFullscreenChange = { fullStage = it })
+                                                else Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("选择档案查看详情", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                            },
+                                        )
                                     } else {
-                                        DetailPage(target, settings, model, Modifier.sharedElement(rememberSharedContentState(target), this@AnimatedContent), onFullscreenChange = { fullStage = it })
+                                        AnimatedContent(targetState = detail, label = "档案详情") { target ->
+                                            if (target == null) {
+                                                tabState.SaveableStateProvider(tab.name) { TabPage(tab, model) }
+                                            } else {
+                                                DetailPage(target, settings, model, Modifier, onFullscreenChange = { fullStage = it })
+                                            }
+                                        }
                                     }
                                 }
                             }
-                        }
+                        })
                     }
                 }
             }
@@ -104,62 +107,43 @@ internal fun ArchiveApp(model: ShellViewModel) {
 }
 
 @Composable
-private fun TabPage(tab: Tab, settings: AppSettings, open: (Detail) -> Unit, shared: @Composable (Detail) -> Modifier = { Modifier }) {
-    val destinations = when (tab) {
-        Tab.Explore -> listOf(Detail.Web)
-        Tab.Catalog -> listOf(Detail.Web, Detail.Scene)
-        Tab.Foundation, Tab.Stories -> emptyList()
-        Tab.Terminal -> listOf(Detail.Scene, Detail.Settings)
+private fun TabPage(tab: Tab, model: ShellViewModel) {
+    when (tab) {
+        Tab.Explore -> com.suixin.anomicon.discovery.DiscoveryTab(model::openEntry)
+        Tab.Catalog -> com.suixin.anomicon.discovery.CatalogTab(model::openEntry, onArchive = { model.open(Detail.Scene) })
+        Tab.Foundation -> com.suixin.anomicon.foundation.FoundationTab(model::openEntry)
+        Tab.Stories -> com.suixin.anomicon.stories.StoriesTab(model::openEntry)
+        Tab.Terminal -> com.suixin.anomicon.terminal.TerminalTab(model::openEntry,
+            onSettings = { model.open(Detail.Settings) }, onArchive = { model.open(Detail.Scene) })
     }
-    val intro = when (tab) {
-        Tab.Explore -> "今日推荐"
-        Tab.Catalog -> "主站译文 · Series I"
-        Tab.Foundation -> "基金会设定手册与 RAISA 资质考核"
-        Tab.Stories -> "故事索引与系列跟读"
-        Tab.Terminal -> "研究员资料库"
-    }
-    ArchiveOverlay(settings.immersiveMaterial, Modifier.fillMaxSize(), content = {
-        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = ArchiveSpacing.page), verticalArrangement = Arrangement.spacedBy(ArchiveSpacing.group)) {
-            Spacer(Modifier.height(76.dp))
-            Text(intro, style = MaterialTheme.typography.titleLarge)
-            destinations.forEach { dest ->
-                val feedback = LocalHapticFeedback.current
-                val interaction = remember { MutableInteractionSource() }
-                val pressed by interaction.collectIsPressedAsState()
-                val scale by animateFloatAsState(if (pressed) .975f else 1f, spring(), label = "按压反馈")
-                Surface(modifier = shared(dest).fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale },
-                    shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerLow) {
-                    Column(Modifier.clickable(interactionSource = interaction, indication = LocalIndication.current) {
-                        if (settings.haptics) feedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                        open(dest)
-                    }.padding(ArchiveSpacing.page)) {
-                        Text(if (dest == Detail.Web) "SCP-002" else dest.title, style = MaterialTheme.typography.titleMedium)
-                        if (dest == Detail.Web) Text("“生活”室 · 原版网页", style = MaterialTheme.typography.bodyMedium)
-                    }
-                }
-            }
-            Spacer(Modifier.height(ArchiveSpacing.page))
-        }
-    }, overlay = { material ->
-        Text(tab.title, material.fillMaxWidth().padding(horizontal = ArchiveSpacing.page, vertical = 14.dp), style = MaterialTheme.typography.headlineMedium)
-    })
 }
 
 @Composable
 private fun DetailPage(detail: Detail, settings: AppSettings, model: ShellViewModel, modifier: Modifier = Modifier, onFullscreenChange: (Boolean) -> Unit) {
     Box(modifier.fillMaxSize()) {
         when (detail) {
-            Detail.Web -> WebReader(entry = "scp-002", onBack = { model.open(null) })
+            Detail.Web -> WebReader(entry = model.entry.collectAsStateWithLifecycle().value, onBack = { model.open(null) })
             Detail.Scene -> StageProbe(onBack = { model.open(null) }, immersiveMaterial = settings.immersiveMaterial, onFullscreenChange = onFullscreenChange)
             Detail.Settings -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ArchiveSpacing.page), verticalArrangement = Arrangement.spacedBy(ArchiveSpacing.group)) {
-                TextButton(onClick = { model.open(null) }) { Text("返回") }
-                Text("设置", style = MaterialTheme.typography.headlineMedium)
-                Text("外观", style = MaterialTheme.typography.titleLarge)
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ThemeMode.entries.forEach { mode -> FilterChip(selected = settings.themeMode == mode, onClick = { model.theme(mode) }, label = { Text(when (mode) { ThemeMode.SYSTEM -> "跟随系统"; ThemeMode.LIGHT -> "浅色"; ThemeMode.DARK -> "深色" }) }) }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ArchiveAction("返回", { model.open(null) }) { BackChevron() }
+                    Text("设置", style = MaterialTheme.typography.headlineMedium)
                 }
-                SettingSwitch("沉浸材质", settings.immersiveMaterial, model::material)
-                SettingSwitch("触感反馈", settings.haptics, model::haptics)
+                Text("外观", style = MaterialTheme.typography.titleLarge)
+                ArchiveCard {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("主题", style = MaterialTheme.typography.titleMedium)
+                        ArchiveSegments(listOf("跟随系统", "浅色", "深色"), ThemeMode.entries.indexOf(settings.themeMode)) { model.theme(ThemeMode.entries[it]) }
+                    }
+                }
+                Text("交互", style = MaterialTheme.typography.titleLarge)
+                ArchiveCard {
+                    Column(Modifier.padding(horizontal = 18.dp)) {
+                        SettingSwitch("沉浸材质", settings.immersiveMaterial, model::material)
+                        HorizontalDivider(thickness = androidx.compose.ui.unit.Dp.Hairline, color = MaterialTheme.colorScheme.outlineVariant)
+                        SettingSwitch("触感反馈", settings.haptics, model::haptics)
+                    }
+                }
             }
         }
     }
@@ -167,21 +151,70 @@ private fun DetailPage(detail: Detail, settings: AppSettings, model: ShellViewMo
 
 @Composable
 private fun SettingSwitch(label: String, value: Boolean, change: (Boolean) -> Unit) {
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 56.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
         Text(label)
-        Switch(checked = value, onCheckedChange = change, modifier = Modifier.semantics { contentDescription = label })
+        Box(Modifier.semantics { contentDescription = label }) { ArchiveSwitch(value, change) }
     }
 }
 
 @Composable
-private fun TabIcon(tab: Tab) {
+private fun PhoneTabs(current: Tab, select: (Tab) -> Unit, feedback: Boolean) {
+    val haptic = LocalHapticFeedback.current
+    Row(Modifier.fillMaxWidth().height(58.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+        Tab.entries.forEach { tab ->
+            val selected = current == tab
+            val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+            val scale by animateFloatAsState(if (selected) 1.10f else 1f, spring(dampingRatio = .64f), label = "页签选中")
+            Column(Modifier.weight(1f).fillMaxHeight().selectable(selected, role = Role.Tab) {
+                if (!selected && feedback) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                select(tab)
+            }, verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                CompositionLocalProvider(LocalContentColor provides tint) {
+                    Box(Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) { TabIcon(tab, selected) }
+                    Text(tab.title, color = tint, style = MaterialTheme.typography.labelSmall)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun BackChevron() {
+    val color = LocalContentColor.current
+    Canvas(Modifier.size(20.dp)) {
+        val top = androidx.compose.ui.geometry.Offset(size.width * .62f, size.height * .18f)
+        val mid = androidx.compose.ui.geometry.Offset(size.width * .31f, size.height * .50f)
+        val bottom = top.copy(y = size.height * .82f)
+        drawLine(color, top, mid, 2.dp.toPx()); drawLine(color, mid, bottom, 2.dp.toPx())
+    }
+}
+
+@Composable
+private fun TabIcon(tab: Tab, selected: Boolean) {
     val color = LocalContentColor.current
     Canvas(Modifier.size(24.dp)) {
         val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.7.dp.toPx())
         val unit = size.width / 24f
         fun point(x: Int, y: Int) = androidx.compose.ui.geometry.Offset(x * unit, y * unit)
         fun line(x: Int, y: Int, x2: Int, y2: Int) = drawLine(color, point(x,y), point(x2,y2), stroke.width)
-        when (tab) {
+        if (selected) {
+            val contour = androidx.compose.ui.graphics.Path()
+            val points = when (tab) {
+                Tab.Foundation -> listOf(12 to 2, 21 to 6, 19 to 16, 12 to 22, 5 to 16, 3 to 6)
+                Tab.Stories -> listOf(5 to 2, 15 to 2, 21 to 8, 21 to 22, 5 to 22)
+                else -> emptyList()
+            }
+            points.forEachIndexed { i, (x,y) -> if(i==0) contour.moveTo(x*unit,y*unit) else contour.lineTo(x*unit,y*unit) }
+            if(points.isNotEmpty()) { contour.close(); drawPath(contour,color) }
+            val white = androidx.compose.ui.graphics.Color.White
+            fun detail(x:Int,y:Int,xx:Int,yy:Int) = drawLine(white,point(x,y),point(xx,yy),1.4f*unit)
+            when(tab) {
+                Tab.Explore -> { drawCircle(color,10*unit); detail(7,16,16,7); detail(16,7,13,14) }
+                Tab.Catalog -> { drawRoundRect(color,point(3,2),androidx.compose.ui.geometry.Size(18*unit,20*unit),androidx.compose.ui.geometry.CornerRadius(3*unit)); detail(8,5,8,19); detail(11,9,17,9) }
+                Tab.Foundation -> { drawCircle(white,2.6f*unit,point(12,11)); detail(12,12,12,16) }
+                Tab.Stories -> { detail(8,12,17,12); detail(8,16,17,16) }
+                Tab.Terminal -> { drawRoundRect(color,point(2,3),androidx.compose.ui.geometry.Size(20*unit,15*unit),androidx.compose.ui.geometry.CornerRadius(3*unit)); line(12,18,12,21); line(7,21,17,21); detail(5,14,18,14) }
+            }
+        } else when (tab) {
             Tab.Explore -> { drawCircle(color, 9 * unit, style = stroke); line(8,16,11,10); line(11,10,16,8); line(16,8,13,14); line(13,14,8,16) }
             Tab.Catalog -> { drawRoundRect(color, point(4,3), androidx.compose.ui.geometry.Size(16*unit,18*unit), androidx.compose.ui.geometry.CornerRadius(2*unit), style=stroke); line(8,3,8,21); line(11,9,17,9); line(11,13,16,13) }
             Tab.Foundation -> { line(12,2,20,6); line(20,6,19,15); line(19,15,12,21); line(12,21,5,15); line(5,15,4,6); line(4,6,12,2) }

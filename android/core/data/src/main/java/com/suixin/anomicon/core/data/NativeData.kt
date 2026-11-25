@@ -55,6 +55,70 @@ class NativeData private constructor(private val context: Context) {
     suspend fun setThemeMode(value: ThemeMode) { prefs.edit { it[Keys.theme] = value.name } }
     suspend fun setImmersiveMaterial(value: Boolean) { prefs.edit { it[Keys.material] = value } }
     suspend fun setHaptics(value: Boolean) { prefs.edit { it[Keys.haptics] = value } }
+    val favorites = readingEntries("favorites")
+    val history = readingEntries("history")
+    private fun readingEntries(collection: String) = library.items(collection).map { rows -> rows.map(::readEntry) }.flowOn(Dispatchers.Default)
+
+    private suspend fun prepend(collection: String, id: String, payload: String) {
+        val ordinal = (library.firstOrdinal(collection) ?: 0) - 1
+        library.putItems(listOf(LibraryItem(collection, id, ordinal, payload)))
+    }
+    suspend fun saveReading(id: String, title: String, offset: Int, progress: Float) = database.withTransaction {
+        val row = library.payload("history", id)?.let(::JSONObject) ?: JSONObject()
+        prepend("history", id, row.put("id", id).put("title", title).put("webPixelOffset", offset)
+            .put("progress", progress.toDouble()).put("lastReadAt", System.currentTimeMillis()).toString())
+    }
+    suspend fun setFavorite(id: String, title: String, favorite: Boolean) = database.withTransaction {
+        if (favorite) prepend("favorites", id, JSONObject().put("id", id).put("title", title).toString())
+        else library.remove("favorites", id)
+    }
+    suspend fun recordActivity(id: String, startedAt: Long, activeMs: Long) {
+        val key = java.util.UUID.randomUUID().toString()
+        val zone = java.util.TimeZone.getDefault().getOffset(startedAt) / 60000
+        val payload = JSONObject().put("id", id).put("startedAt", startedAt).put("endedAt", startedAt + activeMs)
+            .put("activeMs", activeMs).put("offsetMinutes", zone)
+        library.putItems(listOf(LibraryItem("activitySegments", key, 0, payload.toString())))
+    }
+    val assessmentResults = assessments.map { raw ->
+        val rows = JSONObject(raw)
+        rows.keys().asSequence().associateWith { key ->
+            val row = rows.getJSONObject(key)
+            AssessmentResult(row.getInt("bestScore"), !row.isNull("firstPassedAt"), row.getInt("attempts"))
+        }
+    }
+    suspend fun saveAssessment(examId: String, score: Int, passed: Boolean) {
+        prefs.edit { prefs ->
+            val rows = JSONObject(prefs[Keys.assessments] ?: "{}")
+            val row = rows.optJSONObject(examId) ?: JSONObject()
+            val now = System.currentTimeMillis()
+            if (passed && row.isNull("firstPassedAt")) row.put("firstPassedAt", now)
+            row.put("bestScore", maxOf(score, row.optInt("bestScore"))).put("lastScore", score)
+                .put("attempts", row.optInt("attempts") + 1).put("lastAttemptAt", now)
+            prefs[Keys.assessments] = rows.put(examId, row).toString()
+        }
+    }
+    val research = combine(library.items("activitySegments"), assessmentResults) { rows, exams ->
+        val bonus = assessmentRewards.entries.sumOf { (id, xp) -> if (exams[id]?.passed == true) xp else 0 }
+        researchProfile(rows.map(::readSegment), bonus)
+    }.flowOn(Dispatchers.Default)
+    val seriesProgress = library.items("seriesProgress").map { rows -> rows.map {
+        val row = JSONObject(it.payload)
+        SeriesProgress(it.id, row.getString("seriesTitle"), row.getString("entryId"), row.getString("entryTitle"))
+    } }
+    suspend fun saveSeriesProgress(seriesId: String, seriesTitle: String, entryId: String, entryTitle: String) = database.withTransaction {
+        prepend("seriesProgress", seriesId, JSONObject().put("seriesTitle", seriesTitle).put("entryId", entryId).put("entryTitle", entryTitle).toString())
+    }
+    val searchHistory = library.items("discovery.searchHistory").map { rows -> rows.map { it.payload } }
+    suspend fun saveSearch(query: String) = database.withTransaction {
+        val text = query.trim()
+        if (text.isNotEmpty()) {
+            prepend("discovery.searchHistory", text, text)
+            library.trim("discovery.searchHistory", 10)
+        }
+    }
+    suspend fun clearSearchHistory() = library.trim("discovery.searchHistory", 0)
+    suspend fun dismissStarter() { prefs.edit { it[Keys.starter] = true } }
+
     fun offlineFile(relativePath: String) = File(offlineRoot, relativePath)
     suspend fun cachedFile(logicalKey: String, extension: String): File? {
         val entry = library.cache("${digest(logicalKey)}.$extension") ?: return null

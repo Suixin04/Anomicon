@@ -5,3 +5,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "Anomicon"
 include(":app", ":core:designsystem", ":core:data", ":core:network", ":feature:web", ":feature:archive3d")
+include(":feature:discovery", ":feature:foundation", ":feature:stories", ":feature:terminal")

@@ -23,6 +23,14 @@ interface LibraryDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putArticle(article: OfflineArticle)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putImages(images: List<OfflineImage>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun putCache(entries: List<CacheFile>)
+    @Query("SELECT MIN(ordinal) FROM LibraryItem WHERE collection = :collection")
+    suspend fun firstOrdinal(collection: String): Int?
+    @Query("SELECT payload FROM LibraryItem WHERE collection = :collection AND id = :id")
+    suspend fun payload(collection: String, id: String): String?
+    @Query("DELETE FROM LibraryItem WHERE collection = :collection AND id = :id")
+    suspend fun remove(collection: String, id: String)
+    @Query("DELETE FROM LibraryItem WHERE collection = :collection AND id IN (SELECT id FROM LibraryItem WHERE collection = :collection ORDER BY ordinal LIMIT -1 OFFSET :keep)")
+    suspend fun trim(collection: String, keep: Int)
     @Query("SELECT * FROM LibraryItem WHERE collection = :collection ORDER BY ordinal")
     fun items(collection: String): Flow<List<LibraryItem>>
     @Query("SELECT * FROM OfflineArticle ORDER BY savedAt DESC") fun shelf(): Flow<List<OfflineArticle>>

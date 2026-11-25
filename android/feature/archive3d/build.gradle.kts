@@ -18,6 +18,7 @@ android {
 kotlin { jvmToolchain(17) }
 
 dependencies {
+    implementation(project(":core:designsystem"))
     implementation(platform(libs.compose.bom))
     implementation(libs.material)
     implementation("androidx.activity:activity-compose:1.11.0")

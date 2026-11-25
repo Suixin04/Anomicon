@@ -1,0 +1,143 @@
+package com.suixin.anomicon.foundation
+
+import com.suixin.anomicon.designsystem.*
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.suixin.anomicon.core.data.NativeData
+import kotlinx.coroutines.launch
+
+@Composable
+fun FoundationTab(onEntry: (String) -> Unit) {
+    val context = LocalContext.current
+    val data = remember(context) { NativeData.open(context) }
+    val results by data.assessmentResults.collectAsState(initial = emptyMap())
+    var activeId by rememberSaveable { mutableStateOf<String?>(null) }
+    val active = exams.find { it.id == activeId }
+    ArchiveSecondaryPage(active != null)
+    BackHandler(active != null) { activeId = null }
+    if (active != null) {
+        ExamScreen(active, onEntry, { activeId = null }) { score -> data.saveAssessment(active.id, score, score >= active.cutoff) }
+        return
+    }
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text("基金会", Modifier.padding(top = 14.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
+        Heading("档案资质考核")
+        Caption("模拟 RAISA 编目工单与认知勘验，不阻断日常阅读，通过后签发工牌印章")
+        val passed = exams.filter { results[it.id]?.passed == true }
+        Panel {
+            BadgeHeader(R.drawable.cert_identity) {
+                Text("RAISA 终端核验 · 已签发 ${passed.size}/3 枚印章", fontWeight = FontWeight.Bold)
+                Caption("每科首次通过可获一次性阅历奖励 · 已累计 ${passed.sumOf { it.xp }} / 60 XP")
+            }
+        }
+        exams.forEach { exam ->
+            val record = results[exam.id]
+            Panel(Modifier.clickable { activeId = exam.id }) {
+                val badge = when (exam.id) {
+                    "cert-01" -> R.drawable.cert_lock
+                    "cert-02" -> R.drawable.cert_field
+                    else -> R.drawable.cert_eye
+                }
+                BadgeHeader(badge) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(exam.code, Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Caption("建议 · ${exam.rank}" + if (exam.id == "cert-03") "  含透视勘验" else "")
+                    }
+                    Text(exam.title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                }
+                Caption(exam.subtitle)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (record?.passed == true) "已签章 · ${record.score}/5" else "首次通过 +${exam.xp} XP", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                        Caption("印章：${exam.seal}")
+                    }
+                    Button(onClick = { activeId = exam.id }) { Text(if (record?.passed == true) "再次演练" else "开始核验") }
+                }
+            }
+        }
+        Heading("基金会手册")
+        manuals.take(1).forEach { ManualCard(it, Modifier.fillMaxWidth(), onEntry) }
+        manuals.drop(1).chunked(2).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { ManualCard(it, Modifier.weight(1f), onEntry) } }
+        }
+        Spacer(Modifier.height(LocalArchiveBottomInset.current + 16.dp))
+    }
+}
+
+@Composable private fun BadgeHeader(icon: Int, content: @Composable ColumnScope.() -> Unit) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
+            Icon(painterResource(icon), null, Modifier.size(23.dp), tint = MaterialTheme.colorScheme.primary)
+        }
+        Column(verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
+    }
+}
+
+@Composable private fun ManualCard(item: Manual, modifier: Modifier, open: (String) -> Unit) {
+    Panel(modifier.clickable { open(item.slug) }) { Caption(item.label); Text(item.title, fontWeight = FontWeight.Bold); Caption(item.subtitle) }
+}
+@Composable private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    ArchiveCard(modifier.fillMaxWidth()) {
+        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
+    }
+}
+@Composable private fun Heading(text: String) = Text(text, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+@Composable private fun Caption(text: String) = Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+
+@Composable private fun ExamScreen(exam: Exam, open: (String) -> Unit, back: () -> Unit, save: suspend (Int) -> Unit) {
+    var answers by rememberSaveable(exam.id) { mutableStateOf(intArrayOf()) }
+    var index by rememberSaveable(exam.id) { mutableIntStateOf(0) }
+    var finished by rememberSaveable(exam.id) { mutableStateOf(false) }
+    var revealed by rememberSaveable(index) { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val question = exam.questions[index]
+    val scroll = key(index, finished) { rememberScrollState() }
+    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        TextButton(onClick = back) { Text("‹ 基金会") }
+        Caption(exam.code); Heading(exam.title)
+        if (finished) {
+            val score = exam.score(answers.toList())
+            Heading(if (score >= exam.cutoff) "核验通过 · ${exam.seal}" else "待复核")
+            Text("得分 $score / ${exam.questions.size}"); Text(if (score >= exam.cutoff) exam.success else exam.failure)
+            exam.questions.forEachIndexed { i, q ->
+                Panel { Text("${i + 1} · ${if (answers[i] == q.correct) "正确" else "需复习"} · ${q.label}"); Caption(q.explanation); TextButton(onClick = { open(q.reference) }) { Text(q.link) } }
+            }
+            Button(onClick = back) { Text("返回基金会") }
+        } else {
+            Caption("第 ${index + 1} / ${exam.questions.size} 题 · ${question.code}")
+            Panel { Heading(question.label); Text(question.case) }
+            if (question.secret.isNotEmpty()) {
+                TextButton(onClick = { revealed = !revealed }) { Text(if (revealed) "收起透视" else "反白透视") }; Caption(if (revealed) question.secret else question.hint)
+            }
+            Text(question.prompt, fontWeight = FontWeight.Bold)
+            question.choices.forEachIndexed { i, choice ->
+                OutlinedButton(onClick = { answers = answers.take(index).toIntArray() + i }, modifier = Modifier.fillMaxWidth()) {
+                    Text((if (answers.getOrNull(index) == i) "● " else "○ ") + choice, modifier = Modifier.fillMaxWidth())
+                }
+            }
+            Button(enabled = answers.size > index && !saving, onClick = {
+                if (index < exam.questions.lastIndex) index++ else {
+                    saving = true
+                    scope.launch { save(exam.score(answers.toList())); finished = true; saving = false }
+                }
+            }) { Text(if (index == exam.questions.lastIndex) "提交核验" else "下一题") }
+        }
+        Spacer(Modifier.height(88.dp))
+    }
+}

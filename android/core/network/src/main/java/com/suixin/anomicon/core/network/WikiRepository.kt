@@ -36,7 +36,9 @@ fun wikiSlug(input: String): String? {
 }
 
 @Serializable
-data class WikiPreview(val slug: String, val title: String, val blocks: List<PreviewBlock>)
+data class WikiPreview(val slug: String, val title: String, val blocks: List<PreviewBlock>,
+    val tags: List<String> = emptyList(), val rating: String? = null, val objectClass: String? = null,
+    val hasInteractiveContent: Boolean = false, val credits: String = "")
 
 @Serializable
 data class WikiLink(val start: Int, val end: Int, val slug: String)
@@ -45,7 +47,7 @@ data class WikiLink(val start: Int, val end: Int, val slug: String)
 sealed interface PreviewBlock {
     @Serializable data class Heading(val text: String) : PreviewBlock
     @Serializable data class Paragraph(val text: String, val links: List<WikiLink> = emptyList()) : PreviewBlock
-    @Serializable data class Image(val url: String, val description: String) : PreviewBlock
+    @Serializable data class Image(val url: String, val description: String, val caption: String = "") : PreviewBlock
     @Serializable data class Table(val rows: List<List<String>>) : PreviewBlock
 }
 
@@ -56,7 +58,25 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
     if (body.selectFirst(".error-block") != null && body.selectFirst("#edit-page-form") != null) {
         throw IOException("条目不存在")
     }
+    val tags = document.select(".page-tags a").map { it.text() }.filter { it.isNotBlank() && !it.startsWith("_") }.distinct()
+    val rating = document.selectFirst(".rate-points")?.text()?.let { Regex("[+−-]?\\s*\\d+").find(it)?.value?.replace(" ", "") }
+    val classes = listOf("Safe", "Euclid", "Keter", "Thaumiel", "Apollyon", "Archon", "Neutralized", "Explained", "Pending")
+    val objectClass = classes.firstOrNull { name -> tags.any { it.equals(name, true) } } ?: Regex(
+        "(?:项目等级|收容等级|Object Class)\\s*[:：]\\s*(${classes.joinToString("|")})", RegexOption.IGNORE_CASE
+    ).find(body.text())?.groupValues?.get(1)
+    val interactive = body.selectFirst("audio,video,iframe,object,embed,.collapsible-block,.yui-navset") != null
+    body.select(".translation_block,.u-faq").remove()
+    val credits = body.select(".licensebox .collapsible-block-content,.info-container .collapsible-block-content").map { it.text() }
+        .filter { it.isNotBlank() }.distinct().joinToString("\n\n")
+    body.select(".info-container,.licensebox").remove()
     body.select("script,style,noscript,.page-rate-widget-box,.creditRate,.page-tags,.printuser").remove()
+    val captions = body.select(".scp-image-block,figure").associate { frame ->
+        val image = frame.selectFirst("img")
+        val caption = frame.selectFirst(".scp-image-caption,figcaption")
+        val text = caption?.text().orEmpty()
+        caption?.remove()
+        image to text
+    }
     val blocks = mutableListOf<PreviewBlock>()
     fun visit(node: Element) {
         when (node.normalName()) {
@@ -69,7 +89,7 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
             }
             "img" -> {
                 val url = node.absUrl("src").toHttpUrlOrNull() ?: return
-                blocks += PreviewBlock.Image(url.newBuilder().scheme("https").build().toString(), node.attr("alt"))
+                blocks += PreviewBlock.Image(url.newBuilder().scheme("https").build().toString(), node.attr("alt"), captions[node].orEmpty())
             }
             "p", "li", "pre" -> {
                 node.select("img").forEach(::visit)
@@ -97,7 +117,14 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
     body.children().forEach(::visit)
     if (blocks.isEmpty()) throw IOException("此页暂无可预览正文，请查看原版网页")
     val title = document.getElementById("page-title")?.text()?.takeIf { it.isNotBlank() } ?: slug.uppercase(Locale.ROOT)
-    return WikiPreview(slug, title, blocks)
+    return WikiPreview(slug, title, blocks, tags, rating, objectClass, interactive, credits)
+}
+
+/** The series indexes retain the translated short name when the article heading contains only its number. */
+fun seriesSubtitle(html: String, slug: String): String? {
+    val link = Jsoup.parse(html).selectFirst("#page-content li a[href=/$slug]") ?: return null
+    return link.closest("li")?.text()?.substringAfter(link.text(), "")?.trimStart(' ', '-', '—', '：', ':')
+        ?.removeSuffix("[已锁]")?.trim()?.takeIf { it.isNotBlank() }
 }
 
 internal interface WikiService {
