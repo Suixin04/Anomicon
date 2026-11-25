@@ -49,10 +49,45 @@ final _number = RegExp(
   caseSensitive: false,
 );
 final _wikiUri = Uri.parse(wikiBaseUrl);
+const _directWikiHosts = {
+  'scp-wiki-cn.wikidot.com',
+  'www.scp-wiki-cn.wikidot.com',
+  'scp-wiki.wikidot.com',
+  'www.scp-wiki.wikidot.com',
+};
+final _directWikiSlug = RegExp(r'^[a-z0-9][a-z0-9._-]*$');
+final _directScpSlug = RegExp(
+  r'^scp-(?:(?:[a-z]{2,4}-)?\d+|[a-z0-9]*\d+[a-z0-9]*)(?:-[a-z0-9]+)*$',
+);
+
+ContentRef? _directWikiTarget(String text) {
+  final input = Uri.tryParse(text);
+  if (input == null) return null;
+  final uri = input.hasScheme ? input : Uri.tryParse('https://$text');
+  if (uri == null ||
+      (uri.scheme != 'https' && uri.scheme != 'http') ||
+      !_directWikiHosts.contains(uri.host) ||
+      uri.userInfo.isNotEmpty ||
+      uri.hasPort) {
+    return null;
+  }
+  final slug = uri.path
+      .replaceFirst(RegExp(r'^/+'), '')
+      .replaceFirst(RegExp(r'/+$'), '')
+      .toLowerCase();
+  if (!_directWikiSlug.hasMatch(slug)) return null;
+  final scp = _directScpSlug.hasMatch(slug);
+  return ContentRef.create(
+    scp ? ContentKind.scp : ContentKind.tale,
+    slug,
+    scp ? slug.toUpperCase() : slug,
+  );
+}
 
 ContentRef? directDiscoveryTarget(String query) {
-  final match = _number.firstMatch(query.trim());
-  if (match == null) return null;
+  final text = query.trim();
+  final match = _number.firstMatch(text);
+  if (match == null) return _directWikiTarget(text);
   final cn = match[1] != null;
   final number = match[2]!.padLeft(3, '0');
   if (cn && int.parse(number) > 4999) return null;
@@ -452,13 +487,15 @@ class DiscoveryHistory {
 
 List<ContentRef> discoveryMatches(Iterable<ContentRef> entries, String query) {
   final text = query.trim().toLowerCase();
+  final direct = directDiscoveryTarget(query);
   final matches = <String, ContentRef>{};
   for (final row in entries) {
-    if (row.id.contains(text) || row.title.toLowerCase().contains(text)) {
+    if (row.key == direct?.key ||
+        row.id.contains(text) ||
+        row.title.toLowerCase().contains(text)) {
       matches.putIfAbsent(row.key, () => row);
     }
   }
-  final direct = directDiscoveryTarget(query);
   return [
     if (direct != null) matches.remove(direct.key) ?? direct,
     ...matches.values,
