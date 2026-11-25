@@ -1,11 +1,14 @@
 part of 'anomicon_app.dart';
 
-class TerminalScreen extends StatelessWidget {
+class TerminalScreen extends StatefulWidget {
   const TerminalScreen({
     required this.library,
     required this.onOpenContent,
     required this.onToggleFavorite,
     required this.onOpenSettings,
+    this.foundationStore,
+    this.onOpenOffline,
+    this.onOpenArchiveGallery,
     super.key,
   });
 
@@ -13,16 +16,75 @@ class TerminalScreen extends StatelessWidget {
   final ValueChanged<ContentRef> onOpenContent;
   final ValueChanged<ContentRef> onToggleFavorite;
   final VoidCallback onOpenSettings;
+  final FoundationStore? foundationStore;
+  final VoidCallback? onOpenOffline;
+  final VoidCallback? onOpenArchiveGallery;
+
+  @override
+  State<TerminalScreen> createState() => _TerminalScreenState();
+}
+
+class _TerminalScreenState extends State<TerminalScreen> {
+  Timer? _midnight;
+  late final AppLifecycleListener _lifecycle;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleMidnight();
+    _lifecycle = AppLifecycleListener(onResume: _refreshDay);
+  }
+
+  void _scheduleMidnight() {
+    final now = DateTime.now();
+    final next = DateTime(now.year, now.month, now.day + 1);
+    _midnight?.cancel();
+    _midnight = Timer(next.difference(now), _refreshDay);
+  }
+
+  void _refreshDay() {
+    _scheduleMidnight();
+    setState(() {});
+  }
+
+  @override
+  void dispose() {
+    _midnight?.cancel();
+    _lifecycle.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final progress = deriveResearchProgress(library.activitySegments);
-    final resumeEntry = library.history
-        .where((item) => item.scrollOffset > 0)
-        .firstOrNull;
-    final resumeKey = resumeEntry?.content.key;
-    final recentEntries = library.history
-        .where((item) => item.content.key != resumeKey)
+    final store = widget.foundationStore;
+    return store == null
+        ? _body(context)
+        : ListenableBuilder(
+            listenable: store,
+            builder: (context, _) => _body(context),
+          );
+  }
+
+  Widget _body(BuildContext context) {
+    final now = DateTime.now();
+    final colors = Theme.of(context).colorScheme;
+    final progress = deriveResearchProgress(
+      widget.library.activitySegments,
+      now: now.millisecondsSinceEpoch,
+      assessmentXp: widget.foundationStore?.bonusXp ?? 0,
+    );
+    final seen = <String>{};
+    final history = widget.library.history
+        .where((entry) => seen.add(entry.content.key))
+        .toList();
+    final resumable = history
+        .where(
+          (item) => item.scrollOffset > 0 && readingProgressPercent(item) < 1,
+        )
+        .toList();
+    final resumeEntry = resumable.firstOrNull;
+    final recentEntries = history
+        .where((item) => item.content.key != resumeEntry?.content.key)
         .take(30)
         .toList();
     return PageCanvas(
@@ -34,7 +96,7 @@ class TerminalScreen extends StatelessWidget {
               trailing: GlassIconButton(
                 icon: Icons.settings_rounded,
                 label: '设置',
-                onPressed: onOpenSettings,
+                onPressed: widget.onOpenSettings,
               ),
             ),
           ),
@@ -43,8 +105,10 @@ class TerminalScreen extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(20, 14, 20, 28),
               child: ResearchProfileCard(
                 progress: progress,
-                favoriteCount: library.favorites.length,
-                historyCount: library.history.length,
+                favoriteCount: widget.library.favorites.length,
+                historyCount: history.length,
+                stamps: widget.foundationStore?.stamps.toList() ?? const [],
+                now: now,
               ),
             ),
           ),
@@ -58,16 +122,55 @@ class TerminalScreen extends StatelessWidget {
               ),
             ),
           ),
+          if (widget.onOpenOffline != null ||
+              widget.onOpenArchiveGallery != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 0),
+                child: Column(
+                  children: [
+                    if (widget.onOpenOffline != null)
+                      ListTile(
+                        leading: const Icon(Icons.offline_pin_outlined),
+                        title: const Text('离线书架'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: widget.onOpenOffline,
+                      ),
+                    if (widget.onOpenArchiveGallery != null)
+                      ListTile(
+                        leading: const Icon(Icons.view_in_ar_outlined),
+                        title: const Text('三维档案馆'),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: widget.onOpenArchiveGallery,
+                      ),
+                  ],
+                ),
+              ),
+            ),
           SliverToBoxAdapter(
             child: LibraryGroup(
               title: '继续阅读',
               icon: Icons.play_arrow_rounded,
-              count: resumeEntry == null ? 0 : 1,
+              count: resumable.length,
               child: resumeEntry == null
                   ? const EmptyCard(title: '暂无可继续的条目。')
-                  : ReadingHistoryRow(
-                      entry: resumeEntry,
-                      onTap: () => onOpenContent(resumeEntry.content),
+                  : Column(
+                      children: [
+                        ReadingHistoryRow(
+                          entry: resumeEntry,
+                          onTap: () =>
+                              widget.onOpenContent(resumeEntry.content),
+                        ),
+                        if (resumable.length > 1)
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: TextButton(
+                              onPressed: () =>
+                                  _openResumable(context, resumable),
+                              child: const Text('全部续读'),
+                            ),
+                          ),
+                      ],
                     ),
             ),
           ),
@@ -75,11 +178,11 @@ class TerminalScreen extends StatelessWidget {
             child: LibraryGroup(
               title: '收藏',
               icon: Icons.star_rounded,
-              count: library.favorites.length,
-              child: library.favorites.isEmpty
+              count: widget.library.favorites.length,
+              child: widget.library.favorites.isEmpty
                   ? const EmptyCard(title: '还没有收藏。')
                   : Column(
-                      children: library.favorites
+                      children: widget.library.favorites
                           .map(
                             (content) => Padding(
                               padding: const EdgeInsets.only(bottom: 10),
@@ -87,13 +190,14 @@ class TerminalScreen extends StatelessWidget {
                                 content: content,
                                 subtitle: content.id,
                                 trailing: IconButton(
-                                  onPressed: () => onToggleFavorite(content),
-                                  icon: const Icon(
+                                  onPressed: () =>
+                                      widget.onToggleFavorite(content),
+                                  icon: Icon(
                                     Icons.star_rounded,
-                                    color: _accent,
+                                    color: colors.primary,
                                   ),
                                 ),
-                                onTap: () => onOpenContent(content),
+                                onTap: () => widget.onOpenContent(content),
                               ),
                             ),
                           )
@@ -115,7 +219,8 @@ class TerminalScreen extends StatelessWidget {
                               padding: const EdgeInsets.only(bottom: 10),
                               child: ReadingHistoryRow(
                                 entry: entry,
-                                onTap: () => onOpenContent(entry.content),
+                                onTap: () =>
+                                    widget.onOpenContent(entry.content),
                               ),
                             ),
                           )
@@ -128,6 +233,33 @@ class TerminalScreen extends StatelessWidget {
       ),
     );
   }
+
+  void _openResumable(BuildContext context, List<ReadingHistoryEntry> entries) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            Text('全部续读', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 8),
+            for (final entry in entries)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: ReadingHistoryRow(
+                  entry: entry,
+                  onTap: () {
+                    Navigator.pop(context);
+                    widget.onOpenContent(entry.content);
+                  },
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class ResearchProfileCard extends StatelessWidget {
@@ -135,15 +267,27 @@ class ResearchProfileCard extends StatelessWidget {
     required this.progress,
     required this.favoriteCount,
     required this.historyCount,
+    required this.stamps,
+    required this.now,
     super.key,
   });
 
   final ResearchProgress progress;
   final int favoriteCount;
   final int historyCount;
+  final List<FoundationExam> stamps;
+  final DateTime now;
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final dayTotals = {
+      for (final day in progress.daily) dayKey(day.day): day.activeMs,
+    };
+    final days = List.generate(
+      7,
+      (index) => DateTime(now.year, now.month, now.day - 6 + index),
+    );
     return GlassCard(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -155,16 +299,16 @@ class ResearchProfileCard extends StatelessWidget {
                 width: 80,
                 height: 80,
                 decoration: BoxDecoration(
-                  color: _surfaceHigh,
+                  color: colors.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(24),
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: <Widget>[
-                    const Text(
+                    Text(
                       'LV',
                       style: TextStyle(
-                        color: _accent,
+                        color: colors.primary,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -183,10 +327,10 @@ class ResearchProfileCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    const Text(
+                    Text(
                       '档案阅历',
                       style: TextStyle(
-                        color: _muted,
+                        color: colors.onSurfaceVariant,
                         fontSize: 18,
                         fontWeight: FontWeight.w700,
                       ),
@@ -200,7 +344,10 @@ class ResearchProfileCard extends StatelessWidget {
                     ),
                     Text(
                       '累计 ${progress.experience} XP',
-                      style: const TextStyle(color: _muted, fontSize: 18),
+                      style: TextStyle(
+                        color: colors.onSurfaceVariant,
+                        fontSize: 18,
+                      ),
                     ),
                   ],
                 ),
@@ -215,8 +362,8 @@ class ResearchProfileCard extends StatelessWidget {
                 progress.levelExperienceTarget <= 0
                     ? '已达最高等级'
                     : '距 Lv.${progress.level + 1}',
-                style: const TextStyle(
-                  color: _muted,
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                 ),
@@ -225,8 +372,8 @@ class ResearchProfileCard extends StatelessWidget {
                 progress.levelExperienceTarget <= 0
                     ? '等级上限'
                     : '${progress.levelExperience} / ${progress.levelExperienceTarget} XP',
-                style: const TextStyle(
-                  color: _muted,
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
                   fontSize: 17,
                   fontWeight: FontWeight.w700,
                 ),
@@ -238,7 +385,7 @@ class ResearchProfileCard extends StatelessWidget {
             value: progress.levelProgressPercent,
             minHeight: 8,
             borderRadius: BorderRadius.circular(99),
-            backgroundColor: _surfaceHigh,
+            backgroundColor: colors.surfaceContainerHighest,
           ),
           const SizedBox(height: 26),
           GridView.count(
@@ -272,7 +419,45 @@ class ResearchProfileCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          const Divider(color: Color(0xFF3F4448)),
+          Text('今日计分阅读 ${formatDuration(progress.todayActiveMs)} / 180 分钟'),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              for (final day in days)
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2),
+                    child: Column(
+                      children: [
+                        LinearProgressIndicator(
+                          value:
+                              (dayTotals[dayKey(day)] ?? 0) /
+                              researchDailyCapMs,
+                          semanticsLabel:
+                              '${day.month}/${day.day} ${formatDuration(dayTotals[dayKey(day)] ?? 0)}',
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          '${day.month}/${day.day}',
+                          style: Theme.of(context).textTheme.labelSmall,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+            ],
+          ),
+          if (stamps.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            const Text('基金会印章'),
+            Wrap(
+              spacing: 6,
+              children: [
+                for (final exam in stamps) Chip(label: Text(exam.stamp)),
+              ],
+            ),
+          ],
+          const Divider(),
           const SizedBox(height: 12),
           const HintRow(
             icon: Icons.access_time_filled_rounded,
@@ -300,16 +485,17 @@ class ResearchStatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _surfaceHigh,
+        color: colors.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(icon, color: Colors.white70, size: 26),
+          Icon(icon, color: colors.onSurfaceVariant, size: 26),
           const SizedBox(height: 8),
           FittedBox(
             fit: BoxFit.scaleDown,
@@ -325,7 +511,7 @@ class ResearchStatTile extends StatelessWidget {
             alignment: Alignment.centerLeft,
             child: Text(
               label,
-              style: const TextStyle(color: _muted, fontSize: 15),
+              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 15),
             ),
           ),
         ],
@@ -350,6 +536,7 @@ class LibraryGroup extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 26, 20, 0),
       child: Column(
@@ -361,10 +548,10 @@ class LibraryGroup extends StatelessWidget {
                 width: 52,
                 height: 52,
                 decoration: BoxDecoration(
-                  color: _surfaceLow,
+                  color: colors.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(16),
                 ),
-                child: Icon(icon, color: _accent, size: 30),
+                child: Icon(icon, color: colors.primary, size: 30),
               ),
               const SizedBox(width: 14),
               Text(
@@ -381,13 +568,13 @@ class LibraryGroup extends StatelessWidget {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: _surfaceLow,
+                  color: colors.surfaceContainerLow,
                   borderRadius: BorderRadius.circular(99),
                 ),
                 child: Text(
                   '$count',
-                  style: const TextStyle(
-                    color: _muted,
+                  style: TextStyle(
+                    color: colors.onSurfaceVariant,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -414,6 +601,7 @@ class ReadingHistoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     final progress = readingProgressPercent(entry);
     return GlassCard(
       padding: EdgeInsets.zero,
@@ -439,8 +627,8 @@ class ReadingHistoryRow extends StatelessWidget {
                   ),
                   Text(
                     progress > 0 ? '${(progress * 100).round()}%' : '开始阅读',
-                    style: const TextStyle(
-                      color: _accent,
+                    style: TextStyle(
+                      color: colors.primary,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -451,12 +639,12 @@ class ReadingHistoryRow extends StatelessWidget {
                 value: progress,
                 minHeight: 4,
                 borderRadius: BorderRadius.circular(99),
-                backgroundColor: _surfaceHigh,
+                backgroundColor: colors.surfaceContainerHighest,
               ),
               const SizedBox(height: 8),
               Text(
                 '${formatDuration(entry.activeMs)} · ${formatLastReadAt(entry.lastReadAt)}',
-                style: const TextStyle(color: _muted),
+                style: TextStyle(color: colors.onSurfaceVariant),
               ),
             ],
           ),
@@ -482,19 +670,27 @@ class ContentRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return GlassCard(
       padding: EdgeInsets.zero,
       child: ListTile(
         contentPadding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
-        leading: const Icon(Icons.info_outline_rounded, color: _muted),
+        leading: Icon(
+          Icons.info_outline_rounded,
+          color: colors.onSurfaceVariant,
+        ),
         title: Text(
           content.title,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Text(subtitle, style: const TextStyle(color: _muted)),
+        subtitle: Text(
+          subtitle,
+          style: TextStyle(color: colors.onSurfaceVariant),
+        ),
         trailing:
-            trailing ?? const Icon(Icons.chevron_right_rounded, color: _muted),
+            trailing ??
+            Icon(Icons.chevron_right_rounded, color: colors.onSurfaceVariant),
         onTap: onTap,
       ),
     );
