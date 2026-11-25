@@ -78,6 +78,29 @@ void main() {
     expect(store.loadSettings().themeMode, ThemeModePreference.system);
   });
 
+  testWidgets('system high contrast strengthens settings colors', (
+    tester,
+  ) async {
+    await openApp(tester, const Size(400, 800));
+    await openSettings(tester, NavigationBar);
+    final regular = settingsColors(tester);
+
+    tester.platformDispatcher.accessibilityFeaturesTestValue =
+        const FakeAccessibilityFeatures(highContrast: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpAndSettle();
+    final high = settingsColors(tester);
+    expect(high.brightness, regular.brightness);
+    expect(
+      contrast(high.primary, high.surface),
+      greaterThan(contrast(regular.primary, regular.surface)),
+    );
+    expect(
+      contrast(high.onSurfaceVariant, high.surfaceContainer),
+      greaterThanOrEqualTo(7),
+    );
+  });
+
   testWidgets('wide detail and compact back share the same route stack', (
     tester,
   ) async {
