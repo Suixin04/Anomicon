@@ -1,15 +1,20 @@
 import { ScpContentBlock } from '../../domain/ScpDocument';
+import { ImagePreviewGeometry, PreviewPoint, PreviewTransform } from './ImagePreviewGeometry';
 import {
   AppMotion,
   AppTypography,
   ExternalUrlPolicy,
   ImagePreviewActions,
-  isReduceMotionEnabled,
   pressAnimation,
   windowAvoidTop
 } from 'anomiconbasic';
 
-/** 单页图片：由原生 Scroll 负责双指缩放、边界约束与缩放后拖动。 */
+interface PreviewSourceSize {
+  width: number;
+  height: number;
+}
+
+/** 手势绑定在固定视口上，只对图片本身作缩放和平移。 */
 @ComponentV2
 struct ScpPreviewPage {
   @Require @Param url: string;
@@ -20,15 +25,16 @@ struct ScpPreviewPage {
   @Local private resolvedUrl: string = '';
   @Local private loading: boolean = true;
   @Local private failed: boolean = false;
-  @Local private zoomScale: number = 1;
+  @Local private photo: PreviewTransform = { scale: 1, x: 0, y: 0 };
   /** Ignore image callbacks from a page that has already been reused. */
   private loadEpoch: number = 0;
   /** Preserve the requested URL for the failure-state browser action. */
   private browserUrl: string = '';
 
-  private readonly imageScroller: Scroller = new Scroller();
-  private viewportWidth: number = 0;
-  private viewportHeight: number = 0;
+  private readonly geometry: ImagePreviewGeometry = new ImagePreviewGeometry();
+  private gestureStart: PreviewTransform = { scale: 1, x: 0, y: 0 };
+  private pinchStart: PreviewPoint = { x: 0, y: 0 };
+  private pinching: boolean = false;
 
   aboutToAppear(): void {
     this.loadImage();
@@ -41,6 +47,9 @@ struct ScpPreviewPage {
 
   private loadImage(): void {
     this.loadEpoch += 1;
+    this.pinching = false;
+    this.photo = { scale: 1, x: 0, y: 0 };
+    this.onZoomedChange(false);
     const requestedUrl = this.url.replace(/[\r\n\t]/g, '').trim();
     this.browserUrl = requestedUrl;
     try {
@@ -52,19 +61,18 @@ struct ScpPreviewPage {
       this.resolvedUrl = this.actions.resolveUrl(requestedUrl);
       this.loading = true;
       this.failed = false;
-      this.resetZoom();
     } catch (error) {
       this.resolvedUrl = '';
       this.loading = false;
       this.failed = true;
-      this.resetZoom();
       console.warn(`Reject preview image URL: ${error instanceof Error ? error.message : 'unknown error'}`);
     }
   }
 
-  private onImageComplete(epoch: number): () => void {
-    return (): void => {
-      if (epoch === this.loadEpoch) {
+  private onImageComplete(epoch: number): (size?: PreviewSourceSize) => void {
+    return (size?: PreviewSourceSize): void => {
+      if (epoch === this.loadEpoch && size && size.width > 0 && size.height > 0) {
+        this.geometry.imageRatio = size.width / size.height;
         this.loading = false;
       }
     };
@@ -81,40 +89,33 @@ struct ScpPreviewPage {
     };
   }
 
-  private resetZoom(animated: boolean = false): void {
-    this.imageScroller.scrollTo({
-      xOffset: 0,
-      yOffset: 0,
-      animation: animated,
-      canOverScroll: false
-    });
-    if (animated) {
-      this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
-        this.zoomScale = 1;
-      });
-    } else {
-      this.zoomScale = 1;
+  private pinchCenter(event: GestureEvent): PreviewPoint {
+    const fingers = event.fingerInfos;
+    if (fingers && fingers.length === 2) {
+      return { x: (fingers[0].localX + fingers[1].localX) / 2, y: (fingers[0].localY + fingers[1].localY) / 2 };
     }
-    this.onZoomedChange(false);
+    return { x: event.pinchCenterX, y: event.pinchCenterY };
   }
 
-  private toggleZoom(): void {
-    if (this.zoomScale > 1) {
-      this.resetZoom(true);
-      return;
-    }
-    const targetScale: number = 2.5;
-    // Native pinch zoom preserves its focal point automatically. Mirror that behavior for double tap.
-    this.imageScroller.scrollTo({
-      xOffset: this.viewportWidth * (targetScale - 1) / 2,
-      yOffset: this.viewportHeight * (targetScale - 1) / 2,
-      animation: !isReduceMotionEnabled(),
-      canOverScroll: true
-    });
-    this.getUIContext().animateTo(AppMotion.springAnimateParam(true), (): void => {
-      this.zoomScale = targetScale;
-    });
+  private beginPinch(event: GestureEvent): void {
+    this.pinching = true;
+    this.gestureStart = this.photo;
+    this.pinchStart = this.pinchCenter(event);
     this.onZoomedChange(true);
+  }
+
+  private endPinch(): void {
+    this.pinching = false;
+    this.onZoomedChange(this.photo.scale > 1);
+  }
+
+  private toggleZoom(point: PreviewPoint): void {
+    const target = this.photo.scale > 1 ? 1 : 2.5;
+    const next = this.geometry.zoom(this.photo, target, point, point);
+    this.onZoomedChange(target > 1);
+    this.getUIContext().animateTo(AppMotion.microAnimateParam(), (): void => {
+      this.photo = next;
+    });
   }
 
   build() {
@@ -139,51 +140,15 @@ struct ScpPreviewPage {
       .justifyContent(FlexAlign.Center)
     } else {
       Stack() {
-        Scroll(this.imageScroller) {
-          Image(this.resolvedUrl)
-            .width('100%')
-            .height('100%')
-            .objectFit(ImageFit.Contain)
-            .autoResize(true)
-            .onComplete(this.onImageComplete(this.loadEpoch))
-            .onError(this.onImageError(this.loadEpoch))
-        }
+        Image(this.resolvedUrl)
           .width('100%')
           .height('100%')
-          .scrollable(ScrollDirection.FREE)
-          .scrollBar(BarState.Off)
-          .onAreaChange((_oldArea: Area, newArea: Area) => {
-            const width = Number(newArea.width);
-            const height = Number(newArea.height);
-            this.viewportWidth = Number.isFinite(width) ? width : 0;
-            this.viewportHeight = Number.isFinite(height) ? height : 0;
-          })
-          .minZoomScale(1)
-          .maxZoomScale(4)
-          .zoomScale(this.zoomScale)
-          .enableBouncesZoom(false)
-          // 1× 时把单指横滑交给 Swiper；原生双指缩放识别器不受此开关影响。
-          .enableScrollInteraction(this.zoomScale > 1.001)
-          .onGestureRecognizerJudgeBegin((_event: BaseGestureEvent, current: GestureRecognizer) => {
-            if (this.zoomScale <= 1.001 && current.isBuiltIn() &&
-              current.getType() === GestureControl.GestureType.PAN_GESTURE) {
-              return GestureJudgeResult.REJECT;
-            }
-            return GestureJudgeResult.CONTINUE;
-          }, true)
-          .onDidZoom((scale: number) => {
-            if (!Number.isFinite(scale)) {
-              return;
-            }
-            this.zoomScale = Math.max(1, Math.min(4, scale));
-            this.onZoomedChange(this.zoomScale > 1.001);
-          })
-          .onZoomStart(() => {
-            this.onZoomedChange(true);
-          })
-          .onZoomStop(() => {
-            this.onZoomedChange(this.zoomScale > 1.001);
-          })
+          .objectFit(ImageFit.Contain)
+          .autoResize(true)
+          .scale({ x: this.photo.scale, y: this.photo.scale })
+          .translate({ x: this.photo.x, y: this.photo.y })
+          .onComplete(this.onImageComplete(this.loadEpoch))
+          .onError(this.onImageError(this.loadEpoch))
 
         if (this.loading) {
           Column() {
@@ -201,12 +166,43 @@ struct ScpPreviewPage {
       }
       .width('100%')
       .height('100%')
-      .parallelGesture(
-        TapGesture({ count: 2 })
-          .onAction(() => {
-            this.toggleZoom();
+      .clip(true)
+      .onSizeChange((_old: SizeOptions, size: SizeOptions) => {
+        this.geometry.width = Number(size.width);
+        this.geometry.height = Number(size.height);
+        this.photo = this.geometry.pan(this.photo.scale, this.photo.x, this.photo.y);
+      })
+      .gesture(GestureGroup(GestureMode.Parallel,
+        PinchGesture({ fingers: 2, distance: 2 })
+          .onActionStart((event: GestureEvent) => this.beginPinch(event))
+          .onActionUpdate((event: GestureEvent) => {
+            this.photo = this.geometry.zoom(this.gestureStart, this.gestureStart.scale * event.scale,
+              this.pinchStart, this.pinchCenter(event));
           })
-      )
+          .onActionEnd(() => this.endPinch())
+          .onActionCancel(() => this.endPinch()),
+        PanGesture({ fingers: 1, isFingerCountLimited: true, distance: 5 })
+          .tag('previewPan')
+          .onActionStart(() => { this.gestureStart = this.photo; })
+          .onActionUpdate((event: GestureEvent) => {
+            if (!this.pinching) {
+              this.photo = this.geometry.pan(this.photo.scale,
+                this.gestureStart.x + event.offsetX, this.gestureStart.y + event.offsetY);
+            }
+          }),
+        TapGesture({ count: 2, fingers: 1, isFingerCountLimited: true, distanceThreshold: 10 })
+          .onAction((event: GestureEvent) => {
+            if (event.tapLocation) {
+              this.toggleZoom({ x: event.tapLocation.x, y: event.tapLocation.y });
+            }
+          })
+      ))
+      .onGestureRecognizerJudgeBegin((_event: BaseGestureEvent, current: GestureRecognizer) => {
+        if (this.loading || (current.getTag() === 'previewPan' && (this.pinching || this.photo.scale === 1))) {
+          return GestureJudgeResult.REJECT;
+        }
+        return GestureJudgeResult.CONTINUE;
+      })
     }
   }
 }
@@ -321,7 +317,9 @@ export struct ScpImagePreviewer {
               actions: this.actions,
               onBrowserOpen: (url: string) => this.openInBrowser(url),
               onZoomedChange: (zoomed: boolean) => {
-                this.zoomed = zoomed;
+                if (row.item.key === this.images[this.currentIndex]?.key) {
+                  this.zoomed = zoomed;
+                }
               }
             })
           })

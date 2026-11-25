@@ -4,11 +4,11 @@ import {
   AppTypography,
   materialCardBorderColor,
   materialCardSurfaceColor,
-  recommendationFallbackBackgroundColor,
   SkeletonBlock,
   ViewModelLoadState
 } from 'anomiconbasic';
 import { ExploreHeroAnchor } from './ExploreViewContracts';
+import { ExploreRecommendationCover } from './ExploreRecommendationCover';
 
 const CARD_DISMISS_THRESHOLD: number = 88;
 const CARD_DISMISS_VELOCITY: number = 800;
@@ -24,22 +24,12 @@ class ExploreRecommendationRowState {
   readonly itemId: string;
   @Trace recommendation: ExploreRecommendation;
   @Trace depth: number;
-  @Trace imageFailed: boolean = false;
-  @Trace imageGeneration: number = 0;
-  @Trace loadedSource: string = '';
 
   constructor(recommendation: ExploreRecommendation, depth: number = 4) {
     this.itemId = recommendation.entry.itemId;
     this.recommendation = recommendation;
     this.depth = depth;
   }
-}
-
-interface ExploreRecommendationImageParams {
-  source: string;
-  row: ExploreRecommendationRowState;
-  rowGeneration: number;
-  lifecycleGeneration: number;
 }
 
 /**
@@ -188,10 +178,6 @@ struct ExploreRecommendationCard {
   @Require @Param materialEnabled: boolean;
   @Param horizontal: boolean = false;
 
-  private mounted: boolean = false;
-  /** Invalidates callbacks from a card node after it leaves the visible deck. */
-  private lifecycleGeneration: number = 0;
-
   private effectiveDepth(): number {
     if (this.row.depth === 0) {
       return 0;
@@ -237,6 +223,9 @@ struct ExploreRecommendationCard {
 
   private previewSource(): string {
     const preview = this.row.recommendation.preview;
+    if (preview.failed) {
+      return '';
+    }
     if (preview.path.length > 0) {
       // Adapters may already provide a file URI.  Prefix only plain paths so
       // Image never receives the malformed `file://file://…` variant.
@@ -245,149 +234,21 @@ struct ExploreRecommendationCard {
     return preview.url;
   }
 
-  private handleAppear(): void {
-    this.mounted = true;
-  }
-
-  private handleDisAppear(): void {
-    this.mounted = false;
-    this.lifecycleGeneration++;
-  }
-
-  private isCurrentImage(params: ExploreRecommendationImageParams): boolean {
-    return this.mounted && params.row === this.row &&
-      params.rowGeneration === this.row.imageGeneration &&
-      params.lifecycleGeneration === this.lifecycleGeneration &&
-      params.source === this.previewSource() &&
-      !this.row.recommendation.preview.failed;
-  }
-
-  private handleImageComplete(params: ExploreRecommendationImageParams): void {
-    if (!this.isCurrentImage(params)) {
-      return;
-    }
-    // Close the generation after the terminal callback so duplicate/late
-    // callbacks from the same Image node cannot flip the row back to failure.
-    this.row.imageGeneration++;
-    this.row.imageFailed = false;
-    this.row.loadedSource = params.source;
-  }
-
-  private handleImageError(params: ExploreRecommendationImageParams): void {
-    if (!this.isCurrentImage(params)) {
-      return;
-    }
-    // Keep the recommendation card usable even when the media host is
-    // unavailable. The deck-level "再换一批" action remains batch retry.
-    this.row.imageGeneration++;
-    this.row.imageFailed = true;
-    this.row.loadedSource = '';
-  }
-
-  private imageCompleteHandler(params: ExploreRecommendationImageParams): () => void {
-    const captured: ExploreRecommendationImageParams = {
-      source: params.source,
-      row: params.row,
-      rowGeneration: params.rowGeneration,
-      lifecycleGeneration: params.lifecycleGeneration
-    };
-    return (): void => this.handleImageComplete(captured);
-  }
-
-  private imageErrorHandler(
-    params: ExploreRecommendationImageParams
-  ): (error: ImageError) => void {
-    const captured: ExploreRecommendationImageParams = {
-      source: params.source,
-      row: params.row,
-      rowGeneration: params.rowGeneration,
-      lifecycleGeneration: params.lifecycleGeneration
-    };
-    return (_error: ImageError): void => this.handleImageError(captured);
-  }
-
   private cardHeight(): number {
     return this.horizontal ? HORIZONTAL_RECOMMENDATION_CARD_HEIGHT : RECOMMENDATION_CARD_HEIGHT;
   }
 
-  private imageWidth(): Length {
-    return this.horizontal ? '44%' : '100%';
-  }
-
-  private imageHeight(): Length {
-    return this.horizontal ? '100%' : 176;
-  }
-
-  @Builder
-  private previewImage($$: ExploreRecommendationImageParams) {
-    Stack({ alignContent: Alignment.Center }) {
-      Image($$.source)
-        .width('100%')
-        .height('100%')
-        .objectFit(ImageFit.Cover)
-        // Recommendation cards never display the source at full resolution;
-        // let ImageKit decode to the measured card bounds to reduce memory and
-        // texture upload cost while keeping the original URL/cache contract.
-        .autoResize(true)
-        // Snapshot the reactive builder proxy before delayed image events arrive.
-        .onComplete(this.imageCompleteHandler($$))
-        .onError(this.imageErrorHandler($$))
-
-      if (this.row.loadedSource !== $$.source) {
-        SkeletonBlock({ animated: this.row.depth === 0, radius: 0 })
-          .width('100%')
-          .height('100%')
-          .hitTestBehavior(HitTestMode.None)
-      }
-    }
-    .width(this.imageWidth())
-    .height(this.imageHeight())
-  }
-
-  private imageHasFailed(): boolean {
-    return this.row.imageFailed || this.row.recommendation.preview.failed;
-  }
-
-  @Builder
-  private imageFallback() {
-    Column({ space: 7 }) {
-      SymbolGlyph(this.imageHasFailed() ? $r('sys.symbol.exclamationmark_circle') :
-        $r('sys.symbol.doc_text'))
-        .fontSize(42)
-        .fontColor([$r('sys.color.icon_tertiary')])
-      Text(this.imageHasFailed() ? '图片暂时无法显示' : '暂无预览图')
-        .fontSize(AppTypography.CAPTION_L)
-        .fontColor($r('sys.color.font_secondary'))
-      if (this.imageHasFailed()) {
-        Text('档案正文仍可打开')
-          .fontSize(AppTypography.CAPTION_M)
-          .fontColor($r('sys.color.font_tertiary'))
-      }
-    }
-    .width(this.imageWidth())
-    .height(this.imageHeight())
-    .justifyContent(FlexAlign.Center)
-    .backgroundColor(recommendationFallbackBackgroundColor())
-    .border({
-      width: this.horizontal ? { right: 0.5 } : { bottom: 0.5 },
-      color: $r('sys.color.comp_divider')
-    })
-    .accessibilityText(this.imageHasFailed() ? '图片加载失败，档案正文仍可打开' : '暂无预览图')
-  }
-
   @Builder
   private mediaPane() {
-    if (this.previewSource().length > 0 && !this.row.imageFailed &&
-      !this.row.recommendation.preview.failed) {
-      this.previewImage({
-        source: this.previewSource(),
-        row: this.row,
-        rowGeneration: this.row.imageGeneration,
-        lifecycleGeneration: this.lifecycleGeneration
+    // A different URI gets a new Image and new load state. Titles and stack depth may change independently.
+    ForEach([this.previewSource()], (source: string) => {
+      ExploreRecommendationCover({
+        source: source,
+        previewFailed: this.row.recommendation.preview.failed,
+        animated: this.row.depth === 0,
+        horizontal: this.horizontal
       })
-    } else {
-      this.imageFallback()
-    }
+    }, (source: string) => source)
   }
 
   @Builder
@@ -474,8 +335,6 @@ struct ExploreRecommendationCard {
     .rotate({ angle: this.rotation() })
     .opacity(this.opacityOfDepth())
     .hitTestBehavior(HitTestMode.None)
-    .onAppear(() => this.handleAppear())
-    .onDisAppear(() => this.handleDisAppear())
   }
 
   build() {
@@ -609,17 +468,9 @@ export struct ExploreRecommendationDeck {
       if (row === undefined) {
         row = new ExploreRecommendationRowState(recommendation);
       } else {
-        const previousPreview = row.recommendation.preview;
-        const previewChanged = !this.samePreview(row.recommendation, recommendation);
-        const imageSourceChanged = previousPreview.path !== recommendation.preview.path ||
-          previousPreview.url !== recommendation.preview.url ||
-          previousPreview.failed !== recommendation.preview.failed;
-        if (previewChanged || row.recommendation.entry.title !== recommendation.entry.title) {
+        if (!this.samePreview(row.recommendation, recommendation) ||
+          row.recommendation.entry.title !== recommendation.entry.title) {
           row.recommendation = recommendation;
-          if (imageSourceChanged) {
-            row.imageGeneration++;
-            row.imageFailed = false;
-          }
         }
       }
       next.push(row);

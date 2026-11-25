@@ -885,6 +885,8 @@ struct Scp3DArchivePage {
         this.loadingOverlay();
       } else if (this.errorMessage.length > 0) {
         this.errorOverlay();
+      } else if (this.sceneReady) {
+        this.stageControls();
       }
     }
     .width('100%')
@@ -1041,11 +1043,8 @@ struct Scp3DArchivePage {
         if (this.workbenchMode()) {
           Column() {
             Row({ space: 20 }) {
-              Column({ space: 14 }) {
+              Column() {
                 this.viewerStage();
-                if (!this.loading && this.errorMessage.length === 0 && this.sceneReady) {
-                  this.stageControls();
-                }
               }
               .width('60%')
               .alignItems(HorizontalAlign.Center);
@@ -1085,12 +1084,6 @@ struct Scp3DArchivePage {
             Column() {
               Column({ space: 16 }) {
                 this.viewerStage();
-                if (!this.loading && this.errorMessage.length === 0 && this.sceneReady) {
-                  // Keep controls in normal document flow below the observation
-                  // surface. This is more reliable than aligning a child inside a
-                  // Component3D Stack and leaves the gesture surface unobstructed.
-                  this.stageControls();
-                }
                 this.archiveInfo();
               }
               .width('100%')

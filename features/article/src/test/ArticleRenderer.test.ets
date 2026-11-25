@@ -12,6 +12,7 @@ import {
   ArticleRenderer,
   ArticleWebModeRecommendation
 } from '../main/ets/presentation/view/ArticleRenderer';
+import { ImagePreviewGeometry, PreviewPoint, PreviewTransform } from '../main/ets/presentation/view/ImagePreviewGeometry';
 import { createRendererDocument } from './ArticleTestFixtures';
 
 function makeFootnote(id: string, index: number): ScpFootnote {
@@ -25,6 +26,25 @@ function makeFootnote(id: string, index: number): ScpFootnote {
 
 export default function articleRendererTest(): void {
   describe('ArticleRendererProjection', () => {
+    it('keeps the selected photo detail under the fingers until its edge reaches the viewport', 0, () => {
+      const view = new ImagePreviewGeometry();
+      view.width = 400;
+      view.height = 800;
+      view.imageRatio = 2;
+      const initial: PreviewTransform = { scale: 1, x: 0, y: 0 };
+      const tap: PreviewPoint = { x: 300, y: 360 };
+      const zoomed = view.zoom(initial, 2.5, tap, tap);
+      expect(zoomed.x).assertEqual(-150);
+      expect(zoomed.y).assertEqual(0);
+      const moved: PreviewPoint = { x: 320, y: 380 };
+      expect(view.zoom(zoomed, 2.5, tap, moved).x).assertEqual(-130);
+      expect(view.pan(2.5, -500, 80).x).assertEqual(-300);
+      const reset = view.zoom(zoomed, 0.5, moved, tap);
+      expect(reset.scale).assertEqual(1);
+      expect(reset.x).assertEqual(0);
+      expect(reset.y).assertEqual(0);
+    });
+
     it('projects spans and collapse state immutably', 0, () => {
       const document = createRendererDocument();
       const text = document.blocks[0];

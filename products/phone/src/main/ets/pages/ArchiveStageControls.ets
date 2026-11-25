@@ -1,11 +1,14 @@
-import {
-  accentPillBackgroundColor,
-  accentPillForegroundColor,
-  badgeInfoBackgroundColor,
-  badgeInfoForegroundColor
-} from 'anomiconbasic';
+@Extend(Button)
+function stageButton(fill: ResourceColor) {
+  .width(44)
+  .height(44)
+  .padding(0)
+  .backgroundColor(fill)
+  .border({ width: 1, color: $r('app.color.archive_button_outline') })
+  .hitTestBehavior(HitTestMode.Block)
+}
 
-/** Used below the scene in both layouts and runnable independently of ArkGraphics3D. */
+/** The stage stays dark in both themes. Only the circular button fills are translucent. */
 @ComponentV2
 export struct ArchiveStageControls {
   @Require @Param autoRotate: boolean;
@@ -13,33 +16,42 @@ export struct ArchiveStageControls {
   @Event onToggleRotation: () => void;
   @Event onReset: () => void;
 
+  private buttonFill(active: boolean): ResourceColor {
+    if (active) {
+      return this.materialEnabled ? $r('app.color.archive_button_active_glass') : $r('app.color.archive_button_active');
+    }
+    return this.materialEnabled ? $r('app.color.archive_button_glass') : $r('app.color.archive_button_fill');
+  }
+
   build() {
-    Row({ space: 8 }) {
-      Button(this.autoRotate ? '停止自动旋转' : '自动旋转', { stateEffect: false })
-        .id('archiveToggleRotation')
-        .height(36)
-        .fontSize(12)
-        .fontColor(this.autoRotate ? accentPillForegroundColor() : badgeInfoForegroundColor())
-        .backgroundColor(this.autoRotate ? accentPillBackgroundColor() : badgeInfoBackgroundColor())
-        .border({ width: 1, color: $r('app.color.archive_button_outline') })
-        .onClick(() => this.onToggleRotation());
-      Blank().layoutWeight(1);
-      Button('复位', { stateEffect: false })
-        .id('archiveResetView')
-        .height(36)
-        .fontSize(12)
-        .fontColor($r('app.color.archive_reset_text'))
-        .backgroundColor($r('app.color.archive_reset_fill'))
-        .border({ width: 1, color: $r('app.color.archive_button_outline') })
-        .onClick(() => this.onReset());
+    Row() {
+      Button({ type: ButtonType.Circle }) {
+        SymbolGlyph(this.autoRotate ? $r('sys.symbol.pause_fill') : $r('sys.symbol.a_360_rotation'))
+          .fontSize(22)
+          .fontColor([Color.White]);
+      }
+      .id('archiveToggleRotation')
+      .stageButton(this.buttonFill(this.autoRotate))
+      .accessibilityText(this.autoRotate ? '暂停自动旋转' : '开启自动旋转')
+      .accessibilitySelected(this.autoRotate)
+      .onClick(() => this.onToggleRotation());
+
+      Button({ type: ButtonType.Circle }) {
+        SymbolGlyph($r('sys.symbol.arrow_counterclockwise'))
+          .fontSize(20)
+          .fontColor([Color.White]);
+      }
+      .id('archiveResetView')
+      .stageButton(this.buttonFill(false))
+      .accessibilityText('复位模型视角')
+      .onClick(() => this.onReset());
     }
     .id('archiveStageControls')
     .width('100%')
-    .padding({ left: 14, right: 14, top: 10, bottom: 12 })
-    .borderRadius(18)
-    .backgroundColor(this.materialEnabled ? $r('app.color.archive_controls_glass') : $r('app.color.archive_controls_surface'))
-    .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_THIN : undefined)
-    .border({ width: 1, color: $r('app.color.archive_controls_outline') })
-    .accessibilityText('三维模型控制：自动旋转与复位');
+    .justifyContent(FlexAlign.SpaceBetween)
+    .padding({ left: 12, right: 12 })
+    .position({ left: 0, bottom: 12 })
+    // Let fingers between the buttons reach the stage's pan and pinch recognizers.
+    .hitTestBehavior(HitTestMode.None);
   }
 }
