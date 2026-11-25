@@ -237,25 +237,62 @@ class _NativeParser {
     for (final image in item.querySelectorAll('img')) {
       _image(image);
     }
-    final text = _clean(item.text);
+    final text = StringBuffer(prefix);
+    final inlineLinks = <({Uri target, int start, int end})>[];
+    var hasText = false;
+    var pendingSpace = false;
+
+    void append(Node node) {
+      if (node is Text) {
+        for (final match in _inlineRuns.allMatches(node.data)) {
+          final word = match.group(1);
+          if (word == null) {
+            pendingSpace = hasText;
+            continue;
+          }
+          if (pendingSpace) text.write(' ');
+          text.write(word);
+          hasText = true;
+          pendingSpace = false;
+        }
+      } else if (node is Element) {
+        final start = text.length;
+        for (final child in node.nodes) {
+          append(child);
+        }
+        final href = node.localName == 'a' ? node.attributes['href'] : null;
+        if (href != null && text.length > start) {
+          final target = articleHttpUrl(base, href);
+          if (target != null) {
+            inlineLinks.add((target: target, start: start, end: text.length));
+          }
+        }
+      }
+    }
+
+    append(item);
     final index = blocks.length;
     for (final child in item.querySelectorAll('[id], a[name]')) {
       final anchor = child.id.isNotEmpty ? child.id : child.attributes['name']!;
       anchors.putIfAbsent(anchor, () => index);
     }
-    if (text.isEmpty) return;
-    blocks.add(create('$prefix$text'));
-    var offset = 0;
-    for (final link in item.querySelectorAll('a[href]')) {
-      final label = _clean(link.text);
-      final position = text.indexOf(label, offset);
-      if (label.isEmpty || position < 0) continue;
-      offset = position + label.length;
-      final target = articleHttpUrl(base, link.attributes['href']!);
-      if (target == null) continue;
-      (links[index] ??= []).add(
-        ArticleInlineLink(label, target, position + prefix.length),
-      );
+    if (!hasText) return;
+    final rendered = text.toString();
+    blocks.add(create(rendered));
+    if (inlineLinks.isNotEmpty) {
+      links[index] = [
+        for (final link in inlineLinks)
+          ArticleInlineLink(
+            rendered.substring(_linkStart(rendered, link.start), link.end),
+            link.target,
+            _linkStart(rendered, link.start),
+          ),
+      ];
     }
   }
 }
+
+final _inlineRuns = RegExp(r'(\S+)|\s+');
+
+int _linkStart(String rendered, int start) =>
+    rendered[start] == ' ' ? start + 1 : start;
