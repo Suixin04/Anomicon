@@ -8,6 +8,7 @@ import 'package:model_viewer_plus/model_viewer_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'discovery.dart';
 import 'foundation.dart';
 import 'foundation_page.dart';
 import 'local_store.dart';
