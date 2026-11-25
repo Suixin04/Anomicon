@@ -1,6 +1,6 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -19,7 +19,6 @@ part 'archive_pages.dart';
 part 'settings_page.dart';
 part 'shared_widgets.dart';
 
-const _black = Color(0xFF000000);
 const _surface = Color(0xFF202528);
 const _surfaceHigh = Color(0xFF34393C);
 const _surfaceLow = Color(0xFF171A1C);
@@ -59,13 +58,14 @@ class AnomiconApp extends StatefulWidget {
 }
 
 class _AnomiconAppState extends State<AnomiconApp> {
+  final _details = GlobalKey<NavigatorState>();
+  late final _DetailObserver _detailObserver = _DetailObserver((hasDetail) {
+    if (mounted) setState(() => _hasDetail = hasDetail);
+  });
   late AppSettings _settings;
   late LibrarySnapshot _library;
   HomeTab _selectedTab = HomeTab.explore;
-  ContentRef? _activeContent;
-  ArchiveAsset? _activeArchive;
-  bool _showSettings = false;
-  bool _showArchiveGallery = false;
+  bool _hasDetail = false;
 
   @override
   void initState() {
@@ -77,16 +77,6 @@ class _AnomiconAppState extends State<AnomiconApp> {
 
   @override
   Widget build(BuildContext context) {
-    SystemChrome.setSystemUIOverlayStyle(
-      const SystemUiOverlayStyle(
-        statusBarColor: Colors.transparent,
-        systemNavigationBarColor: Colors.transparent,
-        systemNavigationBarDividerColor: Colors.transparent,
-        systemNavigationBarContrastEnforced: false,
-        statusBarIconBrightness: Brightness.light,
-        systemNavigationBarIconBrightness: Brightness.light,
-      ),
-    );
     return MaterialApp(
       title: 'Anomicon',
       debugShowCheckedModeBanner: false,
@@ -95,92 +85,60 @@ class _AnomiconAppState extends State<AnomiconApp> {
         ThemeModePreference.dark => ThemeMode.dark,
         ThemeModePreference.system => ThemeMode.system,
       },
-      theme: _appTheme(Brightness.dark),
+      theme: _appTheme(Brightness.light),
       darkTheme: _appTheme(Brightness.dark),
-      home: _buildSurface(),
+      highContrastTheme: _appTheme(Brightness.light, contrast: 1),
+      highContrastDarkTheme: _appTheme(Brightness.dark, contrast: 1),
+      builder: (context, child) {
+        final dark = Theme.of(context).brightness == Brightness.dark;
+        final iconBrightness = dark ? Brightness.light : Brightness.dark;
+        return AnnotatedRegion<SystemUiOverlayStyle>(
+          value: SystemUiOverlayStyle(
+            statusBarColor: Colors.transparent,
+            systemNavigationBarColor: Colors.transparent,
+            systemNavigationBarDividerColor: Colors.transparent,
+            statusBarBrightness: dark ? Brightness.dark : Brightness.light,
+            statusBarIconBrightness: iconBrightness,
+            systemNavigationBarIconBrightness: iconBrightness,
+          ),
+          child: _AppData(
+            settings: _settings,
+            library: _library,
+            child: child!,
+          ),
+        );
+      },
+      home: HomeShell(
+        repository: widget.repository,
+        selectedTab: _selectedTab,
+        library: _library,
+        onSelectTab: _selectTab,
+        onOpenSettings: _openSettings,
+        onOpenArchiveGallery: _openArchiveGallery,
+        onOpenContent: _openContent,
+        onToggleFavorite: _toggleFavorite,
+        onHaptic: _playSelection,
+        hasDetail: _hasDetail,
+        detail: NavigatorPopHandler<void>(
+          onPopWithResult: (_) => _details.currentState!.maybePop(),
+          child: Navigator(
+            key: _details,
+            observers: <NavigatorObserver>[_detailObserver],
+            onGenerateRoute: (settings) => MaterialPageRoute<void>(
+              settings: settings,
+              builder: (context) => const Center(child: Text('选择一条内容以查看详情')),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
-  Widget _buildSurface() {
-    if (_activeArchive != null) {
-      return ArchiveDetailScreen(
-        asset: _activeArchive!,
-        repository: widget.repository,
-        onBack: () async {
-          await _playSelection();
-          setState(() => _activeArchive = null);
-        },
-        onOpenArticle: () => _openContent(_activeArchive!.contentRef),
-      );
-    }
-    if (_activeContent != null) {
-      return ArticleScreen(
-        content: _activeContent!,
-        settings: _settings,
-        repository: widget.repository,
-        localStore: widget.localStore,
-        favorite: _library.favorites.any(
-          (item) => item.key == _activeContent!.key,
-        ),
-        onBack: () async {
-          await _playSelection();
-          setState(() => _activeContent = null);
-        },
-        onToggleFavorite: () => _toggleFavorite(_activeContent!),
-        onLibraryChanged: (library) => setState(() => _library = library),
-        onOpenArchive: (asset) async {
-          await _playSelection();
-          setState(() => _activeArchive = asset);
-        },
-      );
-    }
-    if (_showSettings) {
-      return SettingsScreen(
-        settings: _settings,
-        onBack: () async {
-          await _playSelection();
-          setState(() => _showSettings = false);
-        },
-        onSettingsChange: _saveSettings,
-        onHaptic: _playSelection,
-      );
-    }
-    if (_showArchiveGallery) {
-      return ArchiveGalleryScreen(
-        repository: widget.repository,
-        onBack: () async {
-          await _playSelection();
-          setState(() => _showArchiveGallery = false);
-        },
-        onOpenAsset: (asset) async {
-          await _playSelection();
-          setState(() => _activeArchive = asset);
-        },
-        onOpenArticle: _openContent,
-        onHaptic: _playSelection,
-      );
-    }
-    return HomeShell(
-      repository: widget.repository,
-      selectedTab: _selectedTab,
-      library: _library,
-      onSelectTab: (tab) async {
-        if (_selectedTab == tab) return;
-        await _playSelection();
-        setState(() => _selectedTab = tab);
-      },
-      onOpenSettings: () async {
-        await _playSelection();
-        setState(() => _showSettings = true);
-      },
-      onOpenArchiveGallery: () async {
-        await _playSelection();
-        setState(() => _showArchiveGallery = true);
-      },
-      onOpenContent: _openContent,
-      onToggleFavorite: _toggleFavorite,
-      onHaptic: _playSelection,
-    );
+  void _selectTab(HomeTab tab) {
+    if (_selectedTab == tab) return;
+    unawaited(_playSelection());
+    _details.currentState!.popUntil((route) => route.isFirst);
+    setState(() => _selectedTab = tab);
   }
 
   Future<void> _playSelection() async {
@@ -189,18 +147,79 @@ class _AnomiconAppState extends State<AnomiconApp> {
     }
   }
 
+  Future<void> _popDetail() async {
+    unawaited(_playSelection());
+    if (!mounted) return;
+    await _details.currentState!.maybePop();
+  }
+
+  Future<void> _openSettings() async {
+    unawaited(_playSelection());
+    if (!mounted) return;
+    await _pushDetail(
+      _details.currentState!,
+      (context) => SettingsScreen(
+        settings: _AppData.of(context).settings,
+        onBack: _popDetail,
+        onSettingsChange: _saveSettings,
+        onHaptic: _playSelection,
+        onOpenArchiveGallery: _openArchiveGallery,
+      ),
+    );
+  }
+
+  Future<void> _openArchiveGallery() async {
+    unawaited(_playSelection());
+    if (!mounted) return;
+    await _pushDetail(
+      _details.currentState!,
+      (context) => ArchiveGalleryScreen(
+        repository: widget.repository,
+        onBack: _popDetail,
+        onOpenAsset: _openArchive,
+        onOpenArticle: _openContent,
+        onHaptic: _playSelection,
+      ),
+    );
+  }
+
+  Future<void> _openArchive(ArchiveAsset asset) async {
+    unawaited(_playSelection());
+    if (!mounted) return;
+    await _pushDetail(
+      _details.currentState!,
+      (context) => ArchiveDetailScreen(
+        asset: asset,
+        repository: widget.repository,
+        onBack: _popDetail,
+        onOpenArticle: () => _openContent(asset.contentRef),
+      ),
+    );
+  }
+
   Future<void> _openContent(ContentRef content) async {
-    await _playSelection();
+    unawaited(_playSelection());
     final library = await widget.localStore.recordRead(content);
     if (!mounted) return;
-    setState(() {
-      _library = library;
-      _activeContent = content;
+    setState(() => _library = library);
+    await _pushDetail(_details.currentState!, (context) {
+      final data = _AppData.of(context);
+      return ArticleScreen(
+        content: content,
+        settings: data.settings,
+        repository: widget.repository,
+        localStore: widget.localStore,
+        favorite: data.library.favorites.any((item) => item.key == content.key),
+        onBack: _popDetail,
+        onToggleFavorite: () => _toggleFavorite(content),
+        onLibraryChanged: (library) => setState(() => _library = library),
+        onOpenArchive: _openArchive,
+      );
     });
   }
 
   Future<void> _toggleFavorite(ContentRef content) async {
-    await _playSelection();
+    unawaited(_playSelection());
     final library = await widget.localStore.toggleFavorite(content);
     if (!mounted) return;
     setState(() => _library = library);
@@ -208,35 +227,66 @@ class _AnomiconAppState extends State<AnomiconApp> {
 
   Future<void> _saveSettings(AppSettings settings) async {
     final normalized = settings.normalized();
-    await widget.localStore.saveSettings(normalized);
-    if (!mounted) return;
     setState(() => _settings = normalized);
+    await widget.localStore.saveSettings(normalized);
   }
 }
 
-ThemeData _appTheme(Brightness brightness) {
-  final base = ThemeData(
-    useMaterial3: true,
+Future<T?> _pushDetail<T>(NavigatorState navigator, WidgetBuilder builder) =>
+    navigator.push<T>(MaterialPageRoute<T>(builder: builder));
+
+class _DetailObserver extends NavigatorObserver {
+  _DetailObserver(this.onChanged);
+
+  final ValueChanged<bool> onChanged;
+  bool _hasDetail = false;
+
+  @override
+  void didChangeTop(Route<dynamic> topRoute, Route<dynamic>? previousTopRoute) {
+    final hasDetail = !topRoute.isFirst;
+    if (hasDetail == _hasDetail) return;
+    _hasDetail = hasDetail;
+    // The Navigator may update while laying out its routes.
+    WidgetsBinding.instance.addPostFrameCallback((_) => onChanged(_hasDetail));
+  }
+}
+
+class _AppData extends InheritedWidget {
+  const _AppData({
+    required this.settings,
+    required this.library,
+    required super.child,
+  });
+
+  final AppSettings settings;
+  final LibrarySnapshot library;
+
+  static _AppData of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_AppData>()!;
+
+  @override
+  bool updateShouldNotify(_AppData oldWidget) =>
+      settings != oldWidget.settings || library != oldWidget.library;
+}
+
+bool _immersiveMaterialOf(BuildContext context) =>
+    context
+        .dependOnInheritedWidgetOfExactType<_AppData>()
+        ?.settings
+        .immersiveMaterialEnabled ??
+    true;
+
+ThemeData _appTheme(Brightness brightness, {double contrast = 0}) {
+  final scheme = ColorScheme.fromSeed(
+    seedColor: _accent,
     brightness: brightness,
-    colorScheme: const ColorScheme.dark(
-      primary: _accent,
-      secondary: Color(0xFF8AB4FF),
-      surface: _surface,
-      surfaceContainerHighest: _surfaceHigh,
-      error: Color(0xFFFF8A8A),
-      onPrimary: Colors.white,
-      onSurface: Colors.white,
-      onSurfaceVariant: _muted,
-    ),
-    scaffoldBackgroundColor: _black,
+    contrastLevel: contrast,
   );
+  final base = ThemeData(useMaterial3: true, colorScheme: scheme);
   return base.copyWith(
     textTheme: base.textTheme.apply(
-      bodyColor: Colors.white,
-      displayColor: Colors.white,
       fontFamilyFallback: const <String>['Noto Sans CJK SC', 'sans-serif'],
     ),
-    splashFactory: InkSparkle.splashFactory,
   );
 }
 
@@ -251,6 +301,8 @@ class HomeShell extends StatelessWidget {
     required this.onOpenContent,
     required this.onToggleFavorite,
     required this.onHaptic,
+    this.detail,
+    this.hasDetail = false,
     super.key,
   });
 
@@ -263,6 +315,8 @@ class HomeShell extends StatelessWidget {
   final ValueChanged<ContentRef> onOpenContent;
   final ValueChanged<ContentRef> onToggleFavorite;
   final VoidCallback onHaptic;
+  final Widget? detail;
+  final bool hasDetail;
 
   @override
   Widget build(BuildContext context) {
@@ -289,23 +343,85 @@ class HomeShell extends StatelessWidget {
         onOpenSettings: onOpenSettings,
       ),
     };
-    return Scaffold(
-      backgroundColor: _black,
-      body: Stack(
-        children: <Widget>[
-          child,
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: SafeArea(
-              minimum: const EdgeInsets.only(bottom: 20),
-              child: GlassBottomBar(
-                selectedTab: selectedTab,
-                onSelectTab: onSelectTab,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final wide = constraints.maxWidth >= 840;
+        final split = wide && detail != null;
+        final hideHome = !wide && hasDetail;
+        final primaryWidth = split
+            ? math.min(560.0, (constraints.maxWidth - 81) * 0.46)
+            : constraints.maxWidth - (wide ? 81 : 0);
+        return Scaffold(
+          bottomNavigationBar: wide || hideHome
+              ? null
+              : GlassBottomBar(
+                  selectedTab: selectedTab,
+                  onSelectTab: onSelectTab,
+                ),
+          body: Row(
+            children: <Widget>[
+              if (wide) ...<Widget>[
+                SizedBox(
+                  width: 80,
+                  child: SafeArea(
+                    child: NavigationRail(
+                      labelType: NavigationRailLabelType.all,
+                      scrollable: true,
+                      backgroundColor: _immersiveMaterialOf(context)
+                          ? Theme.of(context).colorScheme.surfaceContainerHigh
+                          : Theme.of(context).colorScheme.surface,
+                      selectedIndex: selectedTab.index,
+                      onDestinationSelected: (index) =>
+                          onSelectTab(HomeTab.values[index]),
+                      destinations: [
+                        for (final tab in HomeTab.values)
+                          NavigationRailDestination(
+                            icon: Icon(tab.icon),
+                            label: Text(tab.title),
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+                const VerticalDivider(width: 1),
+              ],
+              Expanded(
+                child: Stack(
+                  children: <Widget>[
+                    Positioned(
+                      key: const ValueKey('home-pane'),
+                      top: 0,
+                      bottom: 0,
+                      left: 0,
+                      width: primaryWidth,
+                      child: Offstage(
+                        offstage: hideHome,
+                        child: ExcludeFocus(excluding: hideHome, child: child),
+                      ),
+                    ),
+                    if (split)
+                      Positioned(
+                        left: primaryWidth,
+                        top: 0,
+                        bottom: 0,
+                        child: const VerticalDivider(width: 1),
+                      ),
+                    if (detail != null)
+                      Positioned.fill(
+                        key: const ValueKey('detail-pane'),
+                        left: split ? primaryWidth + 1 : 0,
+                        child: Offstage(
+                          offstage: !split && !hasDetail,
+                          child: detail!,
+                        ),
+                      ),
+                  ],
+                ),
               ),
-            ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

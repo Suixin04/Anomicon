@@ -6,6 +6,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onBack,
     required this.onSettingsChange,
     required this.onHaptic,
+    this.onOpenArchiveGallery,
     super.key,
   });
 
@@ -13,6 +14,7 @@ class SettingsScreen extends StatelessWidget {
   final VoidCallback onBack;
   final ValueChanged<AppSettings> onSettingsChange;
   final VoidCallback onHaptic;
+  final VoidCallback? onOpenArchiveGallery;
 
   @override
   Widget build(BuildContext context) {
@@ -60,17 +62,17 @@ class SettingsScreen extends StatelessWidget {
               children: <Widget>[
                 SettingSwitchRow(
                   title: '触感反馈',
-                  subtitle: '保留 HarmonyOS 版本中的触感开关语义。',
+                  subtitle: '切换页面或操作按钮时提供触感反馈。',
                   value: settings.hapticEnabled,
                   onChanged: (value) {
                     onHaptic();
                     onSettingsChange(settings.copyWith(hapticEnabled: value));
                   },
                 ),
-                const Divider(color: Color(0xFF3F4448)),
+                const Divider(),
                 SettingSwitchRow(
                   title: '沉浸材质',
-                  subtitle: '保持黑底、半透明底栏和系统栏沉浸效果。',
+                  subtitle: '为导航栏和详情标题栏应用更明显的背景层次。',
                   value: settings.immersiveMaterialEnabled,
                   onChanged: (value) {
                     onHaptic();
@@ -110,6 +112,17 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
+          if (onOpenArchiveGallery != null) ...[
+            const SizedBox(height: 16),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.view_in_ar_outlined),
+                title: const Text('三维档案馆'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onOpenArchiveGallery,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -150,7 +163,10 @@ class SettingSwitchRow extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: const TextStyle(color: _muted, height: 1.35),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    height: 1.35,
+                  ),
                 ),
               ],
             ),
@@ -187,14 +203,20 @@ class SettingSliderRow extends StatelessWidget {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: <Widget>[
-            Text(
-              title,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
+            Expanded(
+              child: Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
+            const SizedBox(width: 8),
             Text(
               valueLabel,
-              style: const TextStyle(
-                color: _accent,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.w900,
               ),
             ),

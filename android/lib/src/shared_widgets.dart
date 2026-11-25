@@ -8,7 +8,7 @@ class PageCanvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return ColoredBox(
-      color: _black,
+      color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(bottom: false, child: child),
     );
   }
@@ -33,47 +33,50 @@ class DetailCanvas extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: _black,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
-        bottom: false,
         child: Column(
           children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
-              child: Row(
-                children: <Widget>[
-                  GlassIconButton(
-                    icon: Icons.arrow_back_ios_new_rounded,
-                    label: '返回',
-                    onPressed: onBack,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          title,
-                          style: const TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        if (subtitle != null)
-                          Text(
-                            subtitle!,
-                            style: const TextStyle(
-                              color: _muted,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                      ],
+            Material(
+              color: _immersiveMaterialOf(context)
+                  ? Theme.of(context).colorScheme.surfaceContainerHigh
+                  : Theme.of(context).colorScheme.surface,
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
+                child: Row(
+                  children: <Widget>[
+                    GlassIconButton(
+                      icon: Icons.arrow_back_ios_new_rounded,
+                      label: '返回',
+                      onPressed: onBack,
                     ),
-                  ),
-                  ...actions,
-                ],
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            title,
+                            style: Theme.of(context).textTheme.headlineSmall,
+                          ),
+                          if (subtitle != null)
+                            Text(
+                              subtitle!,
+                              style: TextStyle(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .onSurfaceVariant,
+                                fontSize: 20,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                        ],
+                      ),
+                    ),
+                    ...actions,
+                  ],
+                ),
               ),
             ),
             Expanded(child: child),
@@ -120,7 +123,10 @@ class PageHeading extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       subtitle!,
-                      style: const TextStyle(color: _muted, fontSize: 18),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 18,
+                      ),
                     ),
                   ),
               ],
@@ -172,7 +178,10 @@ class SectionTitle extends StatelessWidget {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       subtitle!,
-                      style: const TextStyle(color: _muted, fontSize: 17),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 17,
+                      ),
                     ),
                   ),
               ],
@@ -181,8 +190,8 @@ class SectionTitle extends StatelessWidget {
           if (trailing != null)
             Text(
               trailing!,
-              style: const TextStyle(
-                color: _muted,
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
                 fontSize: 18,
                 fontWeight: FontWeight.w600,
               ),
@@ -205,61 +214,16 @@ class GlassBottomBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(44),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 22, sigmaY: 22),
-        child: Container(
-          width: math.min(MediaQuery.sizeOf(context).width - 72, 580),
-          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-          decoration: BoxDecoration(
-            color: _surfaceHigh.withValues(alpha: 0.58),
-            borderRadius: BorderRadius.circular(44),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.18)),
-            boxShadow: <BoxShadow>[
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
-                blurRadius: 22,
-                offset: const Offset(0, 12),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceAround,
-            children: HomeTab.values.map((tab) {
-              final selected = tab == selectedTab;
-              return InkWell(
-                borderRadius: BorderRadius.circular(28),
-                onTap: () => onSelectTab(tab),
-                child: SizedBox(
-                  width: 62,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(
-                        tab.icon,
-                        size: 28,
-                        color: selected ? _accent : _muted,
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        tab.title,
-                        style: TextStyle(
-                          color: selected ? _accent : _muted,
-                          fontSize: 14,
-                          fontWeight: selected
-                              ? FontWeight.w800
-                              : FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            }).toList(),
-          ),
-        ),
-      ),
+    final immersive = _immersiveMaterialOf(context);
+    final colors = Theme.of(context).colorScheme;
+    return NavigationBar(
+      backgroundColor: immersive ? colors.surfaceContainerHigh : colors.surface,
+      selectedIndex: selectedTab.index,
+      onDestinationSelected: (index) => onSelectTab(HomeTab.values[index]),
+      destinations: [
+        for (final tab in HomeTab.values)
+          NavigationDestination(icon: Icon(tab.icon), label: tab.title),
+      ],
     );
   }
 }
@@ -278,21 +242,10 @@ class GlassIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Tooltip(
-      message: label,
-      child: Material(
-        color: _surfaceLow.withValues(alpha: 0.86),
-        shape: const CircleBorder(),
-        clipBehavior: Clip.antiAlias,
-        child: InkWell(
-          onTap: onPressed,
-          child: SizedBox(
-            width: 64,
-            height: 64,
-            child: Icon(icon, size: 34, color: Colors.white),
-          ),
-        ),
-      ),
+    return IconButton.filledTonal(
+      tooltip: label,
+      onPressed: onPressed,
+      icon: Icon(icon),
     );
   }
 }
@@ -301,25 +254,28 @@ class GlassCard extends StatelessWidget {
   const GlassCard({
     required this.child,
     this.padding = const EdgeInsets.all(22),
-    this.color = _surface,
+    this.color,
     super.key,
   });
 
   final Widget child;
   final EdgeInsets padding;
-  final Color color;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      padding: padding,
-      decoration: BoxDecoration(
-        color: color,
+    final colors = Theme.of(context).colorScheme;
+    return Material(
+      color: color ?? colors.surfaceContainer,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(26),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.05)),
+        side: BorderSide(color: colors.outlineVariant),
       ),
-      child: child,
+      clipBehavior: Clip.antiAlias,
+      child: Padding(
+        padding: padding,
+        child: SizedBox(width: double.infinity, child: child),
+      ),
     );
   }
 }
@@ -340,6 +296,7 @@ class HorizontalPills extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return SizedBox(
       height: 54,
       child: ListView.separated(
@@ -354,14 +311,14 @@ class HorizontalPills extends StatelessWidget {
             showCheckmark: false,
             label: Text(entry.value),
             labelStyle: TextStyle(
-              color: active ? Colors.white : const Color(0xFFC1C4C7),
+              color: active ? colors.onSecondaryContainer : colors.onSurface,
               fontWeight: active ? FontWeight.w900 : FontWeight.w600,
               fontSize: 18,
             ),
-            selectedColor: _accent,
-            backgroundColor: _surfaceLow,
+            selectedColor: colors.secondaryContainer,
+            backgroundColor: colors.surfaceContainerLow,
             side: BorderSide(
-              color: Colors.white.withValues(alpha: active ? 0 : 0.12),
+              color: active ? Colors.transparent : colors.outline,
             ),
             shape: const StadiumBorder(),
             onSelected: (_) => onSelected(entry.key),
@@ -388,13 +345,16 @@ class EmptyCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      color: _surfaceLow,
+      color: Theme.of(context).colorScheme.surfaceContainerLow,
       child: Column(
         children: <Widget>[
           Text(
             title,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: _muted, fontSize: 17),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontSize: 17,
+            ),
           ),
           if (actionLabel != null && onAction != null) ...<Widget>[
             const SizedBox(height: 12),
@@ -418,12 +378,20 @@ class HintRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
       child: Row(
         children: <Widget>[
-          Icon(icon, color: _muted, size: 24),
+          Icon(
+            icon,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            size: 24,
+          ),
           const SizedBox(width: 14),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(color: _muted, fontSize: 16, height: 1.45),
+              style: TextStyle(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                fontSize: 16,
+                height: 1.45,
+              ),
             ),
           ),
         ],
