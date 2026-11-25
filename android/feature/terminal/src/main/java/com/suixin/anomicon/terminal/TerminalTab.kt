@@ -51,12 +51,20 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
     val view = collection
     if (view != null) {
         val entries = when (view) { "全部收藏" -> favorites; "继续阅读" -> resume; else -> history }
+        val isShelf = view == "离线书架"
         Column(Modifier.fillMaxSize()) {
-            ArchiveDetailBar("$view  ${entries.size}", { collection = null })
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            if (entries.isEmpty()) item { Empty(if (view == "全部收藏") "暂无收藏" else "暂无阅读记录") }
-            items(entries, key = { it.id }) { row -> Entry(row.title, caption(row), { onEntry(row.id) }) }
-        }
+            ArchiveDetailBar("$view  ${if (isShelf) shelf.size else entries.size}", { collection = null })
+            LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                if (isShelf) {
+                    if (shelf.isEmpty()) item { Empty("暂无离线档案，已保存到本机的档案会显示在这里。") }
+                    items(shelf, key = { it.id }) { article ->
+                        Entry(article.title, "已存到本机") { onEntry("offline:${article.id}") }
+                    }
+                } else {
+                    if (entries.isEmpty()) item { Empty(if (view == "全部收藏") "暂无收藏" else "暂无阅读记录") }
+                    items(entries, key = { it.id }) { row -> Entry(row.title, caption(row)) { onEntry(row.id) } }
+                }
+            }
         }
         return
     }
@@ -103,6 +111,7 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
             }
             }
             item { Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { Heading("个人资料库"); Small("阅读进度、藏品与常用本地入口") } }
+            item { Entry("离线书架", "已保存 ${shelf.size} 篇") { collection = "离线书架" } }
             item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Quick("⬡", "三维档案", Modifier.weight(1f), onArchive)
                 Quick("★", "全部收藏", Modifier.weight(1f)) { collection = "全部收藏" }

@@ -46,6 +46,24 @@ class WikiRepositoryTest {
         assertEquals("疫医", seriesSubtitle("<div id='page-content'><ul><li><a href='/scp-049'>SCP-049</a> - 疫医</li></ul></div>", "scp-049"))
     }
 
+    @Test fun archiveRestoresBodyImageAndAttributionFromSameRevision() {
+        val source = html.replace("</table>", "</table><div class='licensebox'><div class='collapsible-block-content'><a href='/author'>署名</a> · CC BY-SA</div></div>")
+        val current = parseWikiPreview(source, "scp-002")
+        val saved = parseWikiPreview("<main id='page-content'>${current.offlineHtml}</main>", "scp-002")
+        assertEquals(current.blocks, saved.blocks)
+        assertTrue(saved.credits.contains("署名 · CC BY-SA"))
+        assertTrue(saved.credits.contains(WIKI_BASE + "scp-002"))
+        assertTrue(current.offlineHtml.contains(WIKI_BASE + "author"))
+    }
+
+    @Test fun archiveImagesUseTrustedHttpsHostsAndSupportedRasterBytes() {
+        assertNotNull(trustedImageUrl("https://scp-wiki.wdfiles.com/local--files/scp-049/photo.jpg"))
+        for (url in listOf("http://scp-wiki.wdfiles.com/a", "https://example.net/a", "https://scp-wiki.wdfiles.com:8123/a", "https://user@scp-wiki.wdfiles.com/a"))
+            assertNull(trustedImageUrl(url))
+        assertTrue(isRasterImage(byteArrayOf(-1,-40,-1) + ByteArray(12)))
+        assertFalse(isRasterImage("<html>missing image</html>".toByteArray()))
+    }
+
     @Test fun repositoryRequestsNormalizedPageAndPropagatesHttpFailure() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setBody(html))

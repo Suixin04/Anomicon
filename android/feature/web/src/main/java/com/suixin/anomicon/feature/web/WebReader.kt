@@ -102,7 +102,7 @@ internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier
             try {
                 document = if (offline) offlinePreview(data, slug) else wiki.preview(slug)
             } catch (error: IOException) {
-                message = if (offline) "无法读取离线副本。" else "当前无法读取正文，请检查网络后重试。"
+                message = if (offline) "无法读取离线副本：${error.localizedMessage}" else "当前无法读取正文，请检查网络后重试。"
             }
         }
         val assets = LocalContext.current.assets
@@ -125,9 +125,33 @@ internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier
         val scope = rememberCoroutineScope()
         val profile by data.research.collectAsStateWithLifecycle(initialValue = null)
         var tool by remember { mutableStateOf<ReaderTool?>(null) }
+        var saving by remember { mutableStateOf(false) }
+        var saveResult by remember { mutableStateOf<String?>(null) }
+        val snapshot = document
+        val save: (() -> Unit)? = if (offline || original || snapshot == null || saving) null else {{
+            saving = true
+            saveResult = null
+            scope.launch {
+                val urls = snapshot.blocks.filterIsInstance<PreviewBlock.Image>().map { it.url }.distinct()
+                try {
+                    val saved = data.saveOffline(slug, snapshot.title, snapshot.offlineHtml, urls) { url, limit ->
+                        try { com.suixin.anomicon.core.network.downloadOfflineImage(url, limit) }
+                        catch (_: IOException) { null } // An unavailable image is counted in the result.
+                    }
+                    saveResult = "已保存到离线书架 · 配图 $saved/${urls.size}" +
+                        if (snapshot.hasInteractiveContent) " · 互动内容需联网" else ""
+                } catch (e: IOException) {
+                    saveResult = "保存失败：${e.localizedMessage}"
+                } catch (e: android.database.sqlite.SQLiteException) {
+                    saveResult = "书架写入失败，请检查可用存储后重试。"
+                } finally { saving = false }
+            }
+        }}
         Column(modifier.fillMaxSize()) {
             ReaderToolbar(slug, catalogTitle ?: title, favorite, original, offline, back,
-                toggleFavorite = { session?.favorite(favorite != true) }, toggleMode = { original = !original })
+                toggleFavorite = { session?.favorite(favorite != true) }, toggleMode = { original = !original }, save = save)
+            if (saving) LinearProgressIndicator(Modifier.fillMaxWidth())
+            saveResult?.let { Snackbar(action = { TextButton(onClick = { saveResult = null }) { Text("关闭") } }) { Text(it) } }
             if (!original && document != null) {
                 ReaderStatus(session?.position?.progress ?: 0f, profile, onTool = { tool = it })
             }
@@ -153,12 +177,12 @@ internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier
 }
 
 private suspend fun offlinePreview(data: NativeData, slug: String): WikiPreview = withContext(Dispatchers.IO) {
-    val row = data.library.shelf().first().firstOrNull { it.id == slug } ?: throw IOException("离线副本不存在")
-    val images = data.library.images(slug).associate { it.url.replaceFirst("http://", "https://") to data.offlineFile(it.path).toURI().toString() }
+    val (row, files) = data.library.revision(slug) ?: throw IOException("离线副本不存在")
+    val images = files.filter { data.offlineFile(it.path).isFile }.associate { it.url.replaceFirst("http://", "https://") to data.offlineFile(it.path).toURI().toString() }
     val html = data.offlineFile(row.htmlPath).readText()
     val preview = parseWikiPreview("<main id='page-content'>$html</main>", slug)
     preview.copy(title = row.title, blocks = preview.blocks.mapNotNull { block ->
-        if (block is PreviewBlock.Image) images[block.url]?.let { block.copy(url = it) } else block
+        if (block is PreviewBlock.Image) images[block.url]?.let { block.copy(url = it) } ?: PreviewBlock.Paragraph("配图未离线保存" + block.caption.takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()) else block
     })
 }
 

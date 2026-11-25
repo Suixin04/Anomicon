@@ -28,7 +28,7 @@ import kotlin.math.cos
 import kotlin.math.sin
 
 internal enum class ReaderTool { Contents, Find }
-private enum class Symbol { Back, Star, Web, Contents, Find }
+private enum class Symbol { Back, Star, Save, Web, Contents, Find }
 
 @Composable
 private fun ReaderIcon(symbol: Symbol, filled: Boolean = false) {
@@ -51,6 +51,7 @@ private fun ReaderIcon(symbol: Symbol, filled: Boolean = false) {
                 }; path.close()
                 if (filled) drawPath(path, ink) else drawPath(path, ink, style=stroke)
             }
+            Symbol.Save -> { line(12,2,12,15); line(6,10,12,16); line(12,16,18,10); line(3,17,3,21); line(3,21,21,21); line(21,21,21,17) }
             Symbol.Web -> { drawRect(ink, p(2,4), Size(20*u,16*u), style=stroke); line(2,9,22,9); line(7,14,16,14) }
             Symbol.Find -> { drawCircle(ink, 6.6f*u, p(10,10), style=stroke); line(15,15,22,22) }
             Symbol.Contents -> for (y in listOf(5,12,19)) { drawCircle(ink, 1.2f*u, p(3,y)); line(7,y,21,y) }
@@ -68,7 +69,7 @@ private fun ReaderAction(label: String, symbol: Symbol, onClick: () -> Unit, sel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun ReaderToolbar(slug: String, title: String, favorite: Boolean?, original: Boolean, offline: Boolean,
-    back: () -> Unit, toggleFavorite: () -> Unit, toggleMode: () -> Unit) {
+    back: () -> Unit, toggleFavorite: () -> Unit, toggleMode: () -> Unit, save: (() -> Unit)? = null) {
     val numbered = slug.startsWith("scp-")
     TopAppBar(
         windowInsets = WindowInsets(0),
@@ -82,6 +83,7 @@ internal fun ReaderToolbar(slug: String, title: String, favorite: Boolean?, orig
             }
         },
         actions = {
+            if (save != null) ReaderAction("保存离线副本", Symbol.Save, save)
             if (favorite != null) ReaderAction(if (favorite) "已收藏" else "收藏", Symbol.Star, toggleFavorite, favorite)
             if (!offline) ReaderAction(if (original) "原生视图" else "原版网页", Symbol.Web, toggleMode)
         },

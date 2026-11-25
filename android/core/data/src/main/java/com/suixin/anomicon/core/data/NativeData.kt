@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import androidx.room.withTransaction
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
@@ -42,7 +43,8 @@ class NativeData private constructor(private val context: Context) {
     private val prefs = context.nativePreferences
     private val lock = Mutex()
     private val documents = File(context.applicationInfo.dataDir, "app_flutter")
-    private val offlineRoot = File(context.filesDir, "offline")
+    private val filesAlias = File(context.filesDir, "offline")
+    private val offlineRoot = filesAlias.canonicalFile
     val archiveObjects = File(documents, "archive3d/v1/objects")
 
     val settings: Flow<AppSettings> = prefs.data.map {
@@ -119,7 +121,62 @@ class NativeData private constructor(private val context: Context) {
     suspend fun clearSearchHistory() = library.trim("discovery.searchHistory", 0)
     suspend fun dismissStarter() { prefs.edit { it[Keys.starter] = true } }
 
-    fun offlineFile(relativePath: String) = File(offlineRoot, relativePath)
+    fun offlineFile(relativePath: String): File {
+        // The first native preview computed paths from /data/user/0 to /data/data.
+        // Accept that exact generated prefix and still enforce canonical containment.
+        val aliasPrefix = offlineRoot.relativeTo(filesAlias).path
+        val local = if (aliasPrefix.isNotEmpty() && relativePath.startsWith("$aliasPrefix/native/"))
+            relativePath.removePrefix("$aliasPrefix/") else relativePath
+        val target = File(offlineRoot, local).canonicalFile
+        if (!target.toPath().startsWith(offlineRoot.canonicalFile.toPath()) || target == offlineRoot.canonicalFile)
+            throw java.io.IOException("离线文件路径无效")
+        return target
+    }
+
+    private val offlineWrites = Mutex()
+    private val sweptArticles = mutableSetOf<String>()
+
+    /** Publish the HTML and all image mappings in one Room commit after writing immutable files. */
+    suspend fun saveOffline(id: String, title: String, html: String, urls: List<String>,
+        fetch: suspend (String, Long) -> ByteArray?): Int = withContext(Dispatchers.IO) {
+        offlineWrites.withLock {
+            val parent = offlineFile("native/${digest(id)}")
+            java.nio.file.Files.createDirectories(parent.toPath())
+            val previous = library.article(id)
+            if (sweptArticles.add(id)) {
+                // Readers may still hold older Coil file URLs until process restart.
+                val active = previous?.let { offlineFile(it.htmlPath).parentFile }
+                parent.listFiles()?.filter { it.isDirectory && it != active }?.forEach { it.deleteRecursively() }
+            }
+            val folder = java.nio.file.Files.createTempDirectory(parent.toPath(), "revision-").toFile()
+            var published = false
+            try {
+                val body = File(folder, "body.html").apply { writeText(html) }
+                val images = mutableListOf<OfflineImage>()
+                var budget = 32L * 1024 * 1024
+                for (url in urls.take(128)) {
+                    kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                    val bytes = fetch(url, minOf(budget, 8L * 1024 * 1024)) ?: continue
+                    val path = File(folder, digest(url)).apply { writeBytes(bytes) }
+                    images += OfflineImage(id, url, path.relativeTo(offlineRoot).path)
+                    budget -= bytes.size
+                }
+                if (previous != null && images.size < urls.size) throw java.io.IOException("部分配图未能更新，已保留原副本")
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                withContext(kotlinx.coroutines.NonCancellable) {
+                    database.withTransaction {
+                        library.putArticle(OfflineArticle(id, title, previous?.kind ?: if (id.startsWith("scp-")) "scp" else "tale",
+                            System.currentTimeMillis(), body.relativeTo(offlineRoot).path))
+                        library.putImages(images)
+                    }
+                    published = true
+                }
+                images.size
+            } finally {
+                if (!published) folder.deleteRecursively()
+            }
+        }
+    }
     suspend fun cachedFile(logicalKey: String, extension: String): File? {
         val entry = library.cache("${digest(logicalKey)}.$extension") ?: return null
         return File(File(documents, "content-cache"), entry.name).takeIf(File::isFile)

@@ -35,6 +35,24 @@ class NativeDataMigrationTest {
         val article = data.library.shelf().first().single()
         assertEquals("<p>已保存</p>", data.offlineFile(article.htmlPath).readText())
         assertArrayEquals(byteArrayOf(0, 1, 2), data.offlineFile(data.library.images(article.id).single().path).readBytes())
+        val url = "https://scp-wiki.wdfiles.com/local--files/scp-173/173.jpg"
+        val html = "<p>更新正文</p>"
+        assertEquals(1, data.saveOffline(article.id, "雕像", html, listOf(url)) { _, _ -> byteArrayOf(3, 4) })
+        val updated = data.library.revision(article.id)!!
+        assertTrue(updated.article.htmlPath.startsWith("native/"))
+        assertTrue(updated.images.single().path.startsWith("native/"))
+        val alias = File(context.filesDir, "offline")
+        val previouslyGeneratedPath = data.offlineFile(updated.article.htmlPath).relativeTo(alias).path
+        assertEquals(html, data.offlineFile(previouslyGeneratedPath).readText())
+        assertEquals(html, data.offlineFile(updated.article.htmlPath).readText())
+        assertEquals(listOf(url), updated.images.map { it.url })
+        assertArrayEquals(byteArrayOf(3, 4), data.offlineFile(updated.images.single().path).readBytes())
+        try {
+            data.saveOffline(article.id, "雕像", "<p>新版本</p>", listOf(url)) { _, _ -> null }
+            fail("缺图的更新不应发布")
+        } catch (_: java.io.IOException) {
+            assertEquals(updated, data.library.revision(article.id))
+        }
         data.setThemeMode(ThemeMode.LIGHT)
         data.migrateIfNeeded()
         assertEquals(ThemeMode.LIGHT, data.settings.first().themeMode)

@@ -38,7 +38,7 @@ fun wikiSlug(input: String): String? {
 @Serializable
 data class WikiPreview(val slug: String, val title: String, val blocks: List<PreviewBlock>,
     val tags: List<String> = emptyList(), val rating: String? = null, val objectClass: String? = null,
-    val hasInteractiveContent: Boolean = false, val credits: String = "")
+    val hasInteractiveContent: Boolean = false, val credits: String = "", val offlineHtml: String = "")
 
 @Serializable
 data class WikiLink(val start: Int, val end: Int, val slug: String)
@@ -58,6 +58,15 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
     if (body.selectFirst(".error-block") != null && body.selectFirst("#edit-page-form") != null) {
         throw IOException("条目不存在")
     }
+    // A static fragment keeps credit links and captions from the same revision the reader sees.
+    val source = body.clone()
+    document.select(".page-tags,.rate-points").filter { it.closest("#page-content") == null }
+        .forEach { source.appendChild(it.clone()) }
+    val attribution = source.appendElement("div").addClass("licensebox").appendElement("div").addClass("collapsible-block-content")
+    attribution.appendText("原文：").appendElement("a").attr("href", WIKI_BASE + slug).text(WIKI_BASE + slug)
+    val offlineHtml = Jsoup.clean(source.html(), WIKI_BASE + slug, org.jsoup.safety.Safelist.relaxed()
+        .addTags("figure", "figcaption", "main", "section", "article", "h1", "h2", "h3", "h4", "h5", "h6")
+        .addAttributes(":all", "class"))
     val tags = document.select(".page-tags a").map { it.text() }.filter { it.isNotBlank() && !it.startsWith("_") }.distinct()
     val rating = document.selectFirst(".rate-points")?.text()?.let { Regex("[+−-]?\\s*\\d+").find(it)?.value?.replace(" ", "") }
     val classes = listOf("Safe", "Euclid", "Keter", "Thaumiel", "Apollyon", "Archon", "Neutralized", "Explained", "Pending")
@@ -117,7 +126,7 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
     body.children().forEach(::visit)
     if (blocks.isEmpty()) throw IOException("此页暂无可预览正文，请查看原版网页")
     val title = document.getElementById("page-title")?.text()?.takeIf { it.isNotBlank() } ?: slug.uppercase(Locale.ROOT)
-    return WikiPreview(slug, title, blocks, tags, rating, objectClass, interactive, credits)
+    return WikiPreview(slug, title, blocks, tags, rating, objectClass, interactive, credits, offlineHtml)
 }
 
 /** The series indexes retain the translated short name when the article heading contains only its number. */

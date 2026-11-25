@@ -14,6 +14,9 @@ data class OfflineArticle(@PrimaryKey val id: String, val title: String, val kin
     parentColumns = ["id"], childColumns = ["articleId"], onDelete = ForeignKey.CASCADE)])
 data class OfflineImage(val articleId: String, val url: String, val path: String)
 
+data class OfflineRevision(@Embedded val article: OfflineArticle,
+    @Relation(parentColumn = "id", entityColumn = "articleId") val images: List<OfflineImage>)
+
 @Entity
 data class CacheFile(@PrimaryKey val name: String, val fetchedAt: Long, val bytes: Long)
 
@@ -34,6 +37,8 @@ interface LibraryDao {
     @Query("SELECT * FROM LibraryItem WHERE collection = :collection ORDER BY ordinal")
     fun items(collection: String): Flow<List<LibraryItem>>
     @Query("SELECT * FROM OfflineArticle ORDER BY savedAt DESC") fun shelf(): Flow<List<OfflineArticle>>
+    @Query("SELECT * FROM OfflineArticle WHERE id = :id") suspend fun article(id: String): OfflineArticle?
+    @Transaction @Query("SELECT * FROM OfflineArticle WHERE id = :id") suspend fun revision(id: String): OfflineRevision?
     @Query("SELECT * FROM OfflineImage WHERE articleId = :id") suspend fun images(id: String): List<OfflineImage>
     @Query("SELECT * FROM CacheFile WHERE name = :name") suspend fun cache(name: String): CacheFile?
 }
