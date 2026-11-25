@@ -135,10 +135,34 @@ class _ExploreScreenState extends State<ExploreScreen> {
               SliverToBoxAdapter(
                 child: Padding(
                   padding: const EdgeInsets.fromLTRB(20, 28, 20, 10),
-                  child: SectionTitle(
-                    title: '热门原创',
-                    subtitle: 'SCP 中文主站高分内容',
-                    compact: true,
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: SectionTitle(
+                          title: '热门原创',
+                          subtitle: 'SCP 中文主站高分内容',
+                          compact: true,
+                        ),
+                      ),
+                      if (data.topRated.isNotEmpty)
+                        TextButton(
+                          onPressed: () => _openExploreCollection(
+                            context,
+                            '热门原创',
+                            data.topRated
+                                .map(
+                                  (entry) => ExploreContentItem(
+                                    entry,
+                                    ContentKind.wiki,
+                                    '热门原创',
+                                  ),
+                                )
+                                .toList(),
+                            widget.onOpenContent,
+                          ),
+                          child: const Text('查看全部'),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -311,6 +335,11 @@ class _CatalogScreenState extends State<CatalogScreen> {
                             ),
                         itemBuilder: (context, index) => CatalogTile(
                           entry: entries[index],
+                          isRead:
+                              widget.isRead?.call(
+                                entries[index].contentRef.id,
+                              ) ??
+                              false,
                           onTap: () =>
                               widget.onOpenContent(entries[index].contentRef),
                         ),
@@ -1189,6 +1218,34 @@ class RankedListCard extends StatelessWidget {
   }
 }
 
+Future<void> _openExploreCollection(
+  BuildContext context,
+  String title,
+  List<ExploreContentItem> items,
+  ValueChanged<ContentRef> onOpen,
+) async {
+  final selected = await Navigator.of(context).push<ContentRef>(
+    MaterialPageRoute(
+      builder: (context) => Scaffold(
+        appBar: AppBar(title: Text(title)),
+        body: ListView.builder(
+          itemCount: items.length,
+          itemBuilder: (context, index) {
+            final item = items[index];
+            final entry = item.entry;
+            return ListTile(
+              title: Text(entry.title),
+              subtitle: Text(entry.normalizedId),
+              onTap: () => Navigator.of(context).pop(item.contentRef),
+            );
+          },
+        ),
+      ),
+    ),
+  );
+  if (selected != null && context.mounted) onOpen(selected);
+}
+
 class ExploreStrip extends StatelessWidget {
   const ExploreStrip({
     required this.title,
@@ -1211,7 +1268,20 @@ class ExploreStrip extends StatelessWidget {
         children: <Widget>[
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 20),
-            child: SectionTitle(title: title, compact: true),
+            child: Row(
+              children: [
+                Expanded(child: SectionTitle(title: title, compact: true)),
+                TextButton(
+                  onPressed: () => _openExploreCollection(
+                    context,
+                    title,
+                    items,
+                    onOpenContent,
+                  ),
+                  child: const Text('查看全部'),
+                ),
+              ],
+            ),
           ),
           SizedBox(
             height: 178,

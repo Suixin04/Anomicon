@@ -366,7 +366,9 @@ class DiscoveryRepository {
                 'If-Modified-Since': date,
             },
           )
-          .timeout(_timeout);
+          .timeout(
+            key.startsWith('tales-') ? const Duration(seconds: 18) : _timeout,
+          );
     } on TimeoutException {
       return DiscoverySnapshot(old, stale: old.isNotEmpty, failed: true);
     } on http.ClientException {

@@ -137,6 +137,22 @@ void main() {
     },
   );
 
+  test('series resumes at the next unread mainline entry', () {
+    final completed = {'scp-055'};
+    expect(
+      nextAntimemeticsChapter(completed.contains)?.id,
+      'we-need-to-talk-about-fifty-five',
+    );
+    expect(
+      antimemeticsGroups
+          .where((group) => group.$2)
+          .expand((group) => group.$3)
+          .length,
+      19,
+    );
+    expect(nextAntimemeticsChapter((_) => true), isNull);
+  });
+
   test('search history is deduplicated, persisted and cleared', () async {
     SharedPreferences.setMockInitialValues({});
     await DiscoveryHistory.remember('SCP-173');
