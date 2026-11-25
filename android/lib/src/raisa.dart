@@ -61,9 +61,40 @@ String? raisaAttachmentError(List<RaisaAttachment> attachments) {
     final length = attachment.bytes.length;
     if (attachment.name.trim().isEmpty || length == 0) return '附件为空或没有文件名';
     if (length > raisaMaxAttachmentBytes) return '单个附件不能超过 2 MiB';
+    if (!_supportsAttachment(attachment)) {
+      return '不支持或格式不匹配的附件：${attachment.name}。'
+          '请选择 JPEG、PNG、GIF、WebP、PDF、TXT、LOG、JSON 或 Markdown。';
+    }
     total += length;
   }
   return total > raisaMaxTotalBytes ? '附件合计不能超过 5 MiB' : null;
+}
+
+// Match the RAISA relay's magic bytes and text-file rules at the picker boundary.
+bool _supportsAttachment(RaisaAttachment attachment) {
+  final bytes = attachment.bytes;
+  bool matches(List<int> signature, [int offset = 0]) {
+    if (bytes.length < offset + signature.length) return false;
+    for (var index = 0; index < signature.length; index++) {
+      if (bytes[offset + index] != signature[index]) return false;
+    }
+    return true;
+  }
+
+  if (matches(const [0xff, 0xd8, 0xff]) ||
+      matches(const [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]) ||
+      matches('GIF87a'.codeUnits) ||
+      matches('GIF89a'.codeUnits) ||
+      (matches('RIFF'.codeUnits) && matches('WEBP'.codeUnits, 8)) ||
+      matches('%PDF-'.codeUnits)) {
+    return true;
+  }
+
+  final mime = attachment.mimeType.trim().toLowerCase();
+  if (mime.startsWith('image/') || bytes.contains(0)) return false;
+  final name = attachment.name.trim().toLowerCase();
+  return const ['.txt', '.log', '.json', '.md'].any(name.endsWith) ||
+      const {'text/plain', 'application/json', 'text/markdown'}.contains(mime);
 }
 
 String raisaSingleLine(String value) =>
@@ -321,7 +352,7 @@ class RaisaStore {
 
   Future<bool> saveReceipt(RaisaReceipt receipt) {
     final saving = _saving.then((_) => _saveReceipt(receipt));
-    _saving = saving.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    _saving = saving.then<void>((_) {});
     return saving;
   }
 
