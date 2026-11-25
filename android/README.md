@@ -1,61 +1,27 @@
-# Anomicon Android Flutter
+# 格异录 · Android 原生客户端
 
-Flutter rewrite workspace for the Android target of the HarmonyOS-first Anomicon app.
+功能与协议基线为 `main@1a26470` 的 HarmonyOS 7.0 v1.2.11。第一阶段交付原生导航、数据迁移和可运行的阅读及三维入口。
 
-## Current Scope
+## 构建
 
-- Flutter app root lives in this `android/` directory.
-- The generated Android platform shell lives under `android/android/`.
-- Package/application ID is `com.suixin.anomicon`.
-- The Android client has been rebuilt in Flutter while preserving the HarmonyOS showcase direction: black canvas, deep gray cards, blue emphasis, large Chinese headings, pill filters, and a translucent rounded bottom bar.
-- The main Flutter surfaces now cover Explore, Catalog, Stories, Terminal, native article reading, settings, archive gallery, archive detail, favorites, history, reading progress, and local research profile generation.
-- Offline/weak-network behavior is implemented with local content, image, and article caches that are preferred when network fetches fail.
-- The 3D archive uses `model_viewer_plus` for real GLB display on Android. Classic bundled assets live in `assets/models/`; on-demand assets are downloaded, SHA-256 verified, cached, and removable.
+使用 JDK 17、Android SDK 36 和仓库内的 Gradle Wrapper。
 
-## Build
-
-Prerequisites:
-
-- Flutter 3.47 or compatible SDK
-- JDK 17
-- Android SDK with a recent platform installed
-- Gradle 8.14.4 and Android Gradle Plugin 8.11.1
-
-Commands:
-
-```bash
-cd android
-flutter pub get
-flutter analyze
-flutter test
-flutter build apk --debug
+```sh
+./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-The debug APK is produced at:
+应用包名为 `com.suixin.anomicon`，最低支持 Android 8.0。默认 versionCode 2 用于从本地旧版 1 验证升级。发行时以 Play Console 已用最大值为准，通过 `-PversionCode=N` 指定。构建 AAB 需要 `ANOMICON_UPLOAD_KEYSTORE`、`ANOMICON_UPLOAD_STORE_PASSWORD`、`ANOMICON_UPLOAD_KEY_ALIAS` 与 `ANOMICON_UPLOAD_KEY_PASSWORD`。
 
-```text
-android/build/app/outputs/flutter-apk/app-debug.apk
-```
+## 第一阶段验证
 
-If the Gradle wrapper cannot download its distribution in a restricted network, download `gradle-8.14.4-bin.zip` from a reachable mirror and run the same build through that local Gradle binary:
+| 验证 | 结果 |
+|---|---|
+| 数据与升级 | Android 13 保留旧数据覆盖安装。Room 中有 2 条资料、230 个缓存索引。API 36 独立测试覆盖旧格式离线正文和图片、重复启动及设置保留。|
+| 在线阅读 | Android 13 从 Wiki 加载 SCP-002 图文并打开原版网页。独立 WebView 测试通过本地 HTML 验证宽表横滑、同页锚点、跨条目进入原生阅读器和返回先前网页。API 33 验证从屏幕边缘滑动，API 36 验证系统 BACK。|
+| 三维与布局 | Android 13 验证手机与 1200 dp 宽屏双栏，实际渲染 SCP-173。全屏隐藏系统栏、应用导航及列表，返回后恢复。Android 16 的 16384 字节页模拟器也加载了模型。|
+| 构建 | 7 项 JVM 测试、所有模块的 debug lint 和 debug APK 构建通过。发行包缺少上传密钥时在 checkUpload 停止。|
+| 二进制 | 最终 debug APK 的 4 种 ABI 共 20 个 ELF 通过 PT_LOAD 对齐检查，APK 通过 zipalign -c -P 16。|
 
-```bash
-cd android/android
-JAVA_HOME=/path/to/jdk17 ANDROID_HOME=/path/to/android-sdk /path/to/gradle-8.14.4/bin/gradle assembleDebug --no-daemon --max-workers=2
-```
+[设备截图与检查记录](verification/stage1/) · [在线原生阅读](verification/stage1/reader-live.png) · [宽屏双栏](verification/stage1/tablet-scene.png) · [宽屏全屏](verification/stage1/tablet-full.png)
 
-## Verification
-
-Validated during the Flutter migration:
-
-```bash
-flutter analyze
-flutter test
-JAVA_HOME=/tmp/anomicon-jdk17 ANDROID_HOME=/tmp/anomicon-android-sdk /tmp/anomicon-gradle-8.14.4/gradle-8.14.4/bin/gradle assembleDebug --no-daemon --max-workers=2
-```
-
-The verified debug APK was generated at:
-
-```text
-android/build/app/outputs/flutter-apk/app-debug.apk
-```
+旧 Flutter 实现在本地标签 `archive/android-flutter`（`0bd97b8`）。旧格式数据由 Kotlin 一次性导入。商店素材位于 [store](store/)。完整五页业务、双阅读器与离线管理、三维档案和 RAISA 对应后续阶段。
