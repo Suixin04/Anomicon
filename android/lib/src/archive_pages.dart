@@ -29,17 +29,34 @@ class _ArchiveGalleryScreenState extends State<ArchiveGalleryScreen> {
   @override
   void initState() {
     super.initState();
+    widget.repository.archiveAssetStore.installedRevision.addListener(
+      _refreshInstalled,
+    );
     _refreshInstalled();
   }
 
+  @override
+  void dispose() {
+    widget.repository.archiveAssetStore.installedRevision.removeListener(
+      _refreshInstalled,
+    );
+    super.dispose();
+  }
+
   Future<void> _refreshInstalled() async {
+    final revision =
+        widget.repository.archiveAssetStore.installedRevision.value;
     final next = <String, bool>{};
     for (final asset in SeedData.archiveAssets) {
       next[asset.assetId] =
           asset.isReadyByDefault ||
           await widget.repository.installedArchiveAsset(asset) != null;
     }
-    if (!mounted) return;
+    if (!mounted ||
+        revision !=
+            widget.repository.archiveAssetStore.installedRevision.value) {
+      return;
+    }
     setState(() => _installed = next);
   }
 
@@ -90,7 +107,6 @@ class _ArchiveGalleryScreenState extends State<ArchiveGalleryScreen> {
                   onDelete: asset.delivery == ArchiveAssetDelivery.onDemand
                       ? () async {
                           await widget.repository.deleteArchiveAsset(asset);
-                          await _refreshInstalled();
                         }
                       : null,
                 );
@@ -124,187 +140,291 @@ class ArchiveDetailScreen extends StatefulWidget {
 
 class _ArchiveDetailScreenState extends State<ArchiveDetailScreen> {
   File? _installedFile;
-  ArchiveDownloadProgress? _progress;
-  String? _error;
-  var _downloading = false;
-  var _autoRotate = true;
+  var _checking = true;
+  int _loadSequence = 0;
+
+  ArchiveAssetStore get _store => widget.repository.archiveAssetStore;
 
   @override
   void initState() {
     super.initState();
+    _store.installedRevision.addListener(_loadInstalled);
     _loadInstalled();
+    if (!widget.asset.isReadyByDefault) _store.restoreProgress(widget.asset);
+  }
+
+  @override
+  void didUpdateWidget(covariant ArchiveDetailScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.asset != widget.asset) {
+      _checking = true;
+      _installedFile = null;
+      _loadInstalled();
+      if (!widget.asset.isReadyByDefault) _store.restoreProgress(widget.asset);
+    }
+  }
+
+  @override
+  void dispose() {
+    _store.installedRevision.removeListener(_loadInstalled);
+    super.dispose();
   }
 
   Future<void> _loadInstalled() async {
-    final file = await widget.repository.installedArchiveAsset(widget.asset);
-    if (!mounted) return;
-    setState(() => _installedFile = file);
-  }
-
-  Future<void> _download() async {
-    if (_downloading) return;
+    final sequence = ++_loadSequence;
+    final asset = widget.asset;
+    final file = asset.isReadyByDefault
+        ? null
+        : await _store.installedFile(asset);
+    if (!mounted || sequence != _loadSequence) return;
     setState(() {
-      _downloading = true;
-      _error = null;
-      _progress = null;
+      _installedFile = file;
+      _checking = false;
     });
-    try {
-      final file = await widget.repository.downloadArchiveAsset(
-        widget.asset,
-        onProgress: (progress) => setState(() => _progress = progress),
-      );
-      if (!mounted) return;
-      setState(() => _installedFile = file);
-    } on Object catch (error) {
-      if (!mounted) return;
-      setState(() => _error = error.toString());
-    } finally {
-      if (mounted) {
-        setState(() => _downloading = false);
-      }
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final asset = widget.asset;
-    final installed = asset.isReadyByDefault || _installedFile != null;
     final modelSrc = asset.isReadyByDefault
         ? asset.resourcePath
-        : _installedFile?.uri.toString() ?? asset.downloadUrl;
+        : _installedFile?.uri.toString();
+    final theme = Theme.of(context);
     return DetailCanvas(
       onBack: widget.onBack,
       title: '三维档案',
       subtitle: asset.title,
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 14, 20, 40),
-        children: <Widget>[
-          ClipRRect(
-            borderRadius: BorderRadius.circular(28),
-            child: SizedBox(
-              height: 430,
-              child: installed
-                  ? ModelViewer(
-                      backgroundColor: _archiveBlue,
-                      src: modelSrc,
-                      alt: '${asset.title} GLB',
-                      autoRotate: _autoRotate,
-                      cameraControls: true,
-                      disableZoom: false,
-                    )
-                  : RemoteArchivePlaceholder(
-                      asset: asset,
-                      progress: _progress,
-                      downloading: _downloading,
-                      error: _error,
-                      onDownload: _download,
-                    ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          GlassCard(
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: <Widget>[
-                FilledButton(
-                  onPressed: installed
-                      ? () => setState(() => _autoRotate = !_autoRotate)
-                      : null,
-                  child: Text(_autoRotate ? '停止旋转' : '自动旋转'),
-                ),
-                FilledButton(
-                  onPressed: installed
-                      ? () => setState(() => _autoRotate = true)
-                      : null,
-                  child: const Text('复位'),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 20),
-          GlassCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          const Text(
-                            '档案说明',
-                            style: TextStyle(
-                              fontSize: 22,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '对象等级 · ${asset.objectClass}',
-                            style: const TextStyle(color: _muted, fontSize: 16),
-                          ),
-                        ],
+        children: [
+          if (modelSrc != null)
+            SizedBox(
+              height: 400,
+              child: _ArchiveStage(
+                key: ValueKey(modelSrc),
+                asset: asset,
+                src: modelSrc,
+              ),
+            )
+          else if (_checking)
+            const SizedBox(
+              height: 260,
+              child: Center(child: CircularProgressIndicator()),
+            )
+          else
+            ValueListenableBuilder<ArchiveDownloadState>(
+              valueListenable: _store.stateOf(asset),
+              builder: (context, state, _) => Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    children: [
+                      const Icon(Icons.cloud_download_outlined, size: 42),
+                      const SizedBox(height: 12),
+                      Text('按需下载 · ${formatBytes(asset.byteLength)}'),
+                      if (state.progress case final progress?) ...[
+                        const SizedBox(height: 12),
+                        LinearProgressIndicator(value: progress.fraction),
+                        Text(formatDownloadProgress(progress)),
+                      ] else if (state.downloading) ...[
+                        const SizedBox(height: 12),
+                        const LinearProgressIndicator(),
+                      ],
+                      if (state.error case final error?) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error,
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      FilledButton.icon(
+                        onPressed: state.downloading
+                            ? () => _store.pause(asset)
+                            : () => _store.download(asset),
+                        icon: Icon(
+                          state.downloading ? Icons.pause : Icons.download,
+                        ),
+                        label: Text(
+                          state.downloading
+                              ? '暂停下载'
+                              : state.progress != null
+                              ? '继续下载'
+                              : state.error != null
+                              ? '重试下载'
+                              : '获取此模型',
+                        ),
                       ),
-                    ),
-                    FilledButton.tonal(
-                      onPressed: () => _openExternal(asset.sourceUrl),
-                      child: const Text('来源'),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 22),
-                Text(
-                  asset.description,
-                  style: const TextStyle(
-                    color: Color(0xFFB9BEC3),
-                    fontSize: 17,
-                    height: 1.55,
+                    ],
                   ),
                 ),
-                const SizedBox(height: 22),
-                const Divider(color: Color(0xFF3F4448)),
-                MetadataRow(label: '格式', value: 'GLB'),
-                MetadataRow(label: '大小', value: formatBytes(asset.byteLength)),
-                MetadataRow(label: '档案版本', value: asset.version),
-                MetadataRow(
-                  label: '交付方式',
-                  value: asset.delivery == ArchiveAssetDelivery.bundled
-                      ? '随应用内置'
-                      : '按需下载',
-                ),
-                MetadataRow(label: '许可证', value: asset.license),
-                MetadataRow(label: '归因', value: asset.attribution),
-                const SizedBox(height: 12),
-                Text(
-                  asset.modificationNote,
-                  style: const TextStyle(color: _muted, height: 1.45),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: OutlinedButton(
+              ),
+            ),
+          const SizedBox(height: 16),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(asset.title, style: theme.textTheme.headlineSmall),
+                  Text('对象等级 · ${asset.objectClass}'),
+                  const SizedBox(height: 12),
+                  Text(asset.description),
+                  const SizedBox(height: 12),
+                  Text(asset.notice),
+                  const Divider(),
+                  MetadataRow(
+                    label: '格式与大小',
+                    value: 'GLB · ${formatBytes(asset.byteLength)}',
+                  ),
+                  MetadataRow(label: '档案版本', value: asset.version),
+                  MetadataRow(
+                    label: '交付方式',
+                    value: asset.isReadyByDefault ? '随应用内置' : '按需下载',
+                  ),
+                  MetadataRow(label: '许可证', value: asset.license),
+                  MetadataRow(label: '模型归因', value: asset.attribution),
+                  MetadataRow(label: '条目归因', value: asset.contentAttribution),
+                  MetadataRow(label: '模型来源', value: asset.sourceLabel),
+                  Text(asset.modificationNote),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      OutlinedButton(
                         onPressed: widget.onOpenArticle,
                         child: const Text('打开条目'),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: OutlinedButton(
+                      OutlinedButton(
                         onPressed: () => _openExternal(asset.contentSourceUrl),
-                        child: const Text('英文来源'),
+                        child: const Text('英文条目'),
                       ),
-                    ),
-                  ],
-                ),
-              ],
+                      OutlinedButton(
+                        onPressed: () => _openExternal(asset.sourceUrl),
+                        child: const Text('模型源文件'),
+                      ),
+                      OutlinedButton(
+                        onPressed: () => _openExternal(
+                          'https://creativecommons.org/licenses/by-sa/3.0/',
+                        ),
+                        child: const Text('许可证全文'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _ArchiveStage extends StatefulWidget {
+  const _ArchiveStage({
+    required this.asset,
+    required this.src,
+    this.fullScreen = false,
+    super.key,
+  });
+
+  final ArchiveAsset asset;
+  final String src;
+  final bool fullScreen;
+
+  @override
+  State<_ArchiveStage> createState() => _ArchiveStageState();
+}
+
+class _ArchiveStageState extends State<_ArchiveStage> {
+  Future<void> Function(String)? _runJavaScript;
+  var _autoRotate = false;
+  var _generation = 0;
+
+  Future<void> _toggleRotation() async {
+    final rotate = !_autoRotate;
+    await _runJavaScript?.call(
+      "document.querySelector('model-viewer')?.toggleAttribute('auto-rotate', $rotate);",
+    );
+    if (mounted) setState(() => _autoRotate = rotate);
+  }
+
+  void _openFullscreen() {
+    Navigator.of(context, rootNavigator: true).push(
+      MaterialPageRoute<void>(
+        fullscreenDialog: true,
+        builder: (context) => Scaffold(
+          appBar: AppBar(title: Text(widget.asset.title)),
+          body: SafeArea(
+            child: _ArchiveStage(
+              asset: widget.asset,
+              src: widget.src,
+              fullScreen: true,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      Expanded(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: ModelViewer(
+            key: ValueKey(_generation),
+            backgroundColor: _archiveBlue,
+            src: widget.src,
+            alt: '${widget.asset.title} GLB',
+            cameraControls: true,
+            touchAction: TouchAction.panY,
+            onWebViewCreated: (controller) =>
+                _runJavaScript = controller.runJavaScript,
+            relatedJs: """
+              const model = document.querySelector('model-viewer');
+              model.addEventListener('error', () => {
+                const error = document.createElement('div');
+                error.textContent = '无法显示模型，请复位重试。';
+                error.style.cssText = 'position:absolute;top:8px;left:8px;color:white;background:#242c42;padding:8px';
+                document.body.append(error);
+              });
+            """,
+          ),
+        ),
+      ),
+      Wrap(
+        alignment: WrapAlignment.center,
+        spacing: 8,
+        children: [
+          IconButton(
+            tooltip: _autoRotate ? '停止旋转' : '自动旋转',
+            onPressed: _toggleRotation,
+            icon: Icon(_autoRotate ? Icons.pause : Icons.threesixty),
+          ),
+          IconButton(
+            tooltip: '复位',
+            onPressed: () => setState(() {
+              _autoRotate = false;
+              _runJavaScript = null;
+              _generation++;
+            }),
+            icon: const Icon(Icons.restart_alt),
+          ),
+          if (!widget.fullScreen)
+            IconButton(
+              tooltip: '全屏查看',
+              onPressed: _openFullscreen,
+              icon: const Icon(Icons.fullscreen),
+            ),
+        ],
+      ),
+    ],
+  );
 }
 
 class ArchiveGalleryCard extends StatelessWidget {
@@ -325,6 +445,7 @@ class ArchiveGalleryCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return GlassCard(
       padding: EdgeInsets.zero,
       child: InkWell(
@@ -335,29 +456,21 @@ class ArchiveGalleryCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: Text(
-                      asset.title,
-                      style: const TextStyle(
-                        fontSize: 28,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
+              Wrap(
+                spacing: 12,
+                runSpacing: 8,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    asset.title,
+                    style: Theme.of(context).textTheme.titleLarge,
                   ),
                   StatusPill(
-                    text: asset.delivery == ArchiveAssetDelivery.bundled
+                    text: asset.isReadyByDefault
                         ? '随应用内置'
                         : installed
                         ? '已下载'
                         : '待下载',
-                  ),
-                  const SizedBox(width: 10),
-                  const Icon(
-                    Icons.chevron_right_rounded,
-                    color: _muted,
-                    size: 30,
                   ),
                 ],
               ),
@@ -366,23 +479,24 @@ class ArchiveGalleryCard extends StatelessWidget {
                 asset.description,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFFB6BAC0),
+                style: TextStyle(
+                  color: colors.onSurfaceVariant,
                   fontSize: 18,
                   height: 1.25,
                 ),
               ),
               const SizedBox(height: 18),
-              Row(
-                children: <Widget>[
+              Wrap(
+                spacing: 16,
+                runSpacing: 6,
+                children: [
                   Text(
                     asset.objectClass,
-                    style: const TextStyle(color: _muted, fontSize: 18),
+                    style: TextStyle(color: colors.onSurfaceVariant),
                   ),
-                  const Spacer(),
                   Text(
-                    'GLB  ${formatBytes(asset.byteLength)}',
-                    style: const TextStyle(color: _muted, fontSize: 18),
+                    'GLB · ${formatBytes(asset.byteLength)}',
+                    style: TextStyle(color: colors.onSurfaceVariant),
                   ),
                 ],
               ),
@@ -393,8 +507,8 @@ class ArchiveGalleryCard extends StatelessWidget {
                   child: FilledButton.tonal(
                     onPressed: onDelete,
                     style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFFFFE1E1),
-                      foregroundColor: const Color(0xFF9B2D2D),
+                      backgroundColor: colors.errorContainer,
+                      foregroundColor: colors.onErrorContainer,
                     ),
                     child: const Text('删除'),
                   ),
@@ -415,95 +529,20 @@ class StatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFEAF2FF),
+        color: colors.secondaryContainer,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: Color(0xFF315B9F),
+        style: TextStyle(
+          color: colors.onSecondaryContainer,
           fontSize: 15,
           fontWeight: FontWeight.w900,
         ),
-      ),
-    );
-  }
-}
-
-class RemoteArchivePlaceholder extends StatelessWidget {
-  const RemoteArchivePlaceholder({
-    required this.asset,
-    required this.progress,
-    required this.downloading,
-    required this.error,
-    required this.onDownload,
-    super.key,
-  });
-
-  final ArchiveAsset asset;
-  final ArchiveDownloadProgress? progress;
-  final bool downloading;
-  final String? error;
-  final VoidCallback onDownload;
-
-  @override
-  Widget build(BuildContext context) {
-    final fraction = progress?.fraction;
-    return Container(
-      color: _archiveBlue,
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: <Widget>[
-          const Icon(
-            Icons.cloud_download_rounded,
-            size: 64,
-            color: Colors.white70,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            asset.title,
-            style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w900),
-          ),
-          const SizedBox(height: 10),
-          Text(
-            downloading
-                ? progress == null
-                      ? '正在准备下载...'
-                      : '正在下载 ${formatDownloadProgress(progress!)}'
-                : '按需下载后保存到应用私有缓存，并校验大小与 SHA-256。',
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: Color(0xFFC3C9D1),
-              fontSize: 16,
-              height: 1.4,
-            ),
-          ),
-          const SizedBox(height: 18),
-          if (downloading)
-            LinearProgressIndicator(
-              value: fraction,
-              minHeight: 6,
-              borderRadius: BorderRadius.circular(99),
-            )
-          else
-            FilledButton.icon(
-              onPressed: asset.downloadUrl.isEmpty ? null : onDownload,
-              icon: const Icon(Icons.cloud_download_rounded),
-              label: const Text('下载并查看'),
-            ),
-          if (error != null) ...<Widget>[
-            const SizedBox(height: 14),
-            Text(
-              error!,
-              textAlign: TextAlign.center,
-              style: const TextStyle(color: Color(0xFFFFA5A5)),
-            ),
-          ],
-        ],
       ),
     );
   }
@@ -517,15 +556,16 @@ class MetadataRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 14),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(color: _muted, fontSize: 17),
+              style: TextStyle(color: colors.onSurfaceVariant, fontSize: 16),
             ),
           ),
           const SizedBox(width: 18),
@@ -534,9 +574,9 @@ class MetadataRow extends StatelessWidget {
             child: Text(
               value,
               textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 17,
+              style: TextStyle(
+                color: colors.onSurface,
+                fontSize: 16,
                 fontWeight: FontWeight.w600,
               ),
             ),
@@ -556,8 +596,5 @@ String formatBytes(int bytes) {
 
 String formatDownloadProgress(ArchiveDownloadProgress progress) {
   final fraction = progress.fraction;
-  if (fraction == null) {
-    return formatBytes(progress.downloadedBytes);
-  }
   return '${(fraction * 100).round()}% · ${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}';
 }

@@ -8,24 +8,17 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import 'archive_download.dart';
 import 'models.dart';
 import 'seed_data.dart';
+
+export 'archive_download.dart';
 
 class CachedContent {
   const CachedContent(this.body, this.fetchedAt);
 
   final String body;
   final int fetchedAt;
-}
-
-class ArchiveDownloadProgress {
-  const ArchiveDownloadProgress(this.downloadedBytes, this.totalBytes);
-
-  final int downloadedBytes;
-  final int totalBytes;
-
-  double? get fraction =>
-      totalBytes > 0 ? (downloadedBytes / totalBytes).clamp(0.0, 1.0) : null;
 }
 
 class ContentCache {
@@ -97,114 +90,6 @@ class ContentCache {
   }
 }
 
-class ArchiveAssetIntegrity {
-  static Future<bool> isValid(ArchiveAsset asset, File file) async {
-    if (!await FileSystemEntity.isFile(file.path)) {
-      return false;
-    }
-    if (asset.byteLength > 0 && await file.length() != asset.byteLength) {
-      return false;
-    }
-    return asset.sha256.trim().isEmpty || await sha256File(file) == asset.sha256.toLowerCase();
-  }
-
-  static Future<String> sha256File(File file) async {
-    return sha256.convert(await file.readAsBytes()).toString();
-  }
-}
-
-class ArchiveAssetStore {
-  ArchiveAssetStore._(this._root, this._client);
-
-  static Future<ArchiveAssetStore> create({http.Client? client}) async {
-    final documents = await getApplicationDocumentsDirectory();
-    final root = Directory('${documents.path}/archive3d/v1/objects');
-    await root.create(recursive: true);
-    return ArchiveAssetStore._(root, client ?? http.Client());
-  }
-
-  final Directory _root;
-  final http.Client _client;
-
-  Future<File?> installedFile(ArchiveAsset asset) async {
-    final target = _fileFor(asset);
-    if (await ArchiveAssetIntegrity.isValid(asset, target)) {
-      return target;
-    }
-    if (await target.exists()) {
-      await target.delete();
-    }
-    return null;
-  }
-
-  Future<File> download(
-    ArchiveAsset asset, {
-    void Function(ArchiveDownloadProgress progress)? onProgress,
-  }) async {
-    if (asset.downloadUrl.trim().isEmpty) {
-      throw StateError('三维模型没有可用下载地址');
-    }
-    final target = _fileFor(asset);
-    if (await ArchiveAssetIntegrity.isValid(asset, target)) {
-      onProgress?.call(ArchiveDownloadProgress(await target.length(), await target.length()));
-      return target;
-    }
-    await target.parent.create(recursive: true);
-    final temporary = File('${target.path}.download');
-    if (await temporary.exists()) {
-      await temporary.delete();
-    }
-    final request = http.Request('GET', Uri.parse(asset.downloadUrl))
-      ..headers['User-Agent'] = 'Anomicon-Flutter-Android/1.0';
-    final response = await _client.send(request).timeout(const Duration(seconds: 60));
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw HttpException('HTTP ${response.statusCode}: ${asset.downloadUrl}');
-    }
-    final totalBytes = asset.byteLength > 0 ? asset.byteLength : response.contentLength ?? 0;
-    var downloadedBytes = 0;
-    final sink = temporary.openWrite();
-    try {
-      await for (final chunk in response.stream) {
-        downloadedBytes += chunk.length;
-        sink.add(chunk);
-        onProgress?.call(ArchiveDownloadProgress(downloadedBytes, totalBytes));
-      }
-      await sink.flush();
-    } finally {
-      await sink.close();
-    }
-    if (!await ArchiveAssetIntegrity.isValid(asset, temporary)) {
-      await temporary.delete();
-      throw const FileSystemException('三维模型校验失败：大小或 SHA-256 不匹配');
-    }
-    if (await target.exists()) {
-      await target.delete();
-    }
-    return temporary.rename(target.path);
-  }
-
-  Future<bool> delete(ArchiveAsset asset) async {
-    final target = _fileFor(asset);
-    final temporary = File('${target.path}.download');
-    if (await temporary.exists()) {
-      await temporary.delete();
-    }
-    if (!await target.exists()) {
-      return false;
-    }
-    await target.delete();
-    return true;
-  }
-
-  File _fileFor(ArchiveAsset asset) {
-    final hash = asset.sha256.trim().toLowerCase();
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(hash)) {
-      throw ArgumentError('三维模型清单 SHA-256 无效');
-    }
-    return File('${_root.path}/${hash.substring(0, 2)}/$hash.glb');
-  }
-}
-
 class AnomiconRepository {
   AnomiconRepository({
     required this.wikiGateway,
@@ -223,12 +108,6 @@ class AnomiconRepository {
   final ArchiveAssetStore archiveAssetStore;
 
   Future<File?> installedArchiveAsset(ArchiveAsset asset) => archiveAssetStore.installedFile(asset);
-
-  Future<File> downloadArchiveAsset(
-    ArchiveAsset asset, {
-    void Function(ArchiveDownloadProgress progress)? onProgress,
-  }) =>
-      archiveAssetStore.download(asset, onProgress: onProgress);
 
   Future<bool> deleteArchiveAsset(ArchiveAsset asset) => archiveAssetStore.delete(asset);
 
