@@ -18,7 +18,9 @@ import {
 } from 'anomiconbasic';
 import {
   RAISA_GITHUB_ISSUES_URL,
+  RaisaAttachmentPickerPort,
   RaisaDiagnosticSnapshot,
+  RaisaFeedbackAttachment,
   RaisaFeedbackContext,
   RaisaFeedbackViewModel,
   emptyRaisaFeedbackContext
@@ -43,19 +45,21 @@ export function RaisaFeedbackPageBuilder(
   settings: SettingsViewModel,
   appInfo: AppInfoPort,
   hapticService: HapticFeedbackPort,
-  clipboard: ClipboardPort
+  clipboard: ClipboardPort,
+  attachmentPicker: RaisaAttachmentPickerPort
 ) {
   RaisaFeedbackPage({
     feedback: feedback,
     settings: settings,
     appInfo: appInfo,
     hapticService: hapticService,
-    clipboard: clipboard
+    clipboard: clipboard,
+    attachmentPicker: attachmentPicker
   });
 }
 
 /**
- * RAISA 档案系统维护工单页宿主：由手机产品层组装上下文参数、剪贴板、外链打开与终端诊断快照。
+ * RAISA 档案系统维护工单页宿主：由手机产品层组装上下文参数、剪贴板、外链打开、附件选择与终端诊断快照。
  */
 @ComponentV2
 struct RaisaFeedbackPage {
@@ -64,6 +68,7 @@ struct RaisaFeedbackPage {
   @Require @Param appInfo: AppInfoPort;
   @Require @Param hapticService: HapticFeedbackPort;
   @Require @Param clipboard: ClipboardPort;
+  @Require @Param attachmentPicker: RaisaAttachmentPickerPort;
 
   private pageStack: NavPathStack | undefined = undefined;
   private navDestinationId: string = '';
@@ -127,6 +132,24 @@ struct RaisaFeedbackPage {
     }
   }
 
+  private async pickImages(remainingSlots: number): Promise<RaisaFeedbackAttachment[]> {
+    try {
+      return await this.attachmentPicker.pickImages(remainingSlots);
+    } catch (error) {
+      this.showToast(error instanceof Error ? error.message : '选择图片失败');
+      return [];
+    }
+  }
+
+  private async pickDocuments(remainingSlots: number): Promise<RaisaFeedbackAttachment[]> {
+    try {
+      return await this.attachmentPicker.pickDocuments(remainingSlots);
+    } catch (error) {
+      this.showToast(error instanceof Error ? error.message : '选择文件失败');
+      return [];
+    }
+  }
+
   build() {
     HdsNavDestination() {
       if (this.routeReady) {
@@ -144,7 +167,11 @@ struct RaisaFeedbackPage {
           },
           onOpenExternalUrl: (url: string): void => {
             this.openExternalUrl(url);
-          }
+          },
+          onPickImages: (remainingSlots: number): Promise<RaisaFeedbackAttachment[]> =>
+            this.pickImages(remainingSlots),
+          onPickDocuments: (remainingSlots: number): Promise<RaisaFeedbackAttachment[]> =>
+            this.pickDocuments(remainingSlots)
         })
       }
     }

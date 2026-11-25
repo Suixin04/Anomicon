@@ -4,6 +4,7 @@ import {
   RAISA_DETAILS_MAX_LENGTH,
   RAISA_SUMMARY_MAX_LENGTH,
   RaisaDiagnosticSnapshot,
+  RaisaFeedbackAttachment,
   RaisaFeedbackCategory,
   RaisaFeedbackRelayGateway,
   RaisaFeedbackRepository,
@@ -12,6 +13,7 @@ import {
   RaisaFeedbackTicket,
   sanitizeFeedbackMultiline,
   sanitizeFeedbackSingleLine,
+  validateRaisaFeedbackAttachments,
   validateRaisaFeedbackInput
 } from '../../domain/RaisaFeedbackContracts';
 
@@ -148,7 +150,8 @@ export class RaisaFeedbackViewModel {
     contact: string,
     includeDiagnostics: boolean,
     diagnostics: RaisaDiagnosticSnapshot,
-    explicitIdempotencyKey: string = ''
+    explicitIdempotencyKey: string = '',
+    attachments: RaisaFeedbackAttachment[] = []
   ): Promise<RaisaFeedbackSubmitResult> {
     if (this.submitting) {
       throw new Error('工单正在签发中，请稍候');
@@ -161,6 +164,12 @@ export class RaisaFeedbackViewModel {
       this.submitError = validationError;
       this.notify();
       throw new Error(validationError);
+    }
+    const attachmentsError = validateRaisaFeedbackAttachments(attachments);
+    if (attachmentsError.length > 0) {
+      this.submitError = attachmentsError;
+      this.notify();
+      throw new Error(attachmentsError);
     }
     if (!this.relay.isConfigured()) {
       const message = '尚未配置 RAISA 中转服务地址，可先复制工单报文或前往 GitHub Issues 提交';
@@ -178,7 +187,8 @@ export class RaisaFeedbackViewModel {
       cleanDetails,
       cleanContact,
       includeDiagnostics,
-      diagnostics
+      diagnostics,
+      attachments
     );
 
     let outcome: RaisaFeedbackSubmitResult | undefined = undefined;

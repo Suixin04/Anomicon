@@ -3721,11 +3721,6 @@ export struct ArticleNativeRenderer {
       }
       .alignItems(VerticalAlign.Center)
 
-      Button(this.completed ? '取消已读标记' : '标为已读')
-        .id('articleCompletionButton')
-        .fontSize(AppTypography.CAPTION_L)
-        .onClick((): void => this.onToggleCompleted())
-
       if (this.document.pageVersion.length > 0) {
         Text(this.document.pageVersion)
           .fontSize(AppTypography.CAPTION_M)

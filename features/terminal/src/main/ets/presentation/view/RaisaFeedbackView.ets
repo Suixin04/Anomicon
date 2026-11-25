@@ -21,17 +21,21 @@ import {
   RAISA_DETAILS_MAX_LENGTH,
   RAISA_FEEDBACK_CATEGORIES,
   RAISA_GITHUB_ISSUES_URL,
+  RAISA_MAX_ATTACHMENTS,
   RAISA_SUMMARY_MAX_LENGTH,
   RaisaDiagnosticSnapshot,
+  RaisaFeedbackAttachment,
   RaisaFeedbackCategory,
   RaisaFeedbackCategoryDescriptor,
   RaisaFeedbackContext,
   RaisaFeedbackTicket,
   RaisaFeedbackViewModel,
   findRaisaFeedbackCategoryDescriptor,
+  formatRaisaAttachmentBytes,
   formatRaisaDiagnosticLines,
   formatRaisaTicketPlainReport,
-  formatRaisaTicketTimestamp
+  formatRaisaTicketTimestamp,
+  validateRaisaFeedbackAttachments
 } from 'library';
 
 function resolveCategorySymbol(category: RaisaFeedbackCategory): Resource {
@@ -230,6 +234,67 @@ struct RaisaTicketHistoryRow {
   }
 }
 
+@ComponentV2
+struct RaisaAttachmentItemRow {
+  @Require @Param attachment: RaisaFeedbackAttachment;
+  @Event onRemove: () => void = () => {};
+
+  build() {
+    Row({ space: 10 }) {
+      if (this.attachment.isImage && this.attachment.previewUri.length > 0) {
+        Image(this.attachment.previewUri)
+          .width(52)
+          .height(52)
+          .objectFit(ImageFit.Cover)
+          .borderRadius(10)
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+      } else {
+        Column() {
+          SymbolGlyph($r('sys.symbol.doc_text'))
+            .fontSize(22)
+            .fontColor([$r('sys.color.icon_emphasize')])
+        }
+        .width(52)
+        .height(52)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(10)
+      }
+
+      Column({ space: 3 }) {
+        Text(this.attachment.fileName)
+          .fontSize(AppTypography.BODY_S)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font'))
+          .maxLines(1)
+          .textOverflow({ overflow: TextOverflow.Ellipsis })
+        Text(`${this.attachment.isImage ? '图片' : '文件'} · ${formatRaisaAttachmentBytes(this.attachment.byteLength)}`)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontColor($r('sys.color.font_secondary'))
+          .maxLines(1)
+      }
+      .alignItems(HorizontalAlign.Start)
+      .layoutWeight(1)
+
+      Column() {
+        SymbolGlyph($r('sys.symbol.xmark_circle_fill'))
+          .fontSize(18)
+          .fontColor([$r('sys.color.icon_secondary')])
+      }
+      .width(32)
+      .height(32)
+      .justifyContent(FlexAlign.Center)
+      .onClick(() => this.onRemove())
+      .accessibilityText(`移除附件 ${this.attachment.fileName}`)
+    }
+    .width('100%')
+    .padding(8)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor($r('sys.color.comp_background_tertiary'))
+    .borderRadius(12)
+  }
+}
+
 /**
  * 沉浸式 RAISA 档案系统维护工单视图：
  * 分类报文、脱敏终端快照、签发回执与记录提交版本的本地历史档案。
@@ -244,6 +309,8 @@ export struct RaisaFeedbackView {
   @Event onHaptic: () => void = () => {};
   @Event onCopyText: (text: string, notice: string) => void = (_text: string, _notice: string): void => {};
   @Event onOpenExternalUrl: (url: string) => void = (_url: string): void => {};
+  @Param onPickImages: ((remainingSlots: number) => Promise<RaisaFeedbackAttachment[]>) | undefined = undefined;
+  @Param onPickDocuments: ((remainingSlots: number) => Promise<RaisaFeedbackAttachment[]>) | undefined = undefined;
 
   @Local private horizontalMargin: number = PHONE_PAGE_MARGIN;
   @Local private selectedCategory: RaisaFeedbackCategory = RaisaFeedbackCategory.TERMINAL_BUG;
@@ -254,6 +321,9 @@ export struct RaisaFeedbackView {
   @Local private diagnosticsExpanded: boolean = false;
   @Local private contextAttached: boolean = false;
   @Local private composerVisible: boolean = true;
+  @Local private attachments: RaisaFeedbackAttachment[] = [];
+  @Local private pickingAttachments: boolean = false;
+  @Local private attachmentNotice: string = '';
   @Local private draftSeed: number = Date.now();
   @Local private draftSequence: number = 1;
 
@@ -328,8 +398,64 @@ export struct RaisaFeedbackView {
     this.viewModel.clearSubmitError();
     this.summary = '';
     this.details = '';
+    this.attachments = [];
+    this.attachmentNotice = '';
     this.draftSequence++;
     this.composerVisible = true;
+  }
+
+  private remainingAttachmentSlots(): number {
+    return Math.max(0, RAISA_MAX_ATTACHMENTS - this.attachments.length);
+  }
+
+  private removeAttachment(id: string): void {
+    this.onHaptic();
+    this.attachments = this.attachments.filter((item: RaisaFeedbackAttachment): boolean => item.id !== id);
+    this.attachmentNotice = '';
+    if (this.viewModel.submitError.length > 0) {
+      this.viewModel.clearSubmitError();
+    }
+  }
+
+  private async pickAttachments(asImages: boolean): Promise<void> {
+    if (this.pickingAttachments || this.viewModel.submitting) {
+      return;
+    }
+    const remaining = this.remainingAttachmentSlots();
+    if (remaining <= 0) {
+      this.attachmentNotice = `最多可附带 ${RAISA_MAX_ATTACHMENTS} 个附件`;
+      return;
+    }
+    const handler = asImages ? this.onPickImages : this.onPickDocuments;
+    if (handler === undefined) {
+      return;
+    }
+    this.onHaptic();
+    this.pickingAttachments = true;
+    this.attachmentNotice = '';
+    try {
+      const picked = await handler(remaining);
+      if (picked.length === 0) {
+        return;
+      }
+      const next: RaisaFeedbackAttachment[] = this.attachments.slice();
+      for (let index: number = 0; index < picked.length && next.length < RAISA_MAX_ATTACHMENTS; index++) {
+        next.push(picked[index]);
+      }
+      const validationError = validateRaisaFeedbackAttachments(next);
+      if (validationError.length > 0) {
+        this.attachmentNotice = validationError;
+        return;
+      }
+      this.attachments = next;
+      if (this.viewModel.submitError.length > 0) {
+        this.viewModel.clearSubmitError();
+      }
+    } catch (error) {
+      this.attachmentNotice = error instanceof Error ? error.message : '选择附件失败';
+    } finally {
+      this.pickingAttachments = false;
+    }
   }
 
   private copyPlainReport(notice: string): void {
@@ -358,11 +484,14 @@ export struct RaisaFeedbackView {
         this.contact,
         this.includeDiagnostics,
         this.effectiveDiagnosticSnapshot(),
-        this.draftIdempotencyKey()
+        this.draftIdempotencyKey(),
+        this.attachments
       );
       this.composerVisible = false;
       this.summary = '';
       this.details = '';
+      this.attachments = [];
+      this.attachmentNotice = '';
       this.draftSequence++;
     } catch (_error) {
       // 错误提示已经由 viewModel.submitError 呈现在页面内。
@@ -646,6 +775,110 @@ export struct RaisaFeedbackView {
   }
 
   @Builder
+  private attachmentsSection() {
+    Column({ space: 10 }) {
+      Row() {
+        Column({ space: 2 }) {
+          Text('现场截图与附件（选填）')
+            .fontSize(AppTypography.BODY_M)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('sys.color.font'))
+          Text(`最多 ${RAISA_MAX_ATTACHMENTS} 个，单文件 ≤ 2 MB（大图自动压缩）`)
+            .fontSize(AppTypography.CAPTION_M)
+            .fontColor($r('sys.color.font_secondary'))
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+
+        Text(`${this.attachments.length}/${RAISA_MAX_ATTACHMENTS}`)
+          .fontSize(AppTypography.CAPTION_M)
+          .fontWeight(FontWeight.Medium)
+          .fontColor($r('sys.color.font_secondary'))
+          .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+          .borderRadius(10)
+      }
+      .width('100%')
+      .alignItems(VerticalAlign.Center)
+
+      Row({ space: 10 }) {
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.picture_fill'))
+            .fontSize(14)
+            .fontColor([this.remainingAttachmentSlots() > 0 && !this.pickingAttachments ?
+              $r('sys.color.icon_emphasize') : $r('sys.color.font_tertiary')])
+          Text('选择图片')
+            .fontSize(AppTypography.BODY_S)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.remainingAttachmentSlots() > 0 && !this.pickingAttachments ?
+              $r('sys.color.font') : $r('sys.color.font_tertiary'))
+        }
+        .id('raisaPickImagesButton')
+        .attributeModifier(ROW_PRESS_MODIFIER)
+        .animation(pressAnimation())
+        .layoutWeight(1)
+        .height(38)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(10)
+        .enabled(this.remainingAttachmentSlots() > 0 && !this.pickingAttachments && this.onPickImages !== undefined)
+        .onClick(() => {
+          this.pickAttachments(true);
+        })
+
+        Row({ space: 6 }) {
+          SymbolGlyph($r('sys.symbol.paperclip'))
+            .fontSize(14)
+            .fontColor([this.remainingAttachmentSlots() > 0 && !this.pickingAttachments ?
+              $r('sys.color.icon_emphasize') : $r('sys.color.font_tertiary')])
+          Text('选择文件')
+            .fontSize(AppTypography.BODY_S)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(this.remainingAttachmentSlots() > 0 && !this.pickingAttachments ?
+              $r('sys.color.font') : $r('sys.color.font_tertiary'))
+        }
+        .id('raisaPickDocumentsButton')
+        .attributeModifier(ROW_PRESS_MODIFIER)
+        .animation(pressAnimation())
+        .layoutWeight(1)
+        .height(38)
+        .justifyContent(FlexAlign.Center)
+        .backgroundColor($r('sys.color.comp_background_tertiary'))
+        .borderRadius(10)
+        .enabled(this.remainingAttachmentSlots() > 0 && !this.pickingAttachments && this.onPickDocuments !== undefined)
+        .onClick(() => {
+          this.pickAttachments(false);
+        })
+      }
+      .width('100%')
+
+      if (this.attachmentNotice.length > 0) {
+        Text(this.attachmentNotice)
+          .fontSize(AppTypography.CAPTION_L)
+          .fontColor(this.amberAccent())
+          .width('100%')
+      }
+
+      if (this.attachments.length > 0) {
+        Column({ space: 8 }) {
+          ForEach(this.attachments, (item: RaisaFeedbackAttachment) => {
+            RaisaAttachmentItemRow({
+              attachment: item,
+              onRemove: () => this.removeAttachment(item.id)
+            })
+          }, (item: RaisaFeedbackAttachment) => item.id)
+        }
+        .width('100%')
+      }
+    }
+    .width('100%')
+    .padding(12)
+    .alignItems(HorizontalAlign.Start)
+    .backgroundColor($r('sys.color.comp_background_secondary'))
+    .borderRadius(12)
+  }
+
+  @Builder
   private diagnosticsSection() {
     Column({ space: 10 }) {
       Row({ space: 10 }) {
@@ -839,6 +1072,8 @@ export struct RaisaFeedbackView {
       }
       .width('100%')
       .alignItems(HorizontalAlign.Start)
+
+      this.attachmentsSection()
 
       this.diagnosticsSection()
 

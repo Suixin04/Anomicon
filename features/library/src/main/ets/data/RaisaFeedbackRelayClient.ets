@@ -27,6 +27,12 @@ interface RelayDiagnosticsPayload {
   revealHiddenText: boolean;
 }
 
+interface RelayAttachmentPayload {
+  fileName: string;
+  mimeType: string;
+  base64Data: string;
+}
+
 interface RelayTicketRequestPayload {
   category: string;
   summary: string;
@@ -35,6 +41,7 @@ interface RelayTicketRequestPayload {
   includeDiagnostics: boolean;
   appVersionLabel: string;
   diagnostics?: RelayDiagnosticsPayload;
+  attachments?: RelayAttachmentPayload[];
 }
 
 interface RelayTicketResponsePayload {
@@ -117,6 +124,16 @@ export class RaisaFeedbackRelayClient implements RaisaFeedbackRelayGateway {
       throw new Error('尚未配置 RAISA 中转服务地址，可先复制工单报文或前往 GitHub Issues 提交');
     }
 
+    const attachmentsPayload: RelayAttachmentPayload[] = [];
+    for (let index: number = 0; index < submission.attachments.length; index++) {
+      const item = submission.attachments[index];
+      attachmentsPayload.push({
+        fileName: item.fileName,
+        mimeType: item.mimeType,
+        base64Data: item.base64Data
+      });
+    }
+
     const bodyPayload: RelayTicketRequestPayload = {
       category: submission.category,
       summary: submission.summary,
@@ -125,9 +142,11 @@ export class RaisaFeedbackRelayClient implements RaisaFeedbackRelayGateway {
       includeDiagnostics: submission.includeDiagnostics,
       appVersionLabel: submission.diagnostics.appVersionLabel,
       diagnostics: submission.includeDiagnostics ?
-        buildDiagnosticsPayload(submission.diagnostics) : undefined
+        buildDiagnosticsPayload(submission.diagnostics) : undefined,
+      attachments: attachmentsPayload.length > 0 ? attachmentsPayload : undefined
     };
 
+    const hasAttachments = attachmentsPayload.length > 0;
     const headers: rcp.RequestHeaders = {
       'content-type': 'application/json; charset=utf-8',
       'accept': 'application/json',
@@ -144,8 +163,8 @@ export class RaisaFeedbackRelayClient implements RaisaFeedbackRelayGateway {
             autoRedirect: false,
             timeout: {
               connectMs: 15000,
-              transferMs: 15000,
-              inactivityMs: 15000
+              transferMs: hasAttachments ? 45000 : 15000,
+              inactivityMs: hasAttachments ? 30000 : 15000
             }
           },
           security: {
@@ -157,6 +176,11 @@ export class RaisaFeedbackRelayClient implements RaisaFeedbackRelayGateway {
       const response = await session.fetch(request);
       const rawBody = response.toString() ?? '';
       const parsed = this.parseJsonSafely(rawBody);
+
+      if (response.statusCode === 413) {
+        const detail = parsed?.message ?? parsed?.error ?? '';
+        throw new Error(detail.length > 0 ? detail : '附件总大小超出限制，请精简后重试');
+      }
 
       if (response.statusCode === 429) {
         const detail = parsed?.message ?? parsed?.error ?? '';

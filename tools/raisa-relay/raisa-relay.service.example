@@ -14,6 +14,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ReadOnlyPaths=/etc/anomicon
+ReadWritePaths=/opt/anomicon-raisa-relay/uploads
 
 [Install]
 WantedBy=multi-user.target

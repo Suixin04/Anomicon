@@ -206,6 +206,7 @@ export function RaisaFeedbackRouteAdapter() {
     AppContainer.getInstance().settings(),
     AppContainer.getInstance().appInfo(),
     AppContainer.getInstance().createHapticFeedback(),
-    AppContainer.getInstance().clipboard()
+    AppContainer.getInstance().clipboard(),
+    AppContainer.getInstance().raisaAttachmentPicker()
   );
 }

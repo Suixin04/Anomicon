@@ -14,6 +14,9 @@ export const RAISA_SUMMARY_MAX_LENGTH: number = 80;
 export const RAISA_DETAILS_MIN_LENGTH: number = 8;
 export const RAISA_DETAILS_MAX_LENGTH: number = 2000;
 export const RAISA_CONTACT_MAX_LENGTH: number = 64;
+export const RAISA_MAX_ATTACHMENTS: number = 3;
+export const RAISA_MAX_ATTACHMENT_BYTES: number = 2 * 1024 * 1024;
+export const RAISA_MAX_TOTAL_ATTACHMENT_BYTES: number = 5 * 1024 * 1024;
 
 export enum RaisaFeedbackCategory {
   ARCHIVE_RENDER = 'archive_render',
@@ -196,6 +199,34 @@ export class RaisaDiagnosticSnapshot {
   }
 }
 
+export class RaisaFeedbackAttachment {
+  readonly id: string;
+  readonly fileName: string;
+  readonly mimeType: string;
+  readonly byteLength: number;
+  readonly isImage: boolean;
+  readonly previewUri: string;
+  readonly base64Data: string;
+
+  constructor(
+    id: string,
+    fileName: string,
+    mimeType: string,
+    byteLength: number,
+    isImage: boolean,
+    previewUri: string,
+    base64Data: string
+  ) {
+    this.id = id.trim();
+    this.fileName = fileName.trim();
+    this.mimeType = mimeType.trim().toLowerCase();
+    this.byteLength = Math.max(0, Math.floor(byteLength));
+    this.isImage = isImage;
+    this.previewUri = previewUri.trim();
+    this.base64Data = base64Data.trim();
+  }
+}
+
 export class RaisaFeedbackSubmission {
   readonly idempotencyKey: string;
   readonly category: RaisaFeedbackCategory;
@@ -204,6 +235,7 @@ export class RaisaFeedbackSubmission {
   readonly contact: string;
   readonly includeDiagnostics: boolean;
   readonly diagnostics: RaisaDiagnosticSnapshot;
+  readonly attachments: RaisaFeedbackAttachment[];
 
   constructor(
     idempotencyKey: string,
@@ -212,7 +244,8 @@ export class RaisaFeedbackSubmission {
     details: string,
     contact: string,
     includeDiagnostics: boolean,
-    diagnostics: RaisaDiagnosticSnapshot
+    diagnostics: RaisaDiagnosticSnapshot,
+    attachments: RaisaFeedbackAttachment[] = []
   ) {
     this.idempotencyKey = idempotencyKey.trim();
     this.category = category;
@@ -221,6 +254,7 @@ export class RaisaFeedbackSubmission {
     this.contact = contact;
     this.includeDiagnostics = includeDiagnostics;
     this.diagnostics = diagnostics;
+    this.attachments = attachments.slice();
   }
 }
 
@@ -290,6 +324,11 @@ export interface RaisaFeedbackRelayGateway {
   submitTicket(submission: RaisaFeedbackSubmission): Promise<RaisaFeedbackSubmitResult>;
 }
 
+export interface RaisaAttachmentPickerPort {
+  pickImages(maxCount: number): Promise<RaisaFeedbackAttachment[]>;
+  pickDocuments(maxCount: number): Promise<RaisaFeedbackAttachment[]>;
+}
+
 export function sanitizeFeedbackSingleLine(raw: string, maxLength: number): string {
   const collapsed = raw.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
   return collapsed.length > maxLength ? collapsed.slice(0, maxLength) : collapsed;
@@ -310,6 +349,40 @@ export function validateRaisaFeedbackInput(summary: string, details: string): st
     return `详细说明至少填写 ${RAISA_DETAILS_MIN_LENGTH} 个字符，便于快速定位问题`;
   }
   return '';
+}
+
+export function validateRaisaFeedbackAttachments(attachments: RaisaFeedbackAttachment[]): string {
+  if (attachments.length > RAISA_MAX_ATTACHMENTS) {
+    return `最多上传 ${RAISA_MAX_ATTACHMENTS} 个附件`;
+  }
+  let totalBytes = 0;
+  for (let index: number = 0; index < attachments.length; index++) {
+    const item = attachments[index];
+    if (item.fileName.length === 0 || item.base64Data.length === 0 || item.byteLength <= 0) {
+      return `附件内容无效：${item.fileName.length > 0 ? item.fileName : '未知文件'}`;
+    }
+    if (item.byteLength > RAISA_MAX_ATTACHMENT_BYTES) {
+      return `单个附件不能超过 ${formatRaisaAttachmentBytes(RAISA_MAX_ATTACHMENT_BYTES)}：${item.fileName}`;
+    }
+    totalBytes += item.byteLength;
+  }
+  if (totalBytes > RAISA_MAX_TOTAL_ATTACHMENT_BYTES) {
+    return `所有附件总大小不能超过 ${formatRaisaAttachmentBytes(RAISA_MAX_TOTAL_ATTACHMENT_BYTES)}`;
+  }
+  return '';
+}
+
+export function formatRaisaAttachmentBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+  if (bytes < 1024) {
+    return `${Math.round(bytes)} B`;
+  }
+  if (bytes < 1024 * 1024) {
+    return `${(bytes / 1024).toFixed(1)} KB`;
+  }
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function renderModeDisplayLabel(renderMode: string): string {

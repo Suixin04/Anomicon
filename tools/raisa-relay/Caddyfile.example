@@ -2,9 +2,9 @@
 raisa.example.com {
     encode zstd gzip
 
-    # 限制单次请求大小并反向代理到本机 8787 端口的 RAISA 中转服务
+    # 限制单次请求大小（支持最多 3 个附件，放宽至 10MB）并反向代理到本机 8787
     request_body {
-        max_size 64KB
+        max_size 10MB
     }
 
     reverse_proxy 127.0.0.1:8787 {

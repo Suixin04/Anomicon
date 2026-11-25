@@ -2,16 +2,20 @@ import { describe, expect, it } from '@ohos/hypium';
 import { IdGeneratorPort } from 'anomiconbasic';
 import {
   RAISA_GITHUB_ISSUES_URL,
+  RAISA_MAX_ATTACHMENT_BYTES,
   RaisaDiagnosticSnapshot,
+  RaisaFeedbackAttachment,
   RaisaFeedbackCategory,
   RaisaFeedbackRelayGateway,
   RaisaFeedbackRepository,
   RaisaFeedbackSubmission,
   RaisaFeedbackSubmitResult,
   RaisaFeedbackTicket,
+  formatRaisaAttachmentBytes,
   formatRaisaDiagnosticLines,
   formatRaisaTicketPlainReport,
   sanitizeFeedbackSingleLine,
+  validateRaisaFeedbackAttachments,
   validateRaisaFeedbackInput
 } from '../main/ets/domain/RaisaFeedbackContracts';
 import { RaisaFeedbackViewModel } from '../main/ets/presentation/viewmodel/RaisaFeedbackViewModel';
@@ -228,6 +232,46 @@ export default function raisaFeedbackTest(): void {
       expect(second.localSaveWarning.length > 0).assertTrue();
       expect(vm.tickets.length).assertEqual(2);
       expect(vm.tickets[0].issueNumber).assertEqual(102);
+    });
+
+    it('validates attachment limits and forwards valid attachments to relay', 0, async () => {
+      const sample = (id: string, bytes: number): RaisaFeedbackAttachment =>
+        new RaisaFeedbackAttachment(id, `${id}.png`, 'image/png', bytes, true, `file://${id}.png`, 'iVBORw0KGgo=');
+
+      expect(validateRaisaFeedbackAttachments([])).assertEqual('');
+      expect(validateRaisaFeedbackAttachments([sample('a', 1024)])).assertEqual('');
+      expect(validateRaisaFeedbackAttachments([
+        sample('1', 100), sample('2', 100), sample('3', 100), sample('4', 100)
+      ]).includes('最多上传')).assertTrue();
+      expect(validateRaisaFeedbackAttachments([
+        sample('huge', RAISA_MAX_ATTACHMENT_BYTES + 1)
+      ]).includes('单个附件')).assertTrue();
+      expect(validateRaisaFeedbackAttachments([
+        sample('a', RAISA_MAX_ATTACHMENT_BYTES),
+        sample('b', RAISA_MAX_ATTACHMENT_BYTES),
+        sample('c', RAISA_MAX_ATTACHMENT_BYTES)
+      ]).includes('总大小')).assertTrue();
+      expect(formatRaisaAttachmentBytes(1536)).assertEqual('1.5 KB');
+
+      const repo = new InMemoryFeedbackRepo();
+      const relay = new StubRelayGateway();
+      const vm = new RaisaFeedbackViewModel(repo, relay, new StubIdGenerator());
+      const attachment = new RaisaFeedbackAttachment(
+        'att-1', 'screenshot.jpg', 'image/jpeg', 2048, true, 'file://screenshot.jpg', '/9j/4AAQ'
+      );
+      await vm.submit(
+        RaisaFeedbackCategory.ARCHIVE_RENDER,
+        '折叠块截图上报',
+        '附上截图与异常详情说明。',
+        '',
+        true,
+        buildSnapshot(true),
+        'att-key-1',
+        [attachment]
+      );
+      expect(relay.submissions.length).assertEqual(1);
+      expect(relay.submissions[0].attachments.length).assertEqual(1);
+      expect(relay.submissions[0].attachments[0].fileName).assertEqual('screenshot.jpg');
     });
   });
 }

@@ -3,8 +3,9 @@
  * Anomicon RAISA Relay — zero-dependency Node.js >= 20 HTTP service.
  *
  * Holds the dedicated GitHub App private key on the server, validates and
- * rate-limits feedback tickets submitted by the HarmonyOS client, mints a
- * short-lived installation token, and opens a GitHub Issue on the target repo.
+ * rate-limits feedback tickets submitted by the HarmonyOS client, stores
+ * magic-byte-verified screenshots/attachments on disk, mints a short-lived
+ * installation token, and opens a GitHub Issue on the target repo.
  */
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -13,15 +14,34 @@ import path from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-const MAX_BODY_BYTES = 32 * 1024;
+const MAX_BODY_BYTES = 8 * 1024 * 1024;
 const SUMMARY_MIN_LEN = 4;
 const SUMMARY_MAX_LEN = 80;
 const DETAILS_MIN_LEN = 8;
 const DETAILS_MAX_LEN = 2000;
 const CONTACT_MAX_LEN = 64;
+const MAX_ATTACHMENTS = 3;
+const MAX_ATTACHMENT_BYTES = 2 * 1024 * 1024;
+const MAX_TOTAL_ATTACHMENT_BYTES = 5 * 1024 * 1024;
+const DEFAULT_MAX_STORAGE_BYTES = 500 * 1024 * 1024;
 const MAX_IDEMPOTENCY_ENTRIES = 2000;
 const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
 const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+const ATTACHMENT_ROUTE_REGEX = /^\/v1\/raisa\/attachments\/([a-f0-9]{32}\.(jpg|png|gif|webp|pdf|txt|log|json|md))$/;
+
+const MIME_BY_EXT = Object.freeze({
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  pdf: 'application/pdf',
+  txt: 'text/plain; charset=utf-8',
+  log: 'text/plain; charset=utf-8',
+  json: 'application/json; charset=utf-8',
+  md: 'text/markdown; charset=utf-8'
+});
+
+const IMAGE_EXTS = new Set(['jpg', 'png', 'gif', 'webp']);
 
 export const CATEGORY_CONFIG = Object.freeze({
   archive_render: { title: '档案解析异常', label: 'type:render' },
@@ -100,6 +120,16 @@ export function escapeMarkdownMentionsAndHtml(value) {
     .replace(/@([A-Za-z0-9_-]+)/g, '@\u200B$1');
 }
 
+function escapeMarkdownLinkLabel(value) {
+  return escapeMarkdownMentionsAndHtml(value).replace(/[\[\]()\\`]/g, '_');
+}
+
+function formatByteLabel(bytes) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
 function safeHttpsUrl(raw) {
   const text = sanitizeSingleLine(raw, 400);
   if (!text) {
@@ -129,8 +159,115 @@ function normalizeEntrySource(source) {
   return sanitizeSingleLine(source, 32) || '未提供';
 }
 
+/** Detect binary/text attachment type strictly via file magic bytes (never trusting extensions alone). */
+export function detectAttachmentType(buffer, claimedMime, fileName) {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    return null;
+  }
+  // JPEG
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return { ext: 'jpg', mime: 'image/jpeg', isImage: true };
+  }
+  // PNG
+  if (buffer.length >= 8 &&
+    buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47 &&
+    buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
+    return { ext: 'png', mime: 'image/png', isImage: true };
+  }
+  // GIF87a / GIF89a
+  if (buffer.length >= 6) {
+    const sig = buffer.subarray(0, 6).toString('ascii');
+    if (sig === 'GIF87a' || sig === 'GIF89a') {
+      return { ext: 'gif', mime: 'image/gif', isImage: true };
+    }
+  }
+  // WebP: RIFF....WEBP
+  if (buffer.length >= 12 &&
+    buffer.subarray(0, 4).toString('ascii') === 'RIFF' &&
+    buffer.subarray(8, 12).toString('ascii') === 'WEBP') {
+    return { ext: 'webp', mime: 'image/webp', isImage: true };
+  }
+  // PDF
+  if (buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-') {
+    return { ext: 'pdf', mime: 'application/pdf', isImage: false };
+  }
+
+  // Plain text / logs / JSON / Markdown: reject NUL bytes and image-masquerading requests.
+  const mime = sanitizeSingleLine(claimedMime, 64).toLowerCase();
+  const lowerName = sanitizeSingleLine(fileName, 120).toLowerCase();
+  if (mime.startsWith('image/')) {
+    return null;
+  }
+  if (buffer.includes(0x00)) {
+    return null;
+  }
+  const textExt = lowerName.endsWith('.log') ? 'log' :
+    (lowerName.endsWith('.json') ? 'json' :
+      (lowerName.endsWith('.md') ? 'md' :
+        (lowerName.endsWith('.txt') ? 'txt' : '')));
+  if (textExt) {
+    return { ext: textExt, mime: MIME_BY_EXT[textExt], isImage: false };
+  }
+  if (mime === 'text/plain' || mime === 'application/json' || mime === 'text/markdown') {
+    const ext = mime === 'application/json' ? 'json' : (mime === 'text/markdown' ? 'md' : 'txt');
+    return { ext, mime: MIME_BY_EXT[ext], isImage: false };
+  }
+  return null;
+}
+
+/** Validate and decode optional base64 attachments from the request payload. */
+export function validateAndDecodeAttachments(rawAttachments) {
+  if (rawAttachments === undefined || rawAttachments === null) {
+    return { attachments: [] };
+  }
+  if (!Array.isArray(rawAttachments)) {
+    return { error: '附件列表格式无效' };
+  }
+  if (rawAttachments.length > MAX_ATTACHMENTS) {
+    return { error: `最多允许上传 ${MAX_ATTACHMENTS} 个附件` };
+  }
+
+  const decoded = [];
+  let totalBytes = 0;
+  for (let index = 0; index < rawAttachments.length; index++) {
+    const entry = rawAttachments[index];
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+      return { error: `第 ${index + 1} 个附件格式无效` };
+    }
+    const fileName = sanitizeSingleLine(entry.fileName, 120) || `attachment-${index + 1}`;
+    const claimedMime = sanitizeSingleLine(entry.mimeType, 64).toLowerCase();
+    const rawBase64 = String(entry.base64Data ?? '').replace(/\s+/g, '');
+    if (!rawBase64 || !/^[A-Za-z0-9+/=_-]+$/.test(rawBase64)) {
+      return { error: `附件编码无效：${fileName}` };
+    }
+    if (rawBase64.length > Math.ceil((MAX_ATTACHMENT_BYTES * 4) / 3) + 16) {
+      return { error: `单个附件超过 2 MB 限制：${fileName}` };
+    }
+    const bytes = Buffer.from(rawBase64, 'base64');
+    if (bytes.length === 0 || bytes.length > MAX_ATTACHMENT_BYTES) {
+      return { error: `单个附件大小无效或超过 2 MB：${fileName}` };
+    }
+    totalBytes += bytes.length;
+    if (totalBytes > MAX_TOTAL_ATTACHMENT_BYTES) {
+      return { error: '所有附件总大小超过 5 MB 限制' };
+    }
+    const detected = detectAttachmentType(bytes, claimedMime, fileName);
+    if (!detected) {
+      return { error: `不支持或格式不匹配的附件：${fileName}` };
+    }
+    decoded.push({
+      fileName,
+      ext: detected.ext,
+      mime: detected.mime,
+      isImage: detected.isImage,
+      bytes
+    });
+  }
+  return { attachments: decoded };
+}
+
 /** Validate client payload and format the GitHub Issue payload. */
-export function validateAndFormatTicket(payload) {
+export function validateAndFormatTicket(payload, uploadedAttachments = []) {
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
     return { error: '请求正文必须为 JSON 对象' };
   }
@@ -171,6 +308,18 @@ export function validateAndFormatTicket(payload) {
 
   if (contact.length > 0) {
     bodyLines.push('', `**联络代号**：\`${contact}\``);
+  }
+
+  if (uploadedAttachments.length > 0) {
+    bodyLines.push('', '### 现场附件', '');
+    for (const item of uploadedAttachments) {
+      const safeLabel = escapeMarkdownLinkLabel(item.fileName);
+      if (item.isImage) {
+        bodyLines.push(`- **${safeLabel}** (${formatByteLabel(item.byteLength)})`, '', `![${safeLabel}](${item.url})`, '');
+      } else {
+        bodyLines.push(`- [${safeLabel} (${formatByteLabel(item.byteLength)})](${item.url})`);
+      }
+    }
   }
 
   if (includeDiagnostics) {
@@ -336,7 +485,6 @@ class GitHubAppClient {
       signal: AbortSignal.timeout(12000)
     });
     if (!response.ok) {
-      // Clear cached token on 401 so next request refreshes cleanly.
       if (response.status === 401) {
         this.cachedToken = '';
         this.cachedExpiresAtMs = 0;
@@ -353,6 +501,92 @@ class GitHubAppClient {
   }
 }
 
+function createAttachmentStore(attachmentsDir, maxStorageBytes = DEFAULT_MAX_STORAGE_BYTES) {
+  fs.mkdirSync(attachmentsDir, { recursive: true });
+
+  function pruneIfNeeded() {
+    let entries;
+    try {
+      entries = fs.readdirSync(attachmentsDir, { withFileTypes: true })
+        .filter((entry) => entry.isFile())
+        .map((entry) => {
+          const fullPath = path.join(attachmentsDir, entry.name);
+          const stat = fs.statSync(fullPath);
+          return { fullPath, size: stat.size, mtimeMs: stat.mtimeMs };
+        });
+    } catch (_error) {
+      return;
+    }
+    let total = entries.reduce((sum, item) => sum + item.size, 0);
+    if (total <= maxStorageBytes) {
+      return;
+    }
+    entries.sort((left, right) => left.mtimeMs - right.mtimeMs);
+    for (const item of entries) {
+      if (total <= maxStorageBytes) break;
+      try {
+        fs.unlinkSync(item.fullPath);
+        total -= item.size;
+      } catch (_error) {
+      }
+    }
+  }
+
+  return {
+    saveAll(decodedList, publicBaseUrl) {
+      const saved = [];
+      try {
+        for (const item of decodedList) {
+          const idHex = crypto.randomBytes(16).toString('hex');
+          const storedName = `${idHex}.${item.ext}`;
+          const targetPath = path.join(attachmentsDir, storedName);
+          fs.writeFileSync(targetPath, item.bytes, { mode: 0o640 });
+          saved.push({
+            storedName,
+            targetPath,
+            fileName: item.fileName,
+            ext: item.ext,
+            mime: item.mime,
+            isImage: item.isImage,
+            byteLength: item.bytes.length,
+            url: `${publicBaseUrl}/v1/raisa/attachments/${storedName}`
+          });
+        }
+        pruneIfNeeded();
+        return saved;
+      } catch (error) {
+        for (const item of saved) {
+          try {
+            fs.unlinkSync(item.targetPath);
+          } catch (_unlinkErr) {
+          }
+        }
+        throw error;
+      }
+    },
+
+    removeAll(saved) {
+      for (const item of saved) {
+        try {
+          fs.unlinkSync(item.targetPath);
+        } catch (_error) {
+        }
+      }
+    },
+
+    readStored(storedName) {
+      const resolved = path.resolve(attachmentsDir, storedName);
+      if (!resolved.startsWith(`${path.resolve(attachmentsDir)}${path.sep}`)) {
+        return null;
+      }
+      if (!fs.existsSync(resolved)) {
+        return null;
+      }
+      return fs.readFileSync(resolved);
+    }
+  };
+}
+
 function sendJson(res, statusCode, payload, extraHeaders = {}) {
   const body = JSON.stringify(payload);
   res.writeHead(statusCode, {
@@ -367,7 +601,7 @@ function readJsonBody(req, maxBytes = MAX_BODY_BYTES) {
   return new Promise((resolve, reject) => {
     const contentLength = Number(req.headers['content-length'] ?? 0);
     if (Number.isFinite(contentLength) && contentLength > maxBytes) {
-      reject(Object.assign(new Error('请求体过大'), { statusCode: 413 }));
+      reject(Object.assign(new Error('请求体过大，请精简附件大小后重试'), { statusCode: 413 }));
       return;
     }
     const chunks = [];
@@ -379,7 +613,7 @@ function readJsonBody(req, maxBytes = MAX_BODY_BYTES) {
       if (total > maxBytes) {
         settled = true;
         req.destroy();
-        reject(Object.assign(new Error('请求体超过 32KB 限制'), { statusCode: 413 }));
+        reject(Object.assign(new Error('请求体超过 8 MB 限制'), { statusCode: 413 }));
         return;
       }
       chunks.push(chunk);
@@ -412,6 +646,21 @@ function resolveClientIp(req, trustProxy) {
   return req.socket?.remoteAddress || 'unknown';
 }
 
+function resolvePublicBaseUrl(req, configuredPublicBaseUrl, trustProxy) {
+  const configured = String(configuredPublicBaseUrl ?? '').trim().replace(/\/+$/, '');
+  if (configured) {
+    return configured;
+  }
+  const host = sanitizeSingleLine(req.headers.host, 128);
+  if (host && /^[A-Za-z0-9.-]+(?::\d+)?$/.test(host)) {
+    const forwardedProto = trustProxy ?
+      sanitizeSingleLine(String(req.headers['x-forwarded-proto'] ?? '').split(',')[0], 10).toLowerCase() : '';
+    const proto = forwardedProto === 'https' || forwardedProto === 'http' ? forwardedProto : 'https';
+    return `${proto}://${host}`;
+  }
+  return 'https://raisa.xiaotau.com';
+}
+
 export function createRelayApp(config, dependencies = {}) {
   const owner = sanitizeSingleLine(config.owner || 'Suixin04', 80);
   const repo = sanitizeSingleLine(config.repo || 'Anomicon', 80);
@@ -431,6 +680,11 @@ export function createRelayApp(config, dependencies = {}) {
     hourlyLimit: config.hourlyLimit ?? 5,
     burstLimit: config.burstLimit ?? 3
   });
+  const attachmentsDir = config.attachmentsDir || path.join(process.cwd(), 'uploads');
+  const attachmentStore = dependencies.attachmentStore ?? createAttachmentStore(
+    attachmentsDir,
+    config.maxStorageBytes ?? DEFAULT_MAX_STORAGE_BYTES
+  );
   const trustProxy = config.trustProxy === true;
   const idempotencyStore = new Map();
   const inFlightKeys = new Map();
@@ -466,9 +720,34 @@ export function createRelayApp(config, dependencies = {}) {
         ok: true,
         service: 'anomicon-raisa-relay',
         repo: `${owner}/${repo}`,
+        attachmentsEnabled: true,
         time: new Date().toISOString()
       });
       return;
+    }
+
+    if (method === 'GET') {
+      const attachmentMatch = ATTACHMENT_ROUTE_REGEX.exec(requestUrl.pathname);
+      if (attachmentMatch) {
+        const storedName = attachmentMatch[1];
+        const ext = attachmentMatch[2];
+        const data = attachmentStore.readStored(storedName);
+        if (!data) {
+          sendJson(res, 404, { error: 'not_found', message: '附件不存在或已过期清理' });
+          return;
+        }
+        const isImage = IMAGE_EXTS.has(ext);
+        res.writeHead(200, {
+          'Content-Type': MIME_BY_EXT[ext] || 'application/octet-stream',
+          'Content-Length': String(data.length),
+          'Content-Disposition': isImage ? 'inline' : `attachment; filename="${storedName}"`,
+          'X-Content-Type-Options': 'nosniff',
+          'Content-Security-Policy': "default-src 'none'; sandbox",
+          'Cache-Control': 'public, max-age=31536000, immutable'
+        });
+        res.end(data);
+        return;
+      }
     }
 
     if (method === 'POST' && requestUrl.pathname === '/v1/raisa/tickets') {
@@ -486,6 +765,7 @@ export function createRelayApp(config, dependencies = {}) {
           issueNumber: cachedReceipt.issueNumber,
           issueUrl: cachedReceipt.issueUrl,
           createdAt: cachedReceipt.createdAt,
+          attachmentsCount: cachedReceipt.attachmentsCount ?? 0,
           deduplicated: true
         });
         return;
@@ -499,6 +779,7 @@ export function createRelayApp(config, dependencies = {}) {
             issueNumber: receipt.issueNumber,
             issueUrl: receipt.issueUrl,
             createdAt: receipt.createdAt,
+            attachmentsCount: receipt.attachmentsCount ?? 0,
             deduplicated: true
           });
         } catch (error) {
@@ -519,9 +800,15 @@ export function createRelayApp(config, dependencies = {}) {
         return;
       }
 
-      const formatted = validateAndFormatTicket(rawBody);
-      if (formatted.error) {
-        sendJson(res, 400, { error: 'validation_failed', message: formatted.error });
+      const decodedAttachments = validateAndDecodeAttachments(rawBody?.attachments);
+      if (decodedAttachments.error) {
+        sendJson(res, 400, { error: 'validation_failed', message: decodedAttachments.error });
+        return;
+      }
+
+      const preCheck = validateAndFormatTicket(rawBody);
+      if (preCheck.error) {
+        sendJson(res, 400, { error: 'validation_failed', message: preCheck.error });
         return;
       }
 
@@ -537,20 +824,29 @@ export function createRelayApp(config, dependencies = {}) {
         return;
       }
 
+      const publicBaseUrl = resolvePublicBaseUrl(req, config.publicBaseUrl, trustProxy);
       const work = (async () => {
-        const created = await githubClient.createIssue({
-          title: formatted.issueTitle,
-          body: formatted.issueBody,
-          labels: formatted.labels
-        });
-        const receipt = {
-          ticketCode: `RAISA-#${created.issueNumber}`,
-          issueNumber: created.issueNumber,
-          issueUrl: created.issueUrl,
-          createdAt: created.createdAt
-        };
-        rememberIdempotency(idempotencyKey, receipt);
-        return receipt;
+        const savedAttachments = attachmentStore.saveAll(decodedAttachments.attachments, publicBaseUrl);
+        try {
+          const formatted = validateAndFormatTicket(rawBody, savedAttachments);
+          const created = await githubClient.createIssue({
+            title: formatted.issueTitle,
+            body: formatted.issueBody,
+            labels: formatted.labels
+          });
+          const receipt = {
+            ticketCode: `RAISA-#${created.issueNumber}`,
+            issueNumber: created.issueNumber,
+            issueUrl: created.issueUrl,
+            createdAt: created.createdAt,
+            attachmentsCount: savedAttachments.length
+          };
+          rememberIdempotency(idempotencyKey, receipt);
+          return receipt;
+        } catch (error) {
+          attachmentStore.removeAll(savedAttachments);
+          throw error;
+        }
       })();
 
       if (idempotencyKey) {
@@ -559,17 +855,18 @@ export function createRelayApp(config, dependencies = {}) {
 
       try {
         const receipt = await work;
-        console.log(`[raisa-relay] created ${receipt.ticketCode} category=${formatted.category}`);
+        console.log(`[raisa-relay] created ${receipt.ticketCode} category=${preCheck.category} attachments=${receipt.attachmentsCount}`);
         sendJson(res, 201, {
           ticketCode: receipt.ticketCode,
           issueNumber: receipt.issueNumber,
           issueUrl: receipt.issueUrl,
           createdAt: receipt.createdAt,
+          attachmentsCount: receipt.attachmentsCount,
           deduplicated: false
         });
       } catch (error) {
         const detail = error instanceof Error ? error.message : '未知错误';
-        console.error(`[raisa-relay] failed category=${formatted.category} error=${detail}`);
+        console.error(`[raisa-relay] failed category=${preCheck.category} error=${detail}`);
         sendJson(res, 502, {
           error: 'github_relay_failed',
           message: '向 GitHub 签发工单失败，请稍后重试'
@@ -617,6 +914,9 @@ export function startServer() {
     owner: process.env.GITHUB_OWNER || 'Suixin04',
     repo: process.env.GITHUB_REPO || 'Anomicon',
     githubApiBase: process.env.GITHUB_API_BASE || 'https://api.github.com',
+    publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
+    attachmentsDir: process.env.RAISA_ATTACHMENTS_DIR || path.join(process.cwd(), 'uploads'),
+    maxStorageBytes: Number(process.env.RAISA_MAX_STORAGE_BYTES ?? DEFAULT_MAX_STORAGE_BYTES),
     hourlyLimit: Number(process.env.RATE_LIMIT_PER_HOUR ?? 5),
     burstLimit: Number(process.env.RATE_LIMIT_BURST_10M ?? 3),
     trustProxy: String(process.env.TRUST_PROXY ?? 'true').toLowerCase() === 'true'

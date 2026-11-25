@@ -30,10 +30,12 @@ import {
 import { LibraryCollectionVM } from 'library';
 import {
   FoundationAssessmentViewModel,
+  RaisaAttachmentPickerPort,
   RaisaFeedbackViewModel,
   ResearchProfileViewModel,
   StorySeriesViewModel
 } from 'library';
+import { RaisaAttachmentPickerAdapter } from './RaisaAttachmentPickerAdapter';
 import {
   SettingsFeatureGraph,
   SettingsStorageActions,
@@ -137,6 +139,7 @@ export class AppContainer {
   private storySeriesState: StorySeriesViewModel | undefined = undefined;
   private foundationAssessmentsState: FoundationAssessmentViewModel | undefined = undefined;
   private raisaFeedbackState: RaisaFeedbackViewModel | undefined = undefined;
+  private raisaAttachmentPickerState: RaisaAttachmentPickerPort | undefined = undefined;
   private readingActivityState: ReadingActivityCoord | undefined = undefined;
   private articleGraph: ArticleFeatureGraph | undefined = undefined;
   /** Feature graphs are shared at the adapter/use-case level; screen VMs are factory-owned. */
@@ -182,6 +185,12 @@ export class AppContainer {
       this.abilityScopeOwner.attach(context);
     }
     this.networkBoostCapability.start();
+    if (this.raisaAttachmentPickerState === undefined) {
+      this.raisaAttachmentPickerState = new RaisaAttachmentPickerAdapter(
+        context,
+        this.idGeneratorCapability
+      );
+    }
     const appContext = context.getApplicationContext();
     this.appCacheDir = context.cacheDir;
     this.appFilesDir = appContext.filesDir;
@@ -433,6 +442,13 @@ export class AppContainer {
       throw new Error('AppContainer must be initialized before opening RAISA feedback');
     }
     return this.raisaFeedbackState;
+  }
+
+  raisaAttachmentPicker(): RaisaAttachmentPickerPort {
+    if (this.raisaAttachmentPickerState === undefined) {
+      throw new Error('AppContainer must be initialized before picking RAISA attachments');
+    }
+    return this.raisaAttachmentPickerState;
   }
 
   readingActivity(): ReadingActivityCoord {
@@ -740,6 +756,7 @@ export class AppContainer {
     this.storySeriesState = undefined;
     this.foundationAssessmentsState = undefined;
     this.raisaFeedbackState = undefined;
+    this.raisaAttachmentPickerState = undefined;
     this.readingActivityState = undefined;
     this.articleGraph = undefined;
     this.exploreGraph = undefined;

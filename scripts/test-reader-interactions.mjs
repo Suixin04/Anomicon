@@ -182,22 +182,52 @@ test('paragraphs, list items, table rows and cells, and tab panels expose their 
   assert.deepEqual(renderedIds, ['panel', 'paragraph', 'item', 'row', 'cell'].map(key => view.blockNodeId(key)));
 });
 
-test('footer builds an activatable native button in both completion states', () => {
-  const button = {};
+test('footer uses pull-up guidance without an explicit completion button', () => {
+  const buttons = [];
+  const ButtonProxy = new Proxy({}, {
+    get: (_, key) => value => {
+      if (key === 'createWithLabel') {
+        buttons.push(value);
+      }
+    }
+  });
   const view = native({ Column: widget(), If: widget(), Row: widget(), SymbolGlyph: widget(), Text: widget(),
-    Button: widget(button), HorizontalAlign: {}, VerticalAlign: {}, AppTypography: {} });
+    Button: ButtonProxy, HorizontalAlign: {}, VerticalAlign: {}, AppTypography: {} });
   let activations = 0;
-  Object.assign(view, { ifElseBranchUpdateFunction: (_, action) => action(), document: { pageVersion: '' },
-    bottomPullProgress: 0, bottomPullPrimaryIcon: noop, bottomPullPrimaryWeight: noop,
-    bottomPullPrimaryText: noop, bottomPullPrimaryColor: noop, completed: false,
-    onToggleCompleted: () => { activations++; view.completed = !view.completed; } });
-  for (const label of ['标为已读', '取消已读标记']) {
-    view.licenseFooter();
-    assert.equal(button.id, 'articleCompletionButton');
-    assert.equal(button.createWithLabel, label);
-    button.onClick();
-  }
-  assert.equal(activations, 2);
+  let hapticCount = 0;
+  Object.assign(view, {
+    ifElseBranchUpdateFunction: (_, action) => action(),
+    document: { pageVersion: '' },
+    bottomPullProgress: 0,
+    bottomPullReady: false,
+    bottomPullTracking: false,
+    bottomPullAnchorY: 0,
+    bottomPullLastY: 0,
+    bottomPullTriggerVp: 72,
+    completed: false,
+    scroller: { isAtEnd: () => true },
+    isScrollerAtBottom: () => true,
+    cancelBlockAlignment: noop,
+    clampValue: (val, min, max) => Math.max(min, Math.min(max, val)),
+    bottomPullBarWidth: () => 0,
+    bottomPullBarFillColor: noop,
+    bottomPullPrimaryIcon: noop,
+    bottomPullPrimaryWeight: noop,
+    bottomPullPrimaryText: noop,
+    bottomPullPrimaryColor: noop,
+    onBottomPullHaptic: () => { hapticCount++; },
+    onToggleCompleted: () => { activations++; view.completed = !view.completed; }
+  });
+  view.licenseFooter();
+  assert.equal(buttons.length, 0);
+
+  view.handleListTouch({ type: touches.Down, touches: [{ windowY: 500 }], changedTouches: [] });
+  view.handleListTouch({ type: touches.Move, touches: [{ windowY: 420 }], changedTouches: [] });
+  assert.equal(view.bottomPullReady, true);
+  assert.equal(hapticCount, 1);
+  view.handleListTouch({ type: touches.Up, touches: [], changedTouches: [{ windowY: 420 }] });
+  assert.equal(activations, 1);
+  assert.equal(view.completed, true);
 });
 
 function webFixture() {

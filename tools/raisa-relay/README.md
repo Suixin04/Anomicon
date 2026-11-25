@@ -157,15 +157,17 @@ sudo systemctl reload caddy
 
 同时确保服务器防火墙 / 云厂商安全组已放行 **TCP `80` 和 `443`** 端口（80 用于 Let's Encrypt 证书校验，443 用于 HTTPS 业务流量；**8787 不需要对公网开放**，只监听 `127.0.0.1`）。
 
-> 若你的服务器上**已经在运行 Nginx** 占用 443 端口，只需在对应 `server {}` 块增加一条：
+> 若你的服务器上**已经在运行 Nginx** 占用 443 端口，只需在对应 `server {}` 块增加一条（注意 `client_max_body_size` 至少 `10m` 以支持截图与日志附件）：
 > ```nginx
 > location / {
->     client_max_body_size 64k;
+>     client_max_body_size 10m;
 >     proxy_pass http://127.0.0.1:8787;
 >     proxy_set_header Host $host;
 >     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+>     proxy_set_header X-Forwarded-Proto $scheme;
 > }
 > ```
+> 若使用 `systemd` 的 `ProtectSystem=strict`，请同时创建 `/opt/anomicon-raisa-relay/uploads` 并在 unit 文件中保留 `ReadWritePaths=/opt/anomicon-raisa-relay/uploads`。
 
 ---
 

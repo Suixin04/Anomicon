@@ -96,27 +96,21 @@ export struct TerminalCompactEmptyBanner {
   }
 }
 
-/** 终端常用入口工作条：三维档案馆 / 全部收藏 / 阅读设置。 */
+/** 终端常用入口单格：使用独立 @ComponentV2 确保 favoriteCount 更新实时刷新角标。 */
 @ComponentV2
-export struct TerminalQuickWorkbenchBar {
-  @Require @Param favoriteCount: number;
+struct TerminalWorkbenchTile {
+  @Require @Param symbol: Resource;
+  @Require @Param title: string;
+  @Require @Param trailingBadge: string;
+  @Require @Param accessibilityLabel: string;
   @Require @Param materialEnabled: boolean;
-  @Event onOpenArchive3DGallery: () => void = () => {};
-  @Event onOpenFavorites: () => void = () => {};
-  @Event onOpenSettings: () => void = () => {};
+  @Event onTap: () => void = () => {};
 
-  @Builder
-  private actionTile(
-    symbol: Resource,
-    title: string,
-    trailingBadge: string,
-    accessibilityLabel: string,
-    onTap: () => void
-  ) {
+  build() {
     Column({ space: 8 }) {
       Row() {
         Column() {
-          SymbolGlyph(symbol)
+          SymbolGlyph(this.symbol)
             .fontSize(15)
             .fontColor([$r('sys.color.icon_emphasize')])
         }
@@ -128,8 +122,8 @@ export struct TerminalQuickWorkbenchBar {
 
         Blank()
 
-        if (trailingBadge.length > 0) {
-          Text(trailingBadge)
+        if (this.trailingBadge.length > 0) {
+          Text(this.trailingBadge)
             .fontSize(AppTypography.CAPTION_M)
             .fontWeight(FontWeight.Medium)
             .fontColor($r('sys.color.font_secondary'))
@@ -146,7 +140,7 @@ export struct TerminalQuickWorkbenchBar {
       .width('100%')
       .alignItems(VerticalAlign.Center)
 
-      Text(title)
+      Text(this.title)
         .fontSize(AppTypography.BODY_S)
         .fontWeight(FontWeight.Medium)
         .fontColor($r('sys.color.font'))
@@ -166,33 +160,46 @@ export struct TerminalQuickWorkbenchBar {
       { width: 0.5, color: materialCardBorderColor(true) } : { width: 0 })
     .borderRadius(16)
     .backgroundBlurStyle(this.materialEnabled ? BlurStyle.COMPONENT_REGULAR : undefined)
-    .onClick(() => onTap())
-    .accessibilityText(accessibilityLabel)
+    .onClick(() => this.onTap())
+    .accessibilityText(this.accessibilityLabel)
   }
+}
+
+/** 终端常用入口工作条：三维档案馆 / 全部收藏 / 阅读设置。 */
+@ComponentV2
+export struct TerminalQuickWorkbenchBar {
+  @Require @Param favoriteCount: number;
+  @Require @Param materialEnabled: boolean;
+  @Event onOpenArchive3DGallery: () => void = () => {};
+  @Event onOpenFavorites: () => void = () => {};
+  @Event onOpenSettings: () => void = () => {};
 
   build() {
     Row({ space: 10 }) {
-      this.actionTile(
-        $r('sys.symbol.viewfinder_3D'),
-        '三维档案',
-        '',
-        '打开三维档案馆',
-        (): void => this.onOpenArchive3DGallery()
-      )
-      this.actionTile(
-        $r('sys.symbol.star_fill'),
-        '全部收藏',
-        `${this.favoriteCount}`,
-        '打开全部收藏',
-        (): void => this.onOpenFavorites()
-      )
-      this.actionTile(
-        $r('sys.symbol.gearshape'),
-        '阅读设置',
-        '',
-        '打开阅读设置',
-        (): void => this.onOpenSettings()
-      )
+      TerminalWorkbenchTile({
+        symbol: $r('sys.symbol.viewfinder_3D'),
+        title: '三维档案',
+        trailingBadge: '',
+        accessibilityLabel: '打开三维档案馆',
+        materialEnabled: this.materialEnabled,
+        onTap: (): void => this.onOpenArchive3DGallery()
+      })
+      TerminalWorkbenchTile({
+        symbol: $r('sys.symbol.star_fill'),
+        title: '全部收藏',
+        trailingBadge: `${this.favoriteCount}`,
+        accessibilityLabel: '打开全部收藏',
+        materialEnabled: this.materialEnabled,
+        onTap: (): void => this.onOpenFavorites()
+      })
+      TerminalWorkbenchTile({
+        symbol: $r('sys.symbol.gearshape'),
+        title: '阅读设置',
+        trailingBadge: '',
+        accessibilityLabel: '打开阅读设置',
+        materialEnabled: this.materialEnabled,
+        onTap: (): void => this.onOpenSettings()
+      })
     }
     .width('100%')
   }
