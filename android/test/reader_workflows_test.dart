@@ -20,7 +20,7 @@ void main() {
 <div id="page-content">
   <div id="toc"><a href="#first">第一节</a></div>
   <h2 id="first">第一节</h2>
-  <p>这是正文<span id="footnote:1"><sup><a href="#footnote-1">1</a></sup></span>。
+  <p>这是正文编号 1，继续<span id="footnote:1"><sup><a href="#footnote-1">1</a></sup></span>。
     <a href="/scp-131">下一档案</a></p>
   <div class="collapsible-block">
     <div class="collapsible-block-folded"><a class="collapsible-block-link">展开隐藏记录</a></div>
@@ -32,6 +32,7 @@ void main() {
     final source = article.anchors['footnote:1']!;
     final reference = article.links[source]!.first;
     final text = (article.blocks[source] as ArticleParagraph).text;
+    expect(reference.offset, '这是正文编号 1，继续'.length);
     expect(text.substring(reference.offset, reference.offset + 1), '1');
     expect(article.footnotes[reference.target.fragment]!.text, '脚注内容');
     expect(
