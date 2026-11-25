@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:anomicon/src/foundation.dart';
 import 'package:anomicon/src/foundation_page.dart';
@@ -7,6 +6,7 @@ import 'package:anomicon/src/models.dart';
 import 'package:anomicon/src/raisa.dart';
 import 'package:anomicon/src/raisa_page.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -138,9 +138,14 @@ void main() {
     final max = RaisaAttachment(
       'log.txt',
       'text/plain',
-      Uint8List(raisaMaxAttachmentBytes),
+      Uint8List(raisaMaxAttachmentBytes)
+        ..fillRange(0, raisaMaxAttachmentBytes, 65),
     );
-    final small = RaisaAttachment('note.txt', 'text/plain', Uint8List(1));
+    final small = RaisaAttachment(
+      'note.txt',
+      'text/plain',
+      Uint8List.fromList([65]),
+    );
     expect(raisaAttachmentError([max, max, small]), isNull);
     expect(raisaAttachmentError([max, max, max]), contains('5 MiB'));
     expect(raisaAttachmentError([small, small, small, small]), contains('3 个'));
@@ -168,6 +173,70 @@ void main() {
       );
       expect(store.history, isEmpty);
     }
+  });
+
+  testWidgets('选择 HEIC 立即显示格式提示，仍可改选 PNG', (tester) async {
+    const picker = MethodChannel('anomicon/raisa_attachments');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    var pickCount = 0;
+    messenger.setMockMethodCallHandler(picker, (call) async {
+      expect(call.method, 'pick');
+      expect(call.arguments, {'imagesOnly': true});
+      if (pickCount++ == 0) {
+        return {
+          'name': 'photo.heic',
+          'mimeType': 'image/heic',
+          'bytes': Uint8List.fromList([0, 0, 0, 24, ...'ftypheic'.codeUnits]),
+        };
+      }
+      return {
+        'name': 'screenshot.png',
+        'mimeType': 'image/png',
+        'bytes': base64Decode(
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aI2sAAAAASUVORK5CYII=',
+        ),
+      };
+    });
+    addTearDown(() => messenger.setMockMethodCallHandler(picker, null));
+    final store = RaisaStore(
+      await SharedPreferences.getInstance(),
+      relay: RaisaRelay(
+        endpoint: endpoint,
+        client: MockClient((_) async {
+          fail('选件不应联系中转');
+        }),
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: RaisaFeedbackPage(
+          store: store,
+          origin: const RaisaOrigin.foundation(),
+          appVersion: '1.0.0+1',
+        ),
+      ),
+    );
+    final pick = find.text('添加图片');
+    await tester.scrollUntilVisible(
+      pick,
+      180,
+      scrollable: find
+          .descendant(
+            of: find.byType(ListView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    await tester.tap(pick);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('不支持或格式不匹配的附件：photo.heic'), findsOneWidget);
+    expect(find.textContaining('JPEG、PNG、GIF、WebP'), findsOneWidget);
+    expect(find.text('photo.heic'), findsNothing);
+    await tester.tap(pick);
+    await tester.pumpAndSettle();
+    expect(find.text('screenshot.png'), findsOneWidget);
+    expect(find.textContaining('附件 1/3'), findsOneWidget);
+    expect(find.textContaining('不支持或格式不匹配的附件'), findsNothing);
   });
 
   testWidgets('正文工单公开确认与签发回执', (tester) async {
