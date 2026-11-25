@@ -341,6 +341,9 @@ class _FixtureRepository extends Fake implements AnomiconRepository {
       );
 
   @override
+  Future<File?> loadPreviewImage(ContentRef content) async => null;
+
+  @override
   Future<File?> installedArchiveAsset(ArchiveAsset asset) async => null;
 
   @override

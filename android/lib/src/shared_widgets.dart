@@ -102,7 +102,7 @@ class PageHeading extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 42, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -113,9 +113,9 @@ class PageHeading extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 40,
-                    fontWeight: FontWeight.w900,
-                    height: 1.05,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    height: 1.1,
                   ),
                 ),
                 if (subtitle != null)

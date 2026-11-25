@@ -13,6 +13,7 @@ import 'article_parser.dart';
 import 'models.dart';
 import 'offline_article_store.dart';
 import 'seed_data.dart';
+import 'wiki_preview.dart';
 
 export 'archive_download.dart';
 
@@ -180,7 +181,52 @@ class AnomiconRepository {
     return wikiGateway.parseArticle(content, cached.body, fetchedAt: cached.fetchedAt);
   }
 
-  Future<File> loadImageFile(String url) async {
+  final _previewImages = <String, Future<File?>>{};
+  final _imageDownloads = <String, Future<File>>{};
+
+  Future<File?> loadPreviewImage(ContentRef content) {
+    final key = content.id;
+    final cached = _previewImages.remove(key);
+    if (cached != null) return _previewImages[key] = cached;
+    if (_previewImages.length >= 160) {
+      _previewImages.remove(_previewImages.keys.first);
+    }
+    return _previewImages[key] = _loadPreviewImage(content);
+  }
+
+  Future<File?> _loadPreviewImage(ContentRef content) async {
+    final key = 'preview:${content.id}';
+    try {
+      final preview = await _readCache(key);
+      if (preview != null) {
+        return preview.body.isEmpty ? null : await loadImageFile(preview.body);
+      }
+      final cached = await _readCache('article:${content.key}', extension: 'html');
+      final body = cached?.body ?? await wikiGateway.loadPreviewHtml(content);
+      final url = parseWikiPreviewImage(body, Uri.parse(articleUrlOf(content.id)));
+      final image = url == null ? null : await loadImageFile(url.toString());
+      if (body.isNotEmpty) await _writeCache(key, url?.toString() ?? '');
+      return image;
+    } on IOException {
+      _previewImages.remove(content.id);
+      return null;
+    } on http.ClientException {
+      _previewImages.remove(content.id);
+      return null;
+    } on TimeoutException {
+      _previewImages.remove(content.id);
+      return null;
+    }
+  }
+
+  Future<File> loadImageFile(String url) => _imageDownloads.putIfAbsent(
+    url,
+    () => _loadImageFile(url).whenComplete(() {
+      _imageDownloads.remove(url);
+    }),
+  );
+
+  Future<File> _loadImageFile(String url) async {
     final cached = await contentCache.readFile('image:$url', 'img');
     if (cached != null) {
       return cached;
@@ -345,6 +391,8 @@ class WikiGateway {
 
   Future<String> resolveTitle(String itemId) async =>
       _extractTitle(await _fetch(articleUrlOf(itemId)), itemId.toUpperCase());
+
+  Future<String> loadPreviewHtml(ContentRef content) => _fetch(articleUrlOf(content.id));
 
   Future<String> loadArticleHtml(ContentRef content) async {
     final url = articleUrlOf(content.id);

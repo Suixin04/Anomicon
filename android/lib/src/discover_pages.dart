@@ -81,9 +81,6 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   ),
                 ),
               ),
-              SliverToBoxAdapter(
-                child: _StarterGuide(onOpen: widget.onOpenContent),
-              ),
               if (snapshot.hasError || snapshot.data?.hasSourceFailure == true)
                 SliverToBoxAdapter(
                   child: _DiscoveryNotice(
@@ -101,7 +98,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
               SliverToBoxAdapter(
                 child: SizedBox(
-                  height: 410,
+                  height: 330,
                   child: PageView.builder(
                     key: ValueKey(_round),
                     itemCount: data.recommendations.length,
@@ -112,6 +109,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                       return Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 20),
                         child: RecommendationHeroCard(
+                          repository: widget.repository,
                           entry: entry,
                           onTap: () => widget.onOpenContent(
                             ContentRef.create(
@@ -131,6 +129,9 @@ class _ExploreScreenState extends State<ExploreScreen> {
                   icon: Icons.swipe_rounded,
                   text: '左右划走顶牌，点击卡牌阅读',
                 ),
+              ),
+              SliverToBoxAdapter(
+                child: _StarterGuide(onOpen: widget.onOpenContent),
               ),
               SliverToBoxAdapter(
                 child: Padding(
@@ -180,14 +181,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
               SliverToBoxAdapter(
                 child: ExploreStrip(
-                  title: '最近新增',
+                  title: '最近更新',
                   items: data.recent,
                   onOpenContent: widget.onOpenContent,
                 ),
               ),
               SliverToBoxAdapter(
                 child: ExploreStrip(
-                  title: '每日轮换',
+                  title: '轻松一下',
                   items: data.jokes,
                   onOpenContent: widget.onOpenContent,
                 ),
@@ -324,25 +325,35 @@ class _CatalogScreenState extends State<CatalogScreen> {
                       ),
                     SliverPadding(
                       padding: const EdgeInsets.fromLTRB(20, 14, 20, 124),
-                      sliver: SliverGrid.builder(
-                        itemCount: entries.length,
-                        gridDelegate:
-                            const SliverGridDelegateWithMaxCrossAxisExtent(
-                              maxCrossAxisExtent: 285,
-                              mainAxisExtent: 292,
-                              crossAxisSpacing: 14,
-                              mainAxisSpacing: 14,
+                      sliver: SliverLayoutBuilder(
+                        builder: (context, constraints) =>
+                            SliverMasonryGrid.count(
+                              crossAxisCount:
+                                  switch (constraints.crossAxisExtent + 40) {
+                                    >= 1440 => 5,
+                                    >= 840 => 4,
+                                    >= 600 => 3,
+                                    _ => 2,
+                                  },
+                              childCount: entries.length,
+                              mainAxisSpacing: 12,
+                              crossAxisSpacing: 12,
+                              itemBuilder: (context, index) {
+                                final entry = entries[index];
+                                return CatalogTile(
+                                  key: ValueKey(entry.itemId),
+                                  repository: widget.repository,
+                                  entry: entry,
+                                  isRead:
+                                      widget.isRead?.call(
+                                        entry.contentRef.id,
+                                      ) ??
+                                      false,
+                                  onTap: () =>
+                                      widget.onOpenContent(entry.contentRef),
+                                );
+                              },
                             ),
-                        itemBuilder: (context, index) => CatalogTile(
-                          entry: entries[index],
-                          isRead:
-                              widget.isRead?.call(
-                                entries[index].contentRef.id,
-                              ) ??
-                              false,
-                          onTap: () =>
-                              widget.onOpenContent(entries[index].contentRef),
-                        ),
                       ),
                     ),
                   ],
@@ -797,15 +808,20 @@ class _StoriesScreenState extends State<StoriesScreen> {
               else
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 14, 20, 124),
-                  sliver: SliverList.separated(
-                    itemCount: filtered.length,
-                    itemBuilder: (context, index) => StoryRow(
-                      tale: filtered[index],
-                      onTap: () =>
-                          widget.onOpenContent(filtered[index].contentRef),
+                  sliver: SliverLayoutBuilder(
+                    builder: (context, constraints) => SliverMasonryGrid.count(
+                      crossAxisCount: constraints.crossAxisExtent >= 560
+                          ? 2
+                          : 1,
+                      childCount: filtered.length,
+                      mainAxisSpacing: 10,
+                      crossAxisSpacing: 12,
+                      itemBuilder: (context, index) => StoryRow(
+                        tale: filtered[index],
+                        onTap: () =>
+                            widget.onOpenContent(filtered[index].contentRef),
+                      ),
                     ),
-                    separatorBuilder: (context, index) =>
-                        const SizedBox(height: 12),
                   ),
                 ),
             ],
@@ -1001,130 +1017,71 @@ class SearchPill extends StatelessWidget {
 
 class RecommendationHeroCard extends StatelessWidget {
   const RecommendationHeroCard({
+    required this.repository,
     required this.entry,
     required this.onTap,
     super.key,
   });
-
+  final AnomiconRepository repository;
   final ExploreEntry entry;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: onTap,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(30),
-        child: Container(
-          color: Theme.of(context).colorScheme.surfaceContainer,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                child: VisualPanel(
-                  label: entry.normalizedId.toUpperCase(),
-                  seed: entry.normalizedId,
-                  icon: Icons.visibility_rounded,
+    final theme = Theme.of(context);
+    final id = entry.normalizedId.toUpperCase();
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(24),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: _WikiPreviewImage(
+                repository: repository,
+                content: ContentRef.create(
+                  ContentKind.scp,
+                  entry.normalizedId,
+                  entry.title,
                 ),
+                cover: true,
               ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(22, 20, 22, 30),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      entry.normalizedId.toUpperCase(),
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                      ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    id,
+                    style: theme.textTheme.labelLarge?.copyWith(
+                      color: theme.colorScheme.primary,
                     ),
-                    const SizedBox(height: 10),
+                  ),
+                  if (entry.title.toUpperCase() != id)
                     Text(
                       entry.title,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontSize: 34,
-                        fontWeight: FontWeight.w900,
-                        height: 1.08,
-                      ),
+                      style: theme.textTheme.titleLarge,
                     ),
-                    const SizedBox(height: 14),
+                  if (entry.summary.isNotEmpty) ...[
+                    const SizedBox(height: 6),
                     Text(
-                      entry.summary.isEmpty
-                          ? '点击进入原生阅读，离线时优先显示本机缓存。'
-                          : entry.summary,
+                      entry.summary,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFFB7BCC0),
-                        fontSize: 20,
-                        height: 1.45,
-                      ),
+                      style: theme.textTheme.bodyMedium,
                     ),
                   ],
-                ),
+                ],
               ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class VisualPanel extends StatelessWidget {
-  const VisualPanel({
-    required this.label,
-    required this.seed,
-    this.icon = Icons.auto_awesome_rounded,
-    super.key,
-  });
-
-  final String label;
-  final String seed;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = _colorsForSeed(seed);
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: colors,
-        ),
-      ),
-      child: Stack(
-        children: <Widget>[
-          Positioned.fill(
-            child: CustomPaint(painter: _SignalPainter(seed.hashCode)),
-          ),
-          Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Icon(
-                  icon,
-                  size: 62,
-                  color: Colors.white.withValues(alpha: 0.78),
-                ),
-                const SizedBox(height: 14),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1343,90 +1300,119 @@ class ExploreStrip extends StatelessWidget {
 
 class CatalogTile extends StatelessWidget {
   const CatalogTile({
+    required this.repository,
     required this.entry,
     required this.onTap,
-    this.isRead = false,
+    required this.isRead,
     super.key,
   });
 
+  final AnomiconRepository repository;
   final CatalogEntry entry;
   final VoidCallback onTap;
   final bool isRead;
 
   @override
   Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(22),
-      child: Material(
-        color: Theme.of(context).colorScheme.surfaceContainer,
-        child: InkWell(
-          onTap: onTap,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Expanded(
-                flex: 5,
-                child: VisualPanel(
-                  label: entry.itemId,
-                  seed: entry.itemId,
-                  icon: entry.hasArchive3D
-                      ? Icons.view_in_ar_rounded
-                      : Icons.blur_on_rounded,
-                ),
-              ),
-              Expanded(
-                flex: 4,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        isRead ? '${entry.itemId} · 已读' : entry.itemId,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          fontSize: 18,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        entry.displayTitle,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w900,
-                          height: 1.05,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
+    final theme = Theme.of(context);
+    return Material(
+      color: theme.colorScheme.surfaceContainer,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _WikiPreviewImage(
+              repository: repository,
+              content: entry.contentRef,
+            ),
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
                       Expanded(
                         child: Text(
-                          entry.description.isEmpty
-                              ? '${entry.itemId} 档案条目，点击进入阅读。'
-                              : entry.description,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Theme.of(context)
-                                .colorScheme
-                                .onSurfaceVariant,
-                            fontSize: 15,
-                            height: 1.22,
+                          isRead ? '${entry.itemId} · 已读' : entry.itemId,
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
                           ),
                         ),
                       ),
+                      if (entry.hasArchive3D)
+                        const Icon(Icons.view_in_ar_rounded, size: 16),
                     ],
                   ),
-                ),
+                  if (entry.displayTitle != entry.itemId) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      entry.displayTitle,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
+                  ],
+                  if (entry.description.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      entry.description,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.bodySmall,
+                    ),
+                  ],
+                ],
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
   }
+}
+
+class _WikiPreviewImage extends StatelessWidget {
+  const _WikiPreviewImage({
+    required this.repository,
+    required this.content,
+    this.cover = false,
+  });
+  final AnomiconRepository repository;
+  final ContentRef content;
+  final bool cover;
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<File?>(
+    future: repository.loadPreviewImage(content),
+    builder: (context, snapshot) {
+      final image = snapshot.data;
+      final fallback = cover
+          ? Center(
+              child: Text(
+                snapshot.connectionState == ConnectionState.waiting
+                    ? '正在加载预览图'
+                    : '暂无预览图',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            )
+          : const SizedBox.shrink();
+      if (image == null) return fallback;
+      return ConstrainedBox(
+        constraints: const BoxConstraints(maxHeight: 320),
+        child: Image.file(
+          image,
+          width: double.infinity,
+          cacheWidth: cover ? 960 : 640,
+          fit: cover ? BoxFit.cover : BoxFit.contain,
+          errorBuilder: (context, error, stack) => const SizedBox.shrink(),
+        ),
+      );
+    },
+  );
 }
 
 class StoryRow extends StatelessWidget {
@@ -1483,54 +1469,6 @@ class StoryRow extends StatelessWidget {
       ),
     );
   }
-}
-
-class _SignalPainter extends CustomPainter {
-  const _SignalPainter(this.seed);
-
-  final int seed;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final random = math.Random(seed);
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2
-      ..color = Colors.white.withValues(alpha: 0.11);
-    for (var i = 0; i < 12; i++) {
-      final rect = Rect.fromCenter(
-        center: Offset(
-          random.nextDouble() * size.width,
-          random.nextDouble() * size.height,
-        ),
-        width: size.shortestSide * (0.28 + random.nextDouble() * 0.5),
-        height: size.shortestSide * (0.18 + random.nextDouble() * 0.42),
-      );
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          rect,
-          Radius.circular(18 + random.nextDouble() * 28),
-        ),
-        paint,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SignalPainter oldDelegate) =>
-      oldDelegate.seed != seed;
-}
-
-List<Color> _colorsForSeed(String seed) {
-  final hash = seed.codeUnits.fold<int>(0, (value, item) => value + item);
-  final palettes = <List<Color>>[
-    const <Color>[Color(0xFF24324B), Color(0xFF1F2529)],
-    const <Color>[Color(0xFF3A2F26), Color(0xFF1D2224)],
-    const <Color>[Color(0xFF1C3B35), Color(0xFF1B2023)],
-    const <Color>[Color(0xFF39293E), Color(0xFF202328)],
-    const <Color>[Color(0xFF40242C), Color(0xFF1C2227)],
-  ];
-  return palettes[hash % palettes.length];
 }
 
 String _formatNumber(int value) {
