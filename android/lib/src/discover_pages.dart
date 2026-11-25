@@ -4,33 +4,45 @@ class ExploreScreen extends StatefulWidget {
   const ExploreScreen({
     required this.repository,
     required this.onOpenContent,
+    this.onOpenSearch,
     super.key,
   });
 
   final AnomiconRepository repository;
   final ValueChanged<ContentRef> onOpenContent;
+  final VoidCallback? onOpenSearch;
 
   @override
   State<ExploreScreen> createState() => _ExploreScreenState();
 }
 
 class _ExploreScreenState extends State<ExploreScreen> {
-  late Future<ExploreHomeData> _future;
+  late Future<DiscoveryExplore> _future;
+  int _round = 0;
   int _recommendationIndex = 0;
 
   @override
   void initState() {
     super.initState();
-    _future = widget.repository.loadExplore();
+    _future = DiscoveryRepository.of(widget.repository).explore();
+  }
+
+  void _refresh() {
+    setState(() {
+      _round++;
+      _recommendationIndex = 0;
+      _future = DiscoveryRepository.of(widget.repository)
+          .explore(force: true, round: _round);
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<ExploreHomeData>(
+    return FutureBuilder<DiscoveryExplore>(
       future: _future,
       builder: (context, snapshot) {
         final data =
-            snapshot.data ??
+            snapshot.data?.data ??
             ExploreHomeData(
               topRated: SeedData.fallbackExplore,
               recommendations: SeedData.fallbackRecommendations,
@@ -41,22 +53,48 @@ class _ExploreScreenState extends State<ExploreScreen> {
               SliverToBoxAdapter(
                 child: PageHeading(
                   title: '探索',
-                  trailing: GlassIconButton(
-                    icon: Icons.refresh_rounded,
-                    label: '刷新',
-                    onPressed: () {
-                      setState(() {
-                        _recommendationIndex = 0;
-                        _future = widget.repository.loadExplore();
-                      });
-                    },
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      GlassIconButton(
+                        icon: Icons.search_rounded,
+                        label: '搜索',
+                        onPressed: () {
+                          final launch = widget.onOpenSearch;
+                          if (launch == null) {
+                            _openDiscoverySearch(
+                              context,
+                              widget.repository,
+                              widget.onOpenContent,
+                            );
+                          } else {
+                            launch();
+                          }
+                        },
+                      ),
+                      GlassIconButton(
+                        icon: Icons.refresh_rounded,
+                        label: '刷新',
+                        onPressed: _refresh,
+                      ),
+                    ],
                   ),
                 ),
               ),
               SliverToBoxAdapter(
+                child: _StarterGuide(onOpen: widget.onOpenContent),
+              ),
+              if (snapshot.hasError || snapshot.data?.hasSourceFailure == true)
+                SliverToBoxAdapter(
+                  child: _DiscoveryNotice(
+                    text: '部分来源未更新，已保留可用内容',
+                    action: _refresh,
+                  ),
+                ),
+              SliverToBoxAdapter(
                 child: SectionTitle(
                   title: '今日推荐',
-                  subtitle: '每天随机解析一组主站档案',
+                  subtitle: '主站译文与中文原创',
                   trailing:
                       '${math.min(_recommendationIndex + 1, data.recommendations.length)} / ${data.recommendations.length}',
                 ),
@@ -65,6 +103,7 @@ class _ExploreScreenState extends State<ExploreScreen> {
                 child: SizedBox(
                   height: 410,
                   child: PageView.builder(
+                    key: ValueKey(_round),
                     itemCount: data.recommendations.length,
                     onPageChanged: (index) =>
                         setState(() => _recommendationIndex = index),
@@ -117,14 +156,14 @@ class _ExploreScreenState extends State<ExploreScreen> {
               ),
               SliverToBoxAdapter(
                 child: ExploreStrip(
-                  title: '最近更新',
+                  title: '最近新增',
                   items: data.recent,
                   onOpenContent: widget.onOpenContent,
                 ),
               ),
               SliverToBoxAdapter(
                 child: ExploreStrip(
-                  title: '轻松内容',
+                  title: '每日轮换',
                   items: data.jokes,
                   onOpenContent: widget.onOpenContent,
                 ),
@@ -148,123 +187,442 @@ class CatalogScreen extends StatefulWidget {
     required this.onOpenContent,
     required this.onOpenArchiveGallery,
     required this.onHaptic,
+    this.onOpenSearch,
+    this.isRead,
     super.key,
   });
-
   final AnomiconRepository repository;
   final ValueChanged<ContentRef> onOpenContent;
   final VoidCallback onOpenArchiveGallery;
   final VoidCallback onHaptic;
+  final bool Function(String)? isRead;
+  final ValueChanged<String>? onOpenSearch;
 
   @override
   State<CatalogScreen> createState() => _CatalogScreenState();
 }
 
 class _CatalogScreenState extends State<CatalogScreen> {
-  var _selectedSeriesId = scpSeriesDescriptors.first.id;
-  var _query = '';
-  var _showSearch = false;
-  late Future<List<CatalogEntry>> _future;
+  var _series = scpSeriesDescriptors.first;
+  late var _future = _repository.catalog(_series);
+  int _revision = 0;
+  DiscoveryRepository get _repository =>
+      DiscoveryRepository.of(widget.repository);
+  bool get _original => originalSeries.contains(_series);
 
-  @override
-  void initState() {
-    super.initState();
-    _future = widget.repository.loadCatalog(_selectedSeriesId);
+  void _select(CatalogSeriesDescriptor series, {bool force = false}) {
+    widget.onHaptic();
+    setState(() {
+      _series = series;
+      _future = _repository.catalog(series, force: force);
+      _revision++;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    final series = _original ? originalSeries : scpSeriesDescriptors;
     return PageCanvas(
-      child: FutureBuilder<List<CatalogEntry>>(
-        future: _future,
-        builder: (context, snapshot) {
-          final entries = snapshot.data ?? SeedData.fallbackCatalog;
-          final normalizedQuery = _query.trim().toLowerCase();
-          final filtered = entries.where((entry) {
-            return normalizedQuery.isEmpty ||
-                entry.itemId.toLowerCase().contains(normalizedQuery) ||
-                entry.title.toLowerCase().contains(normalizedQuery);
-          }).toList();
-          return CustomScrollView(
-            slivers: <Widget>[
-              SliverToBoxAdapter(
-                child: PageHeading(
-                  title: '图鉴',
-                  trailing: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      GlassIconButton(
-                        icon: Icons.search_rounded,
-                        label: '搜索',
-                        onPressed: () {
-                          widget.onHaptic();
-                          setState(() => _showSearch = !_showSearch);
-                        },
-                      ),
-                      const SizedBox(width: 10),
-                      GlassIconButton(
-                        icon: Icons.grid_view_rounded,
-                        label: '三维档案馆',
-                        onPressed: widget.onOpenArchiveGallery,
-                      ),
-                    ],
-                  ),
+      child: Column(
+        children: [
+          PageHeading(
+            title: '图鉴',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                GlassIconButton(
+                  icon: Icons.search_rounded,
+                  label: '搜索',
+                  onPressed: () {
+                    final launch = widget.onOpenSearch;
+                    if (launch != null) {
+                      launch(_series.id);
+                    } else {
+                      _openDiscoverySearch(
+                        context,
+                        widget.repository,
+                        widget.onOpenContent,
+                        _series.id,
+                      );
+                    }
+                  },
                 ),
-              ),
-              if (_showSearch)
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
-                    child: SearchPill(
-                      hint: '搜索编号或名称',
-                      onChanged: (value) => setState(() => _query = value),
+                GlassIconButton(
+                  icon: Icons.view_in_ar_outlined,
+                  label: '三维档案馆',
+                  onPressed: widget.onOpenArchiveGallery,
+                ),
+              ],
+            ),
+          ),
+          HorizontalPills(
+            labels: const {'main': '主站译文', 'cn': '中文原创'},
+            selected: _original ? 'cn' : 'main',
+            onSelected: (branch) {
+              if ((branch == 'cn') != _original) {
+                _select(
+                  branch == 'cn'
+                      ? originalSeries.first
+                      : scpSeriesDescriptors.first,
+                );
+              }
+            },
+          ),
+          HorizontalPills(
+            labels: {for (final item in series) item.id: item.label},
+            selected: _series.id,
+            onSelected: (id) {
+              if (id != _series.id) {
+                _select(series.firstWhere((item) => item.id == id));
+              }
+            },
+          ),
+          Expanded(
+            child: FutureBuilder<DiscoverySnapshot<CatalogEntry>>(
+              key: ValueKey(_revision),
+              future: _future,
+              builder: (context, snapshot) {
+                final data = snapshot.data;
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                final entries = data?.entries ?? [];
+                return CustomScrollView(
+                  slivers: [
+                    if (snapshot.hasError || data?.failed == true)
+                      SliverToBoxAdapter(
+                        child: _DiscoveryNotice(
+                          text: entries.isEmpty
+                              ? '目录暂时无法加载'
+                              : '网络更新失败，正在显示已缓存的目录',
+                          action: () => _select(_series, force: true),
+                        ),
+                      ),
+                    SliverPadding(
+                      padding: const EdgeInsets.fromLTRB(20, 14, 20, 124),
+                      sliver: SliverGrid.builder(
+                        itemCount: entries.length,
+                        gridDelegate:
+                            const SliverGridDelegateWithMaxCrossAxisExtent(
+                              maxCrossAxisExtent: 285,
+                              mainAxisExtent: 292,
+                              crossAxisSpacing: 14,
+                              mainAxisSpacing: 14,
+                            ),
+                        itemBuilder: (context, index) => CatalogTile(
+                          entry: entries[index],
+                          onTap: () =>
+                              widget.onOpenContent(entries[index].contentRef),
+                        ),
+                      ),
                     ),
-                  ),
-                ),
-              SliverToBoxAdapter(
-                child: HorizontalPills(
-                  labels: <String, String>{
-                    for (final series in scpSeriesDescriptors)
-                      series.id: series.label,
-                  },
-                  selected: _selectedSeriesId,
-                  onSelected: (value) {
-                    if (value == _selectedSeriesId) return;
-                    widget.onHaptic();
-                    setState(() {
-                      _selectedSeriesId = value;
-                      _future = widget.repository.loadCatalog(value);
-                    });
-                  },
-                ),
-              ),
-              if (snapshot.connectionState == ConnectionState.waiting)
-                const SliverToBoxAdapter(
-                  child: LinearProgressIndicator(minHeight: 2),
-                ),
-              SliverPadding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 124),
-                sliver: SliverGrid.builder(
-                  itemCount: filtered.length,
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    crossAxisSpacing: 14,
-                    mainAxisSpacing: 14,
-                    mainAxisExtent: 292,
-                  ),
-                  itemBuilder: (context, index) => CatalogTile(
-                    entry: filtered[index],
-                    onTap: () =>
-                        widget.onOpenContent(filtered[index].contentRef),
-                  ),
-                ),
-              ),
-            ],
-          );
-        },
+                  ],
+                );
+              },
+            ),
+          ),
+        ],
       ),
     );
   }
+}
+
+Future<void> _openDiscoverySearch(
+  BuildContext context,
+  AnomiconRepository repository,
+  ValueChanged<ContentRef> open, [
+  String? series,
+]) async {
+  final result = await Navigator.of(context).push<ContentRef>(
+    MaterialPageRoute(
+      builder: (context) => DiscoverySearchScreen(
+        repository: repository,
+        initialSeriesId: series,
+        onOpenContent: (content) => Navigator.of(context).pop(content),
+      ),
+    ),
+  );
+  if (result != null && context.mounted) open(result);
+}
+
+class DiscoverySearchScreen extends StatefulWidget {
+  const DiscoverySearchScreen({
+    required this.repository,
+    required this.onOpenContent,
+    this.initialSeriesId,
+    this.onBack,
+    super.key,
+  });
+  final AnomiconRepository repository;
+  final ValueChanged<ContentRef> onOpenContent;
+  final String? initialSeriesId;
+  final VoidCallback? onBack;
+
+  @override
+  State<DiscoverySearchScreen> createState() => _DiscoverySearchScreenState();
+}
+
+class _DiscoverySearchScreenState extends State<DiscoverySearchScreen> {
+  late String? _scope = widget.initialSeriesId;
+  final _input = TextEditingController();
+  final _catalogs = <String, DiscoverySnapshot<CatalogEntry>>{};
+  List<DiscoverySnapshot<TaleEntry>> _taleSources = [];
+  List<String> _history = [];
+  int _epoch = 0;
+  bool _loading = false;
+  bool _error = false;
+  var _randomSalt = 0;
+  DiscoveryRepository get _repository =>
+      DiscoveryRepository.of(widget.repository);
+  List<CatalogSeriesDescriptor> get _series => _scope == null
+      ? discoverySeries
+      : discoverySeries.where((series) => series.id == _scope).toList();
+
+  @override
+  void initState() {
+    super.initState();
+    DiscoveryHistory.revision.addListener(_readHistory);
+    _readHistory();
+    _load();
+  }
+
+  @override
+  void dispose() {
+    DiscoveryHistory.revision.removeListener(_readHistory);
+    _input.dispose();
+    super.dispose();
+  }
+
+  Future<void> _readHistory() async {
+    final items = await DiscoveryHistory.load();
+    if (mounted) setState(() => _history = items);
+  }
+
+  Future<void> _load({bool retry = false}) async {
+    final epoch = ++_epoch;
+    final series = _series;
+    final all = _scope == null;
+    setState(() {
+      _loading = true;
+      _error = false;
+    });
+    bool active() => mounted && _epoch == epoch;
+    try {
+      final cached = await Future.wait(series.map(_repository.cachedCatalog));
+      if (!active()) return;
+      setState(() {
+        for (var index = 0; index < series.length; index++) {
+          if (cached[index].entries.isNotEmpty) {
+            _catalogs[series[index].id] ??= cached[index];
+          }
+        }
+      });
+      final queue = series
+          .where((item) => !retry || _catalogs[item.id]?.failed != false)
+          .toList();
+      int next = 0;
+      Future<void> worker() async {
+        while (active() && next < queue.length) {
+          final item = queue[next++];
+          final data = await _repository.catalog(item, force: retry);
+          if (active()) setState(() => _catalogs[item.id] = data);
+        }
+      }
+
+      await Future.wait([
+        for (var i = 0; i < math.min(3, queue.length); i++) worker(),
+        if (all)
+          _repository.taleSources(force: retry).then((sources) {
+            if (active()) setState(() => _taleSources = sources);
+          }),
+      ]);
+    } on Exception {
+      if (active()) setState(() => _error = true);
+    } finally {
+      if (active()) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _remember(String query) async {
+    try {
+      await DiscoveryHistory.remember(query);
+    } on Exception {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('搜索历史保存失败')));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _input.text.trim();
+    final entries = [
+      for (final item in _series)
+        for (final entry
+            in _catalogs[item.id]?.entries ?? const <CatalogEntry>[])
+          entry.contentRef,
+      if (_scope == null)
+        for (final tale in _repository.mergeTales(_taleSources))
+          tale.contentRef,
+    ];
+    final covered = _series
+        .where((item) => _catalogs[item.id]?.entries.isNotEmpty == true)
+        .length;
+    final partial =
+        _error ||
+        covered < _series.length ||
+        _series.any((item) => _catalogs[item.id]?.failed == true) ||
+        _scope == null &&
+            (_taleSources.length < 2 ||
+                _taleSources.any((source) => source.failed));
+    final matches = query.isEmpty
+        ? dailyDiscoveryOrder(
+            entries.isEmpty
+                ? SeedData.fallbackCatalog.map((item) => item.contentRef)
+                : entries,
+            'search:$_randomSalt',
+          ).take(6).toList()
+        : discoveryMatches(entries, query);
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('搜索'),
+        leading: BackButton(onPressed: widget.onBack),
+      ),
+      body: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+            child: TextField(
+              controller: _input,
+              textInputAction: TextInputAction.search,
+              onChanged: (_) => setState(() {}),
+              onSubmitted: _remember,
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search),
+                hintText: '搜索编号、标题或路径',
+                suffixIcon: query.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: '清除查询',
+                        icon: const Icon(Icons.clear),
+                        onPressed: () => setState(_input.clear),
+                      ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: DropdownButton<String?>(
+              value: _scope,
+              hint: const Text('全部系列（含故事）'),
+              isExpanded: true,
+              onChanged: (value) {
+                setState(() => _scope = value);
+                _load();
+              },
+              items: [
+                const DropdownMenuItem(value: null, child: Text('全部系列（含故事）')),
+                for (final item in discoverySeries)
+                  DropdownMenuItem(value: item.id, child: Text(item.label)),
+              ],
+            ),
+          ),
+          if (_loading) const LinearProgressIndicator(),
+          if (partial)
+            _DiscoveryNotice(
+              text:
+                  '已覆盖 $covered / ${_series.length} 个系列${_scope == null ? '，另查故事' : ''}',
+              action: _loading ? null : () => _load(retry: true),
+              actionLabel: '补查',
+            ),
+          Expanded(
+            child: CustomScrollView(
+              slivers: [
+                if (query.isEmpty && _history.isNotEmpty)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text('历史搜索'),
+                          Wrap(
+                            spacing: 8,
+                            children: [
+                              for (final term in _history)
+                                ActionChip(
+                                  label: Text(term),
+                                  onPressed: () =>
+                                      setState(() => _input.text = term),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                if (query.isEmpty)
+                  SliverToBoxAdapter(
+                    child: ListTile(
+                      title: const Text('随机发现'),
+                      trailing: IconButton(
+                        tooltip: '换一批',
+                        icon: const Icon(Icons.shuffle),
+                        onPressed: () => setState(() => _randomSalt++),
+                      ),
+                    ),
+                  ),
+                if (query.isNotEmpty && matches.isEmpty)
+                  SliverToBoxAdapter(
+                    child: _DiscoveryNotice(
+                      text: _loading ? '正在检索目录' : '当前范围内无匹配条目',
+                    ),
+                  ),
+                SliverList.builder(
+                  itemCount: matches.length,
+                  itemBuilder: (context, index) {
+                    final item = matches[index];
+                    return ListTile(
+                      title: Text(item.title),
+                      subtitle: Text(item.id),
+                      leading: Icon(
+                        item.kind == ContentKind.tale
+                            ? Icons.description_outlined
+                            : Icons.article_outlined,
+                      ),
+                      onTap: () {
+                        if (query.isNotEmpty) _remember(query);
+                        widget.onOpenContent(item);
+                      },
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DiscoveryNotice extends StatelessWidget {
+  const _DiscoveryNotice({
+    required this.text,
+    this.action,
+    this.actionLabel = '重试',
+  });
+  final String text;
+  final VoidCallback? action;
+  final String actionLabel;
+
+  @override
+  Widget build(BuildContext context) => ListTile(
+    title: Text(text),
+    trailing: action == null
+        ? null
+        : TextButton(onPressed: action, child: Text(actionLabel)),
+  );
 }
 
 class StoriesScreen extends StatefulWidget {
@@ -272,12 +630,14 @@ class StoriesScreen extends StatefulWidget {
     required this.repository,
     required this.onOpenContent,
     required this.onHaptic,
+    this.isRead,
     super.key,
   });
 
   final AnomiconRepository repository;
   final ValueChanged<ContentRef> onOpenContent;
   final VoidCallback onHaptic;
+  final bool Function(String)? isRead;
 
   @override
   State<StoriesScreen> createState() => _StoriesScreenState();
@@ -291,17 +651,19 @@ class _StoriesScreenState extends State<StoriesScreen> {
 
   var _query = '';
   var _selectedLetter = '';
-  late Future<List<TaleEntry>> _future;
+  late Future<List<DiscoverySnapshot<TaleEntry>>> _future;
+  final _search = TextEditingController();
   final _controller = ScrollController();
 
   @override
   void initState() {
     super.initState();
-    _future = widget.repository.loadTales();
+    _future = DiscoveryRepository.of(widget.repository).taleSources();
   }
 
   @override
   void dispose() {
+    _search.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -309,10 +671,13 @@ class _StoriesScreenState extends State<StoriesScreen> {
   @override
   Widget build(BuildContext context) {
     return PageCanvas(
-      child: FutureBuilder<List<TaleEntry>>(
+      child: FutureBuilder<List<DiscoverySnapshot<TaleEntry>>>(
         future: _future,
         builder: (context, snapshot) {
-          final tales = snapshot.data ?? SeedData.fallbackTales;
+          final repository = DiscoveryRepository.of(widget.repository);
+          final tales = repository.mergeTales(snapshot.data ?? []);
+          final unavailable =
+              snapshot.data?.any((source) => source.failed) ?? false;
           final normalizedQuery = _query.trim().toLowerCase();
           final filtered = tales.where((tale) {
             final matchesLetter =
@@ -333,6 +698,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
                   padding: const EdgeInsets.fromLTRB(20, 4, 20, 12),
                   child: SearchPill(
                     hint: '搜索故事标题或路径',
+                    controller: _search,
                     onChanged: (value) => setState(() => _query = value),
                   ),
                 ),
@@ -360,7 +726,25 @@ class _StoriesScreenState extends State<StoriesScreen> {
                 const SliverToBoxAdapter(
                   child: LinearProgressIndicator(minHeight: 2),
                 ),
-              if (filtered.isEmpty)
+              if (snapshot.hasError || unavailable)
+                SliverToBoxAdapter(
+                  child: _DiscoveryNotice(
+                    text: tales.isEmpty ? '故事目录暂时无法加载' : '部分故事来源未更新，保留已缓存的目录',
+                    action: () => setState(
+                      () => _future = repository.taleSources(force: true),
+                    ),
+                  ),
+                ),
+              if (_query.trim().isEmpty && _selectedLetter.isEmpty)
+                SliverToBoxAdapter(
+                  child: _StorySeriesCard(
+                    onOpen: widget.onOpenContent,
+                    isRead: widget.isRead ?? (_) => false,
+                  ),
+                ),
+              if (filtered.isEmpty &&
+                  !unavailable &&
+                  snapshot.connectionState == ConnectionState.done)
                 SliverToBoxAdapter(
                   child: Padding(
                     padding: const EdgeInsets.all(20),
@@ -373,6 +757,7 @@ class _StoriesScreenState extends State<StoriesScreen> {
                       onAction: () {
                         widget.onHaptic();
                         setState(() {
+                          _search.clear();
                           _query = '';
                           _selectedLetter = '';
                         });
@@ -402,11 +787,154 @@ class _StoriesScreenState extends State<StoriesScreen> {
   }
 }
 
+class _StarterGuide extends StatefulWidget {
+  const _StarterGuide({required this.onOpen});
+  final ValueChanged<ContentRef> onOpen;
+
+  @override
+  State<_StarterGuide> createState() => _StarterGuideState();
+}
+
+class _StarterGuideState extends State<_StarterGuide> {
+  late final _dismissed = DiscoveryHistory.starterDismissed();
+  bool _hidden = false;
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<bool>(
+    future: _dismissed,
+    builder: (context, snapshot) {
+      if (_hidden || snapshot.data != false) return const SizedBox.shrink();
+      return Card(
+        margin: const EdgeInsets.fromLTRB(20, 0, 20, 12),
+        child: ListTile(
+          title: const Text('入门指引'),
+          subtitle: Wrap(
+            spacing: 8,
+            children: [
+              TextButton(
+                onPressed: () => widget.onOpen(
+                  ContentRef.create(
+                    ContentKind.wiki,
+                    'about-the-scp-foundation',
+                    '关于 SCP 基金会',
+                  ),
+                ),
+                child: const Text('基金会手册'),
+              ),
+              TextButton(
+                onPressed: () => widget.onOpen(_antimemeticsHub),
+                child: const Text('精选系列'),
+              ),
+            ],
+          ),
+          trailing: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: '关闭入门指引',
+            onPressed: () async {
+              await DiscoveryHistory.dismissStarter();
+              if (mounted) setState(() => _hidden = true);
+            },
+          ),
+        ),
+      );
+    },
+  );
+}
+
+final _antimemeticsHub = ContentRef.create(
+  ContentKind.tale,
+  'antimemetics-division-hub',
+  '逆模因部',
+);
+
+class _StorySeriesCard extends StatelessWidget {
+  const _StorySeriesCard({required this.onOpen, required this.isRead});
+  final ValueChanged<ContentRef> onOpen;
+  final bool Function(String) isRead;
+
+  @override
+  Widget build(BuildContext context) {
+    final next = nextAntimemeticsChapter(isRead);
+    final completed = antimemeticsGroups
+        .where((group) => group.$2)
+        .expand((group) => group.$3)
+        .where((chapter) => isRead(chapter.$1))
+        .length;
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+      child: ListTile(
+        title: const Text('逆模因部'),
+        subtitle: Text('主线已读 $completed / 19'),
+        onTap: () async {
+          final selection = await Navigator.of(context).push<ContentRef>(
+            MaterialPageRoute(
+              builder: (context) => DiscoverySeriesScreen(
+                isRead: isRead,
+                onOpenContent: (chapter) => Navigator.of(context).pop(chapter),
+              ),
+            ),
+          );
+          if (selection != null && context.mounted) onOpen(selection);
+        },
+        trailing: next == null
+            ? null
+            : TextButton(
+                onPressed: () => onOpen(next),
+                child: Text(completed == 0 ? '开始阅读' : '继续阅读'),
+              ),
+      ),
+    );
+  }
+}
+
+class DiscoverySeriesScreen extends StatelessWidget {
+  const DiscoverySeriesScreen({
+    required this.onOpenContent,
+    required this.isRead,
+    super.key,
+  });
+  final ValueChanged<ContentRef> onOpenContent;
+  final bool Function(String) isRead;
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(title: const Text('逆模因部')),
+    body: ListView(
+      children: [
+        ListTile(
+          title: const Text('浏览原站导读'),
+          onTap: () => onOpenContent(_antimemeticsHub),
+        ),
+        for (final (title, _, chapters) in antimemeticsGroups)
+          ExpansionTile(
+            title: Text(title),
+            children: [
+              for (final (id, name) in chapters)
+                ListTile(
+                  title: Text(name),
+                  leading: Icon(
+                    isRead(id) ? Icons.check_circle : Icons.article_outlined,
+                  ),
+                  onTap: () => onOpenContent(discoveryContent(id, name)),
+                ),
+            ],
+          ),
+      ],
+    ),
+  );
+}
+
 class SearchPill extends StatelessWidget {
-  const SearchPill({required this.hint, required this.onChanged, super.key});
+  const SearchPill({
+    required this.hint,
+    required this.onChanged,
+    this.controller,
+    super.key,
+  });
 
   final String hint;
   final ValueChanged<String> onChanged;
+  final TextEditingController? controller;
 
   @override
   Widget build(BuildContext context) {
@@ -414,17 +942,27 @@ class SearchPill extends StatelessWidget {
       height: 62,
       padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
-        color: const Color(0xFF26282A),
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(34),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
       ),
       child: TextField(
+        controller: controller,
         onChanged: onChanged,
-        style: const TextStyle(color: Colors.white, fontSize: 20),
+        style: TextStyle(
+          color: Theme.of(context).colorScheme.onSurface,
+          fontSize: 20,
+        ),
         decoration: InputDecoration(
-          icon: const Icon(Icons.search_rounded, color: _muted, size: 30),
+          icon: Icon(
+            Icons.search_rounded,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+            size: 30,
+          ),
           hintText: hint,
-          hintStyle: const TextStyle(color: _muted),
+          hintStyle: TextStyle(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
           border: InputBorder.none,
         ),
       ),
@@ -449,7 +987,7 @@ class RecommendationHeroCard extends StatelessWidget {
       child: ClipRRect(
         borderRadius: BorderRadius.circular(30),
         child: Container(
-          color: _surface,
+          color: Theme.of(context).colorScheme.surfaceContainer,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
@@ -467,8 +1005,8 @@ class RecommendationHeroCard extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       entry.normalizedId.toUpperCase(),
-                      style: const TextStyle(
-                        color: _accent,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.primary,
                         fontSize: 20,
                         fontWeight: FontWeight.w700,
                       ),
@@ -592,8 +1130,8 @@ class RankedListCard extends StatelessWidget {
                   ),
                   leading: Text(
                     '${index + 1}',
-                    style: const TextStyle(
-                      color: _accent,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.primary,
                       fontSize: 22,
                       fontWeight: FontWeight.w900,
                     ),
@@ -609,7 +1147,10 @@ class RankedListCard extends StatelessWidget {
                   ),
                   subtitle: Text(
                     item.normalizedId,
-                    style: const TextStyle(color: _muted, fontSize: 15),
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontSize: 15,
+                    ),
                   ),
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -617,12 +1158,17 @@ class RankedListCard extends StatelessWidget {
                       if (item.score >= 0)
                         Text(
                           '+${_formatNumber(item.score)}',
-                          style: const TextStyle(color: _muted, fontSize: 18),
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
+                            fontSize: 18,
+                          ),
                         ),
                       const SizedBox(width: 12),
-                      const Icon(
+                      Icon(
                         Icons.chevron_right_rounded,
-                        color: _muted,
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
                         size: 28,
                       ),
                     ],
@@ -632,7 +1178,7 @@ class RankedListCard extends StatelessWidget {
                 if (index != entries.length - 1)
                   const Padding(
                     padding: EdgeInsets.only(left: 92, right: 24),
-                    child: Divider(color: Color(0xFF3C4144), height: 1),
+                    child: Divider(height: 1),
                   ),
               ],
             );
@@ -686,8 +1232,8 @@ class ExploreStrip extends StatelessWidget {
                         children: <Widget>[
                           Text(
                             item.sourceLabel,
-                            style: const TextStyle(
-                              color: _accent,
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -704,7 +1250,11 @@ class ExploreStrip extends StatelessWidget {
                           const SizedBox(height: 6),
                           Text(
                             item.entry.normalizedId,
-                            style: const TextStyle(color: _muted),
+                            style: TextStyle(
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onSurfaceVariant,
+                            ),
                           ),
                         ],
                       ),
@@ -722,17 +1272,23 @@ class ExploreStrip extends StatelessWidget {
 }
 
 class CatalogTile extends StatelessWidget {
-  const CatalogTile({required this.entry, required this.onTap, super.key});
+  const CatalogTile({
+    required this.entry,
+    required this.onTap,
+    this.isRead = false,
+    super.key,
+  });
 
   final CatalogEntry entry;
   final VoidCallback onTap;
+  final bool isRead;
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(22),
       child: Material(
-        color: _surface,
+        color: Theme.of(context).colorScheme.surfaceContainer,
         child: InkWell(
           onTap: onTap,
           child: Column(
@@ -756,9 +1312,9 @@ class CatalogTile extends StatelessWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        entry.itemId,
-                        style: const TextStyle(
-                          color: _muted,
+                        isRead ? '${entry.itemId} · 已读' : entry.itemId,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
                           fontSize: 18,
                           fontWeight: FontWeight.w700,
                         ),
@@ -782,8 +1338,10 @@ class CatalogTile extends StatelessWidget {
                               : entry.description,
                           maxLines: 3,
                           overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _muted,
+                          style: TextStyle(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSurfaceVariant,
                             fontSize: 15,
                             height: 1.22,
                           ),
@@ -810,7 +1368,7 @@ class StoryRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: _surface,
+      color: Theme.of(context).colorScheme.surfaceContainer,
       borderRadius: BorderRadius.circular(20),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
@@ -836,12 +1394,19 @@ class StoryRow extends StatelessWidget {
                     const SizedBox(height: 5),
                     Text(
                       tale.id,
-                      style: const TextStyle(color: _muted, fontSize: 16),
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        fontSize: 16,
+                      ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, color: _muted, size: 30),
+              Icon(
+                Icons.chevron_right_rounded,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                size: 30,
+              ),
             ],
           ),
         ),
