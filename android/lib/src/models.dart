@@ -285,10 +285,11 @@ class ArticleParagraph extends ArticleBlock {
 }
 
 class ArticleImage extends ArticleBlock {
-  const ArticleImage(this.url, this.alt);
+  const ArticleImage(this.url, this.alt, {this.caption = ''});
 
   final String url;
   final String alt;
+  final String caption;
 }
 
 class ArticleQuote extends ArticleBlock {
@@ -308,18 +309,50 @@ class ArticleDivider extends ArticleBlock {
   const ArticleDivider();
 }
 
+class ArticleInlineLink {
+  const ArticleInlineLink(this.text, this.target, this.offset);
+
+  final String text;
+  final Uri target;
+  final int offset;
+}
+
+class ArticleFootnote {
+  const ArticleFootnote(this.id, this.label, this.text);
+
+  final String id;
+  final String label;
+  final String text;
+}
+
+class ArticleFold {
+  const ArticleFold(this.label, this.start, this.end);
+
+  final String label;
+  final int start;
+  final int end;
+}
+
 class ArticleDocument {
   const ArticleDocument({
     required this.content,
     required this.sourceUrl,
     required this.fetchedAt,
     required this.blocks,
+    this.anchors = const {},
+    this.links = const {},
+    this.footnotes = const {},
+    this.folds = const [],
   });
 
   final ContentRef content;
   final String sourceUrl;
   final int fetchedAt;
   final List<ArticleBlock> blocks;
+  final Map<String, int> anchors;
+  final Map<int, List<ArticleInlineLink>> links;
+  final Map<String, ArticleFootnote> footnotes;
+  final List<ArticleFold> folds;
 }
 
 class ArchiveAsset {
@@ -384,6 +417,10 @@ class ReadingHistoryEntry {
     this.scrollOffset = 0,
     this.blockCount = 0,
     this.activeMs = 0,
+    this.completed = false,
+    this.pixelOffset = 0,
+    this.webPixelOffset = 0,
+    this.offlinePixelOffset = 0,
   });
 
   factory ReadingHistoryEntry.fromJson(Map<String, Object?> json) => ReadingHistoryEntry(
@@ -393,6 +430,10 @@ class ReadingHistoryEntry {
     scrollOffset: json['scrollOffset'] as int? ?? 0,
     blockCount: json['blockCount'] as int? ?? 0,
     activeMs: json['activeMs'] as int? ?? 0,
+    completed: json['completed'] as bool? ?? false,
+    pixelOffset: (json['pixelOffset'] as num?)?.toDouble() ?? 0,
+    webPixelOffset: (json['webPixelOffset'] as num?)?.toDouble() ?? 0,
+    offlinePixelOffset: (json['offlinePixelOffset'] as num?)?.toDouble() ?? 0,
   );
 
   final ContentRef content;
@@ -401,6 +442,10 @@ class ReadingHistoryEntry {
   final int scrollOffset;
   final int blockCount;
   final int activeMs;
+  final bool completed;
+  final double pixelOffset;
+  final double webPixelOffset;
+  final double offlinePixelOffset;
 
   ReadingHistoryEntry copyWith({
     ContentRef? content,
@@ -409,6 +454,10 @@ class ReadingHistoryEntry {
     int? scrollOffset,
     int? blockCount,
     int? activeMs,
+    bool? completed,
+    double? pixelOffset,
+    double? webPixelOffset,
+    double? offlinePixelOffset,
   }) => ReadingHistoryEntry(
     content: content ?? this.content,
     openedAt: openedAt ?? this.openedAt,
@@ -416,6 +465,10 @@ class ReadingHistoryEntry {
     scrollOffset: scrollOffset ?? this.scrollOffset,
     blockCount: blockCount ?? this.blockCount,
     activeMs: activeMs ?? this.activeMs,
+    completed: completed ?? this.completed,
+    pixelOffset: pixelOffset ?? this.pixelOffset,
+    webPixelOffset: webPixelOffset ?? this.webPixelOffset,
+    offlinePixelOffset: offlinePixelOffset ?? this.offlinePixelOffset,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -425,6 +478,10 @@ class ReadingHistoryEntry {
     'scrollOffset': scrollOffset,
     'blockCount': blockCount,
     'activeMs': activeMs,
+    'completed': completed,
+    'pixelOffset': pixelOffset,
+    'webPixelOffset': webPixelOffset,
+    'offlinePixelOffset': offlinePixelOffset,
   };
 }
 

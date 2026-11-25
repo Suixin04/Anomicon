@@ -56,6 +56,11 @@ class LocalStore {
     int? scrollOffset,
     int? blockCount,
     bool creditActiveTime = false,
+    int? activeDeltaMs,
+    bool? completed,
+    double? pixelOffset,
+    double? webPixelOffset,
+    double? offlinePixelOffset,
   }) async {
     final now = DateTime.now().millisecondsSinceEpoch;
     final current = loadLibrary();
@@ -66,7 +71,7 @@ class LocalStore {
       normalizeReadingBlockCount(blockCount ?? existing?.blockCount ?? 0),
       resolvedOffset > 0 ? resolvedOffset + 1 : 0,
     );
-    final creditedMs = _activeDelta(existing, now, creditActiveTime);
+    final creditedMs = activeDeltaMs ?? _activeDelta(existing, now, creditActiveTime);
     final updated = ReadingHistoryEntry(
       content: content,
       openedAt: openedAt,
@@ -74,6 +79,10 @@ class LocalStore {
       scrollOffset: resolvedOffset,
       blockCount: resolvedBlockCount,
       activeMs: normalizeResearchDuration((existing?.activeMs ?? 0) + creditedMs),
+      completed: completed ?? existing?.completed ?? false,
+      pixelOffset: pixelOffset ?? existing?.pixelOffset ?? 0,
+      webPixelOffset: webPixelOffset ?? existing?.webPixelOffset ?? 0,
+      offlinePixelOffset: offlinePixelOffset ?? existing?.offlinePixelOffset ?? 0,
     );
     final history = <ReadingHistoryEntry>[
       updated,

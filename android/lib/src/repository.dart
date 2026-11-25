@@ -8,7 +8,9 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 
+import 'article_parser.dart';
 import 'models.dart';
+import 'offline_article_store.dart';
 import 'seed_data.dart';
 
 class CachedContent {
@@ -210,6 +212,7 @@ class AnomiconRepository {
     required this.wikiGateway,
     required this.contentCache,
     required this.archiveAssetStore,
+    this.offlineArticleStore,
   });
 
   static Future<AnomiconRepository> create() async => AnomiconRepository(
@@ -221,6 +224,17 @@ class AnomiconRepository {
   final WikiGateway wikiGateway;
   final ContentCache contentCache;
   final ArchiveAssetStore archiveAssetStore;
+  final OfflineArticleStore? offlineArticleStore;
+  late final Future<OfflineArticleStore> offlineArticles = offlineArticleStore == null
+      ? OfflineArticleStore.open()
+      : Future.value(offlineArticleStore);
+
+  Future<void> saveOfflineArticle(ContentRef content) async {
+    final store = await offlineArticles;
+    await store.save(content,
+        fetchArticle: wikiGateway.loadArticleHtml,
+        fetchImage: wikiGateway.loadResource);
+  }
 
   Future<File?> installedArchiveAsset(ArchiveAsset asset) => archiveAssetStore.installedFile(asset);
 
@@ -263,18 +277,28 @@ class AnomiconRepository {
   }
 
   Future<ArticleDocument> loadArticle(ContentRef content) async {
+    final key = 'article:${content.key}';
+    final fetchedAt = DateTime.now().millisecondsSinceEpoch;
+    final String body;
     try {
-      final fetchedAt = DateTime.now().millisecondsSinceEpoch;
-      final body = await wikiGateway.loadArticleHtml(content);
-      await _writeCache('article:${content.key}', body, extension: 'html', fetchedAt: fetchedAt);
-      return wikiGateway.parseArticle(content, body, fetchedAt: fetchedAt);
-    } on Object {
-      final cached = await _readCache('article:${content.key}', extension: 'html');
-      if (cached == null) {
-        throw StateError('文章尚未缓存，且当前无法连接网络');
-      }
-      return wikiGateway.parseArticle(content, cached.body, fetchedAt: cached.fetchedAt);
+      body = await wikiGateway.loadArticleHtml(content);
+    } on IOException {
+      return _cachedArticle(content, key);
+    } on http.ClientException {
+      return _cachedArticle(content, key);
+    } on TimeoutException {
+      return _cachedArticle(content, key);
     }
+    final document = wikiGateway.parseArticle(content, body, fetchedAt: fetchedAt);
+    if (document.blocks.isEmpty) return _cachedArticle(content, key);
+    await _writeCache(key, body, extension: 'html', fetchedAt: fetchedAt);
+    return document;
+  }
+
+  Future<ArticleDocument> _cachedArticle(ContentRef content, String key) async {
+    final cached = await _readCache(key, extension: 'html');
+    if (cached == null) throw StateError('文章还无法在原生模式下读取');
+    return wikiGateway.parseArticle(content, cached.body, fetchedAt: cached.fetchedAt);
   }
 
   Future<File> loadImageFile(String url) async {
@@ -429,7 +453,6 @@ class WikiGateway {
   WikiGateway({http.Client? client}) : _client = client ?? http.Client();
 
   static const _wikiCn = wikiBaseUrl;
-  static const _blockTags = <String>{'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'blockquote', 'ul', 'ol', 'hr', 'table'};
 
   final http.Client _client;
 
@@ -444,7 +467,10 @@ class WikiGateway {
   Future<String> resolveTitle(String itemId) async =>
       _extractTitle(await _fetch(articleUrlOf(itemId)), itemId.toUpperCase());
 
-  Future<String> loadArticleHtml(ContentRef content) => _fetch(articleUrlOf(content.id));
+  Future<String> loadArticleHtml(ContentRef content) async {
+    final url = articleUrlOf(content.id);
+    return expandArticleFrames(await _fetch(url), Uri.parse(url), (uri) => _fetch(uri.toString()));
+  }
 
   Future<List<int>> loadResource(String url) async {
     final response = await _client
@@ -456,27 +482,8 @@ class WikiGateway {
     return response.bodyBytes;
   }
 
-  ArticleDocument parseArticle(
-    ContentRef content,
-    String html, {
-    int? fetchedAt,
-  }) {
-    final document = html_parser.parse(html);
-    final page = document.getElementById('page-content') ?? document.body;
-    page?.querySelectorAll('script,style,noscript,iframe,form,.page-options,.footer-wikiwalk-nav,#page-info').forEach((item) {
-      item.remove();
-    });
-    final blocks = <ArticleBlock>[];
-    if (page != null) {
-      _appendArticleBlocks(blocks, page, content);
-    }
-    return ArticleDocument(
-      content: content,
-      sourceUrl: articleUrlOf(content.id),
-      fetchedAt: fetchedAt ?? DateTime.now().millisecondsSinceEpoch,
-      blocks: blocks,
-    );
-  }
+  ArticleDocument parseArticle(ContentRef content, String html, {int? fetchedAt}) =>
+      parseNativeArticle(content, html, fetchedAt ?? DateTime.now().millisecondsSinceEpoch);
 
   List<CatalogEntry> parseCatalog(String html) {
     final content = html_parser.parse(html).getElementById('page-content');
@@ -542,87 +549,6 @@ class WikiGateway {
       throw HttpException('HTTP ${response.statusCode}: $url');
     }
     return utf8.decode(response.bodyBytes);
-  }
-
-  void _appendArticleBlocks(List<ArticleBlock> blocks, dom.Element element, ContentRef content) {
-    for (final child in element.children) {
-      final tag = child.localName?.toLowerCase() ?? '';
-      switch (tag) {
-        case 'h1':
-        case 'h2':
-        case 'h3':
-        case 'h4':
-        case 'h5':
-        case 'h6':
-          final text = _cleanText(child.text);
-          if (text.isNotEmpty) {
-            blocks.add(ArticleHeading(text, int.tryParse(tag.substring(1)) ?? 2));
-          }
-        case 'p':
-          for (final image in child.querySelectorAll('img')) {
-            _addImage(blocks, image, content);
-          }
-          final text = _cleanText(child.text);
-          if (text.isNotEmpty) {
-            blocks.add(ArticleParagraph(text));
-          }
-        case 'img':
-          _addImage(blocks, child, content);
-        case 'blockquote':
-          final text = _cleanText(child.text);
-          if (text.isNotEmpty) {
-            blocks.add(ArticleQuote(text));
-          }
-        case 'ul':
-        case 'ol':
-          final items = child.children
-              .where((item) => (item.localName ?? '').toLowerCase() == 'li')
-              .map((item) => _cleanText(item.text))
-              .where((item) => item.isNotEmpty)
-              .toList();
-          if (items.isNotEmpty) {
-            blocks.add(ArticleListBlock(items, tag == 'ol'));
-          }
-        case 'hr':
-          blocks.add(const ArticleDivider());
-        case 'table':
-          for (final row in child.querySelectorAll('tr')) {
-            final text = _cleanText(row.text);
-            if (text.isNotEmpty) {
-              blocks.add(ArticleParagraph(text));
-            }
-          }
-        default:
-          final hasNestedBlocks = child.children.any(
-            (nested) => _blockTags.contains((nested.localName ?? '').toLowerCase()),
-          );
-          if (hasNestedBlocks) {
-            _appendArticleBlocks(blocks, child, content);
-          } else {
-            for (final image in child.querySelectorAll('img')) {
-              _addImage(blocks, image, content);
-            }
-            final text = _cleanText(child.text);
-            if (text.isNotEmpty) {
-              blocks.add(ArticleParagraph(text));
-            }
-          }
-      }
-    }
-  }
-
-  void _addImage(List<ArticleBlock> blocks, dom.Element image, ContentRef content) {
-    final rawUrl = image.attributes['src'] ?? '';
-    final url = switch (rawUrl) {
-      final value when value.startsWith('//') => 'https:$value',
-      final value when value.startsWith('http://') || value.startsWith('https://') => value,
-      final value when value.startsWith('/') => '$_wikiCn$value',
-      final value when value.trim().isEmpty => '',
-      final value => Uri.parse(articleUrlOf(content.id)).resolve(value).toString(),
-    };
-    if (url.isNotEmpty) {
-      blocks.add(ArticleImage(url, _cleanText(image.attributes['alt'] ?? '')));
-    }
   }
 
   List<ExploreEntry> _parseExploreTable(ExploreSource source, dom.Element content) {
