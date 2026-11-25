@@ -230,6 +230,51 @@ void main() {
     );
   });
 
+  testWidgets('finished articles update catalog and story navigation', (
+    tester,
+  ) async {
+    final store = await openApp(tester, const Size(440, 900));
+
+    Future<void> selectTab(String label) async {
+      await tester.tap(
+        find.descendant(
+          of: find.byType(NavigationBar),
+          matching: find.text(label),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    Future<void> finishCurrentArticle() async {
+      await tester.drag(
+        find.descendant(
+          of: find.byType(ArticleScreen),
+          matching: find.byType(SingleChildScrollView),
+        ),
+        const Offset(0, -220),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('已读 · 上拉取消已读'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+    }
+
+    await selectTab('图鉴');
+    expect(find.text('SCP-173 · 已读'), findsNothing);
+    await tester.tap(find.widgetWithText(CatalogTile, 'SCP-173').first);
+    await tester.pumpAndSettle();
+    await finishCurrentArticle();
+    expect(find.text('SCP-173 · 已读'), findsWidgets);
+    expect(store.loadLibrary().history.single.completed, isTrue);
+
+    await selectTab('故事');
+    expect(find.text('主线已读 0 / 19'), findsOneWidget);
+    await tester.tap(find.text('开始阅读'));
+    await tester.pumpAndSettle();
+    await finishCurrentArticle();
+    expect(find.text('主线已读 1 / 19'), findsOneWidget);
+  });
+
   testWidgets('wide detail and compact back share the same route stack', (
     tester,
   ) async {
@@ -305,6 +350,9 @@ class _FixtureRepository extends Fake implements AnomiconRepository {
 class _EmptyOfflineStore extends Fake implements OfflineArticleStore {
   @override
   Future<List<OfflineArticleInfo>> list() async => [];
+
+  @override
+  Future<bool> contains(ContentRef content) async => false;
 }
 
 class _FixtureCache extends Fake implements ContentCache {

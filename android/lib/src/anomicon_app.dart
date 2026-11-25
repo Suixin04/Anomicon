@@ -369,6 +369,10 @@ class HomeShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final readIds = {
+      for (final entry in library.history)
+        if (entry.completed) entry.content.id,
+    };
     final child = switch (selectedTab) {
       HomeTab.explore => ExploreScreen(
         repository: repository,
@@ -377,6 +381,7 @@ class HomeShell extends StatelessWidget {
       ),
       HomeTab.catalog => CatalogScreen(
         repository: repository,
+        isRead: readIds.contains,
         onOpenSearch: onOpenSearch,
         onOpenContent: onOpenContent,
         onOpenArchiveGallery: onOpenArchiveGallery,
@@ -390,6 +395,7 @@ class HomeShell extends StatelessWidget {
       ),
       HomeTab.stories => StoriesScreen(
         repository: repository,
+        isRead: readIds.contains,
         onOpenContent: onOpenContent,
         onHaptic: onHaptic,
       ),
