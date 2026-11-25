@@ -29,8 +29,7 @@ fun StoriesTab(onEntry: (String) -> Unit) {
     val context = LocalContext.current
     val data = remember(context) { NativeData.open(context) }
     val progress by data.seriesProgress.collectAsState(initial = emptyList())
-    val history by data.history.collectAsState(initial = emptyList())
-    val completed = remember(history) { history.filter { it.progress >= 0.95 }.map { it.id }.toSet() }
+    val completed by data.completedIds.collectAsState(initial = emptySet())
     val next = resumeTale(progress.find { it.seriesId == SERIES_ID }?.entryId, completed)
     var detail by rememberSaveable { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -54,7 +53,7 @@ fun StoriesTab(onEntry: (String) -> Unit) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, bottom = LocalArchiveBottomInset.current + 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item { OutlinedButton(onClick = { onEntry("antimemetics-division-hub") }) { Text("阅读 Wiki 中心页") } }
             groups.forEach { group ->
-                item { Heading(group.title) }
+                item { Heading("${group.title} · ${group.entries.count { it.slug in completed }}/${group.entries.size}") }
                 items(group.entries, key = { it.slug }) { tale -> StoryRow(tale, if (tale.slug in completed) "已读" else tale.slug) { openChapter(tale) } }
             }
         }

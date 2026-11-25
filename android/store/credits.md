@@ -8,7 +8,7 @@
 
 ## 三维模型
 
-下表转录 Android 模型清单的交付来源和归因。清单对所有模型声明 CC BY-SA 3.0。逐件比对上游的作者、贴图、绑定、动画、原始项目和同许可衍生记录。GitHub 两个固定版本的根级 `LICENSE` 请求均返回 404，应以相应目录和上游作者保留的许可证据为准。完成前仍有逐件许可举证待办。[模型清单](../lib/src/seed_data.dart) · [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)
+下表转录 Android 模型清单的交付来源和归因。清单对所有模型声明 CC BY-SA 3.0。逐件比对上游的作者、贴图、绑定、动画、原始项目和同许可衍生记录。GitHub 两个固定版本的根级 `LICENSE` 请求均返回 404，应以相应目录和上游作者保留的许可证据为准。完成前仍有逐件许可举证待办。[模型清单](../feature/archive3d/src/main/) · [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/)
 
 | 模型 | 交付 | 模型清单归因 | 来源文件 |
 | --- | --- | --- | --- |
@@ -23,4 +23,4 @@
 | SCP-178-1 | 按需 | Kenneth crooker | [Scp178-1.glb](https://github.com/Yni-Viar/scp-assets/blob/1265487d1978b60398ab71f366bc5a1ba4ce1d0d/GFX/SCP-CB/Characters/Scp178-1/Scp178-1.glb) |
 | SCP-686 | 按需 | pop_pop_icard | [Scp686.glb](https://github.com/Yni-Viar/scp-assets/blob/1265487d1978b60398ab71f366bc5a1ba4ce1d0d/GFX/By_Pop_Pop_Icard/Items/Scp686/Scp686.glb) |
 
-移动端处理版的署名记录应说明定格姿态、压缩贴图等修改。按需模型保留固定上游版本，需以实际交付行为核对分发许可。查看器的「模型源文件」和「许可证全文」入口需在最终包上验证。发布者还需归档 [商店图标](app-icon.png)、宣传图、截图中的全部素材来源、许可与品牌使用许可，并核对 Flutter 依赖许可在应用内的展示方式。[依赖锁文件](../pubspec.lock)
+移动端处理版的署名记录应说明定格姿态、压缩贴图等修改。按需模型保留固定上游版本，需以实际交付行为核对分发许可。查看器的「模型源文件」和「许可证全文」入口需在最终包上验证。发布者还需归档 [商店图标](app-icon.png)、宣传图、截图中的全部素材来源、许可与品牌使用许可，并核对 原生 Gradle 依赖许可在应用内的展示方式。[版本目录](../gradle/libs.versions.toml)

@@ -36,10 +36,12 @@ interface LibraryDao {
     suspend fun trim(collection: String, keep: Int)
     @Query("SELECT * FROM LibraryItem WHERE collection = :collection ORDER BY ordinal")
     fun items(collection: String): Flow<List<LibraryItem>>
+    @Query("DELETE FROM OfflineArticle WHERE id = :id") suspend fun removeArticle(id: String)
     @Query("SELECT * FROM OfflineArticle ORDER BY savedAt DESC") fun shelf(): Flow<List<OfflineArticle>>
     @Query("SELECT * FROM OfflineArticle WHERE id = :id") suspend fun article(id: String): OfflineArticle?
     @Transaction @Query("SELECT * FROM OfflineArticle WHERE id = :id") suspend fun revision(id: String): OfflineRevision?
     @Query("SELECT * FROM OfflineImage WHERE articleId = :id") suspend fun images(id: String): List<OfflineImage>
+    @Query("DELETE FROM CacheFile") suspend fun clearCache()
     @Query("SELECT * FROM CacheFile WHERE name = :name") suspend fun cache(name: String): CacheFile?
 }
 

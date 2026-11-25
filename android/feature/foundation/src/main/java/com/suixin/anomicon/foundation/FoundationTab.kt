@@ -23,7 +23,7 @@ import com.suixin.anomicon.core.data.NativeData
 import kotlinx.coroutines.launch
 
 @Composable
-fun FoundationTab(onEntry: (String) -> Unit) {
+fun FoundationTab(onEntry: (String) -> Unit, onWorkOrder: () -> Unit) {
     val context = LocalContext.current
     val data = remember(context) { NativeData.open(context) }
     val results by data.assessmentResults.collectAsState(initial = emptyMap())
@@ -32,7 +32,7 @@ fun FoundationTab(onEntry: (String) -> Unit) {
     ArchiveSecondaryPage(active != null)
     BackHandler(active != null) { activeId = null }
     if (active != null) {
-        ExamScreen(active, onEntry, { activeId = null }) { score -> data.saveAssessment(active.id, score, score >= active.cutoff) }
+        ExamScreen(active, results[active.id]?.passed == true, onEntry, { activeId = null }) { score -> data.saveAssessment(active.id, score, score >= active.cutoff) }
         return
     }
     ArchiveLargePage("基金会") {
@@ -71,6 +71,7 @@ fun FoundationTab(onEntry: (String) -> Unit) {
                     }
                 }
             }
+            Panel(onClick = onWorkOrder) { Heading("RAISA 工单"); Caption("提交反馈及查看处理记录") }
             Heading("基金会手册")
             manuals.take(1).forEach { ManualCard(it, Modifier.fillMaxWidth(), onEntry) }
             manuals.drop(1).chunked(2).forEach { row ->
@@ -103,9 +104,10 @@ fun FoundationTab(onEntry: (String) -> Unit) {
 @Composable private fun Heading(text: String) = Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 @Composable private fun Caption(text: String) = Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
 
-@Composable private fun ExamScreen(exam: Exam, open: (String) -> Unit, back: () -> Unit, save: suspend (Int) -> Unit) {
+@Composable private fun ExamScreen(exam: Exam, passedBefore: Boolean, open: (String) -> Unit, back: () -> Unit, save: suspend (Int) -> Unit) {
     var answers by rememberSaveable(exam.id) { mutableStateOf(intArrayOf()) }
     var index by rememberSaveable(exam.id) { mutableIntStateOf(0) }
+    var reward by rememberSaveable(exam.id) { mutableIntStateOf(0) }
     var finished by rememberSaveable(exam.id) { mutableStateOf(false) }
     var revealed by rememberSaveable(index) { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
@@ -116,9 +118,11 @@ fun FoundationTab(onEntry: (String) -> Unit) {
         ArchiveDetailBar(exam.title, back)
         Column(Modifier.verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(exam.code, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
+        if (!finished && passedBefore) Caption("已持章复核")
         if (finished) {
             val score = exam.score(answers.toList())
             Heading(if (score >= exam.cutoff) "核验通过 · ${exam.seal}" else "待复核")
+            Caption(if (reward > 0) "首次签发 ${exam.seal} · +$reward XP" else if (passedBefore) "已持有 ${exam.seal} · 本次未重复发放奖励" else "尚未签发印章")
             Text("得分 $score / ${exam.questions.size}"); Text(if (score >= exam.cutoff) exam.success else exam.failure)
             exam.questions.forEachIndexed { i, q ->
                 Panel { Text("${i + 1} · ${if (answers[i] == q.correct) "正确" else "需复习"} · ${q.label}"); Caption(q.explanation); TextButton(onClick = { open(q.reference) }) { Text(q.link) } }
@@ -132,16 +136,25 @@ fun FoundationTab(onEntry: (String) -> Unit) {
             }
             Text(question.prompt, fontWeight = FontWeight.Bold)
             question.choices.forEachIndexed { i, choice ->
-                OutlinedButton(onClick = { answers = answers.take(index).toIntArray() + i }, modifier = Modifier.fillMaxWidth()) {
+                OutlinedButton(enabled = answers.size == index, onClick = { answers = answers + i }, modifier = Modifier.fillMaxWidth()) {
                     ArchiveGlyph(if (answers.getOrNull(index) == i) "radio_button_checked" else "radio_button_unchecked", Modifier.size(20.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(choice, modifier = Modifier.weight(1f))
                 }
             }
+            if (answers.size > index) {
+                Panel {
+                    Heading(if (answers[index] == question.correct) "核验通过" else "规程偏差")
+                    Text(question.explanation)
+                    TextButton(onClick = { open(question.reference) }) { Text(question.link) }
+                }
+            }
             Button(enabled = answers.size > index && !saving, onClick = {
                 if (index < exam.questions.lastIndex) index++ else {
                     saving = true
-                    scope.launch { save(exam.score(answers.toList())); finished = true; saving = false }
+                    val score = exam.score(answers.toList())
+                    val earned = if (score >= exam.cutoff && !passedBefore) exam.xp else 0
+                    scope.launch { save(score); reward = earned; finished = true; saving = false }
                 }
             }) { Text(if (index == exam.questions.lastIndex) "提交核验" else "下一题") }
         }

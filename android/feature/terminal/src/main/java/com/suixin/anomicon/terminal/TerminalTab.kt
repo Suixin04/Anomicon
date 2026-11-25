@@ -24,6 +24,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.suixin.anomicon.core.data.*
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 private val panel @Composable get() = MaterialTheme.colorScheme.surfaceContainerLowest
@@ -49,6 +50,10 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
     ArchiveSecondaryPage(collection != null)
     BackHandler(collection != null) { collection = null }
     val view = collection
+    if (view == "RAISA 工单") {
+        RaisaPage({ collection = null }, source = "terminal")
+        return
+    }
     if (view != null) {
         val entries = when (view) { "全部收藏" -> favorites; "继续阅读" -> resume; else -> history }
         val isShelf = view == "离线书架"
@@ -58,7 +63,7 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
                 if (isShelf) {
                     if (shelf.isEmpty()) item { Empty("暂无离线档案，已保存到本机的档案会显示在这里。") }
                     items(shelf, key = { it.id }) { article ->
-                        Entry(article.title, "已存到本机") { onEntry("offline:${article.id}") }
+                        ShelfItem(article, data, onEntry)
                     }
                 } else {
                     if (entries.isEmpty()) item { Empty(if (view == "全部收藏") "暂无收藏" else "暂无阅读记录") }
@@ -114,7 +119,7 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
             }
             }
             item { Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { Heading("个人资料库"); Small("阅读进度、藏品与常用本地入口") } }
-            item { Entry("离线书架", "已保存 ${shelf.size} 篇") { collection = "离线书架" } }
+
             item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Quick("view_in_ar", "三维档案", Modifier.weight(1f), onArchive)
                 Quick("bookmark", "全部收藏", Modifier.weight(1f)) { collection = "全部收藏" }
@@ -128,6 +133,8 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
                 item { Section("正在跟读", series.size) }
                 items(series) { Entry(it.seriesTitle, it.entryTitle, { onEntry(it.entryId) }) }
             }
+            item { Entry("离线书架", "已保存 ${shelf.size} 篇 · 管理副本") { collection = "离线书架" } }
+            item { Entry("RAISA 工单", "提交反馈与查看回执") { collection = "RAISA 工单" } }
             if (shelf.isNotEmpty()) {
                 item { Section("离线保存", shelf.size) }
                 items(shelf) { Entry(it.title, "已存到本机", { onEntry("offline:${it.id}") }) }
@@ -204,4 +211,28 @@ private fun caption(row: ReadingEntry) = when { row.progress >= 1f -> "已读完
             ArchiveGlyph("chevron_right", Modifier.size(20.dp))
         }
     }
+}
+
+@Composable private fun ShelfItem(article: OfflineArticle, data: NativeData, onEntry: (String) -> Unit) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var confirm by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    val bytes by produceState<Long?>(null, article) { value = data.offlineBytes(article.id) }
+    ArchiveCard(Modifier.fillMaxWidth()) {
+        Column(Modifier.padding(12.dp)) {
+            Text(article.title, style = MaterialTheme.typography.titleMedium)
+            Small(bytes?.let { android.text.format.Formatter.formatFileSize(context, it) } ?: "正在计算占用…")
+            Row { TextButton(onClick = { onEntry("offline:${article.id}") }) { Text("打开副本") }
+                TextButton(onClick = { onEntry(article.id) }) { Text("打开在线原文") }
+                TextButton(onClick = { confirm = true }) { Text("删除") } }
+            if (error.isNotEmpty()) Small(error)
+        }
+    }
+    if (confirm) AlertDialog(onDismissRequest = { confirm = false }, title = { Text("删除离线副本？") },
+        text = { Text("将从本机移除《${article.title}》及其图片。") },
+        dismissButton = { TextButton(onClick = { confirm = false }) { Text("取消") } },
+        confirmButton = { TextButton(onClick = { confirm = false; scope.launch {
+            try { data.removeOffline(article.id) } catch (e: java.io.IOException) { error = "删除失败：${e.localizedMessage}" }
+        } }) { Text("删除副本") } })
 }

@@ -16,7 +16,8 @@ import java.io.File
 
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 data class AppSettings(val themeMode: ThemeMode = ThemeMode.SYSTEM, val immersiveMaterial: Boolean = true,
-    val haptics: Boolean = true, val fontSize: Float = 18f, val lineHeightMultiple: Float = 1.6f)
+    val haptics: Boolean = true, val fontSize: Float = 18f, val lineHeightMultiple: Float = 1.6f,
+    val justifyBody: Boolean = true, val complexMode: String = "auto", val revealHidden: Boolean = false, val keepScreenOn: Boolean = false)
 
 private val Context.nativePreferences by preferencesDataStore("researcher")
 private object Keys {
@@ -26,6 +27,10 @@ private object Keys {
     val haptics = booleanPreferencesKey("haptics")
     val font = floatPreferencesKey("fontSize")
     val lineHeight = floatPreferencesKey("lineHeightMultiple")
+    val justifyBody = booleanPreferencesKey("justifyBody")
+    val complexMode = stringPreferencesKey("complexMode")
+    val revealHidden = booleanPreferencesKey("revealHidden")
+    val keepScreenOn = booleanPreferencesKey("keepScreenOn")
     val assessments = stringPreferencesKey("foundation.assessments")
     val client = stringPreferencesKey("raisa.clientId")
     val starter = booleanPreferencesKey("discovery.starterDismissed")
@@ -49,7 +54,8 @@ class NativeData private constructor(private val context: Context) {
 
     val settings: Flow<AppSettings> = prefs.data.map {
         AppSettings(it[Keys.theme]?.let(ThemeMode::valueOf) ?: ThemeMode.SYSTEM,
-            it[Keys.material] ?: true, it[Keys.haptics] ?: true, it[Keys.font] ?: 18f, it[Keys.lineHeight] ?: 1.6f)
+            it[Keys.material] ?: true, it[Keys.haptics] ?: true, it[Keys.font] ?: 18f, it[Keys.lineHeight] ?: 1.6f,
+            it[Keys.justifyBody] ?: true, it[Keys.complexMode] ?: "auto", it[Keys.revealHidden] ?: false, it[Keys.keepScreenOn] ?: false)
     }.distinctUntilChanged()
     val assessments = prefs.data.map { it[Keys.assessments] ?: "{}" }.distinctUntilChanged()
     val feedbackClientId = prefs.data.map { it[Keys.client] }.distinctUntilChanged()
@@ -57,8 +63,20 @@ class NativeData private constructor(private val context: Context) {
     suspend fun setThemeMode(value: ThemeMode) { prefs.edit { it[Keys.theme] = value.name } }
     suspend fun setImmersiveMaterial(value: Boolean) { prefs.edit { it[Keys.material] = value } }
     suspend fun setHaptics(value: Boolean) { prefs.edit { it[Keys.haptics] = value } }
+    suspend fun setFontSize(value: Float) { prefs.edit { it[Keys.font] = value } }
+    suspend fun setLineHeightMultiple(value: Float) { prefs.edit { it[Keys.lineHeight] = value } }
+    suspend fun setJustifyBody(value: Boolean) { prefs.edit { it[Keys.justifyBody] = value } }
+    suspend fun setComplexMode(value: String) { prefs.edit { it[Keys.complexMode] = value } }
+    suspend fun setRevealHidden(value: Boolean) { prefs.edit { it[Keys.revealHidden] = value } }
+    suspend fun setKeepScreenOn(value: Boolean) { prefs.edit { it[Keys.keepScreenOn] = value } }
+    suspend fun clearContentCache() = withContext(Dispatchers.IO) {
+        val directory = File(documents, "content-cache")
+        if (directory.exists() && !directory.deleteRecursively()) throw java.io.IOException("未能清除内容缓存")
+        library.clearCache()
+    }
     val favorites = readingEntries("favorites")
     val history = readingEntries("history")
+    val completedIds: Flow<Set<String>> = history.map { entries -> entries.filter { it.completed }.mapTo(mutableSetOf()) { it.id } }.distinctUntilChanged()
     private fun readingEntries(collection: String) = library.items(collection).map { rows -> rows.map(::readEntry) }.flowOn(Dispatchers.Default)
 
     private suspend fun prepend(collection: String, id: String, payload: String) {
@@ -134,6 +152,27 @@ class NativeData private constructor(private val context: Context) {
     }
 
     private val offlineWrites = Mutex()
+    suspend fun offlineBytes(id: String): Long = withContext(Dispatchers.IO) {
+        val revision = library.revision(id) ?: return@withContext 0L
+        (revision.images.map { it.path } + revision.article.htmlPath).distinct().sumOf { offlineFile(it).length() }
+    }
+
+    suspend fun removeOffline(id: String): Unit = withContext(Dispatchers.IO) {
+        offlineWrites.withLock {
+            library.removeArticle(id)
+            // Both directory names are hashes produced by the two supported writers.
+            for (path in listOf("native/${digest(id)}", digest("main:$id"))) {
+                val folder = offlineFile(path)
+                if (folder.exists() && !folder.deleteRecursively()) throw java.io.IOException("副本已移除，部分文件清理失败")
+            }
+        }
+    }
+
+    suspend fun setCompleted(id: String, title: String, completed: Boolean) = database.withTransaction {
+        val row = library.payload("history", id)?.let(::JSONObject) ?: JSONObject()
+        prepend("history", id, row.put("id", id).put("title", title).put("completed", completed).toString())
+    }
+
     private val sweptArticles = mutableSetOf<String>()
 
     /** Publish the HTML and all image mappings in one Room commit after writing immutable files. */

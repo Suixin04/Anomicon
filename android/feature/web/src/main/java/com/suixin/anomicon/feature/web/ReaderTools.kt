@@ -41,11 +41,11 @@ internal fun ReaderToolbar(slug: String, title: String, favorite: Boolean?, orig
 }
 
 @Composable
-internal fun ReaderStatus(progress: Float, profile: ResearchProfile?, onTool: (ReaderTool) -> Unit) {
+internal fun ReaderStatus(progress: Float, completed: Boolean, profile: ResearchProfile?, onTool: (ReaderTool) -> Unit) {
     Surface(modifier=Modifier.fillMaxWidth().padding(horizontal=16.dp), shape=MaterialTheme.shapes.large, color=MaterialTheme.colorScheme.surfaceContainerLow) {
         Row(Modifier.padding(horizontal=10.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             CircularProgressIndicator(progress={progress}, modifier=Modifier.size(18.dp), strokeWidth=2.dp)
-            Text(when { progress >= .98f -> "已读完"; progress > 0 -> "已读 ${(progress*100).toInt()}%"; else -> "开始阅读" }, Modifier.weight(1f), style=MaterialTheme.typography.labelMedium)
+            Text(when { completed -> "已读完"; progress > 0 -> "已读 ${(progress*100).toInt()}%"; else -> "开始阅读" }, Modifier.weight(1f), style=MaterialTheme.typography.labelMedium)
             profile?.let { Text("Lv.${it.level}  ${it.xp} XP", style = ArchiveTypography.metadata) }
             ReaderAction("目录", "toc", { onTool(ReaderTool.Contents) })
             ReaderAction("查找", "search", { onTool(ReaderTool.Find) })

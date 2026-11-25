@@ -26,31 +26,26 @@ import io.github.sceneview.math.Position
 import io.github.sceneview.node.ModelNode
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
-import java.security.MessageDigest
 import kotlin.math.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-internal fun verifiedModel(bytes: ByteArray): ByteBuffer {
-    require(bytes.size == 3969944) { "模型长度不匹配" }
-    val buffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-    require(buffer.getInt(0) == 0x46546c67 && buffer.getInt(4) == 2 && buffer.getInt(8) == bytes.size) { "GLB 头无效" }
-    val digest = MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
-    require(digest == "f89aefe1f7cf116dc8c12e9c5d554278217afe4744e49e14ab52840ca91f256d") { "模型校验失败" }
+internal fun verifiedModel(bytes: ByteArray, asset: ArchiveAsset = resolveAsset("scp-173")!!): ByteBuffer {
+    verify(asset, ByteBuffer.wrap(bytes))
     return ByteBuffer.allocateDirect(bytes.size).order(ByteOrder.nativeOrder()).apply { put(bytes); rewind() }
 }
 
 @Composable
-fun StageProbe(
-    onBack: () -> Unit,
-    onFullscreenChange: (Boolean) -> Unit = {},
-) {
+internal fun ModelStage(asset: ArchiveAsset, store: ArchiveStore, onBack: () -> Unit, onFullscreenChange: (Boolean) -> Unit) {
     val assets = LocalContext.current.assets
     var model by remember { mutableStateOf<ByteBuffer?>(null) }
     var failure by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(assets) {
+    LaunchedEffect(asset) {
         try {
-            model = withContext(Dispatchers.IO) { assets.open("models/scp-173.glb").use { verifiedModel(it.readBytes()) } }
+            model = withContext(Dispatchers.IO) {
+                if (asset.bundled) assets.open(asset.resourcePath).use { verifiedModel(it.readBytes(), asset) }
+                else mapModel(store.installed(asset)).also { verify(asset, it) }
+            }
         } catch (e: java.io.IOException) { failure = e.localizedMessage }
         catch (e: IllegalArgumentException) { failure = e.localizedMessage }
     }
@@ -75,11 +70,21 @@ fun StageProbe(
     BackHandler(onBack = back)
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         if (!fullscreen) ArchiveDetailBar("三维档案", onBack) {
-            Text("SCP-173", Modifier.padding(end = 16.dp), fontFamily = FontFamily.Monospace)
+            Text(asset.displayId, Modifier.padding(end = 16.dp), fontFamily = FontFamily.Monospace)
         }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             model?.let { buffer ->
-                val engine = rememberEngine()
+                val engine = rememberEngine(engineCreator = { eglContext ->
+                    // Model upload used 9.64 MiB in one command stream on the API 36 device.
+                    val config = com.google.android.filament.Engine.Config().apply {
+                        minCommandBufferSizeMB = 16
+                        commandBufferSizeMB = 48
+                    }
+                    com.google.android.filament.Engine.Builder()
+                        .sharedContext(eglContext)
+                        .config(config)
+                        .build()
+                })
                 val loader = rememberModelLoader(engine)
                 val camera = rememberCameraNode(engine)
                 val nodes = rememberNodes { add(ModelNode(loader.createModelInstance(buffer), autoAnimate = false, scaleToUnits = 1.8f, centerOrigin = Position())) }

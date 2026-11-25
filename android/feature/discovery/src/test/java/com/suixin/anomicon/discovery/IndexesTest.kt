@@ -46,4 +46,20 @@ class IndexesTest {
         val p = parsePreview("scp-002",snapshot("scp-002"))
         assertTrue(p.text.contains("60")); assertTrue(p.image!!.startsWith("https://"))
     }
+    @Test fun directSearchPreservesWikiAnchorAndNormalizesShortIds() {
+        assertEquals("scp-cn-002-j", directTarget("CN 2-J"))
+        assertEquals("scp-fr-003", directTarget("SCP FR 3"))
+        assertEquals("scp-173", directTarget("173"))
+        assertEquals("we-need-to-talk-about-fifty-five#Section2", directTarget("scp-wiki.wikidot.com/we-need-to-talk-about-fifty-five#Section2"))
+        assertNull(directTarget("https://example.org/scp-173"))
+    }
+    @Test fun bundledJokesStoriesAndRecentDatesAreSearchable() {
+        for (key in jokeSources.keys + taleSources) {
+            val entries = parseIndex(key, snapshot(key))
+            assertTrue(key, entries.size > 10)
+            assertTrue(key, entries.none { it.id == key || it.id == "main" })
+        }
+        val recent = parseIndex("most-recently-created-cn", snapshot("most-recently-created-cn"))
+        assertNotNull(recentDate(recent.first().detail))
+    }
 }

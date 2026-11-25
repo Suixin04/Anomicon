@@ -56,6 +56,36 @@ class WikiRepositoryTest {
         assertTrue(current.offlineHtml.contains(WIKI_BASE + "author"))
     }
 
+    @Test fun footnotesAnchorsAndHiddenTextSurviveOfflineSave() {
+        val page = parseWikiPreview("""<div id='page-content'><h2 id='toc1'>记录</h2>
+            <p>注<a class='footnoteref' href='#footnote-1'>1</a><span style='color:white'>秘密</span></p>
+            <div class='footnotes-footer'><div class='footnote-footer' id='footnote-1'><a href='#footnoteref-1'>1</a>附注内容</div></div></div>""", "scp-049")
+        for (doc in listOf(page, parseWikiPreview("<div id='page-content'>${page.offlineHtml}</div>", page.slug))) {
+            assertEquals(0, doc.anchors["toc1"])
+            val para = doc.blocks[1] as PreviewBlock.Paragraph
+            assertEquals("#footnote-1", para.links.single().slug)
+            assertEquals("附注内容", doc.footnotes["footnote-1"])
+            assertEquals("秘密", para.hidden.single().let { para.text.substring(it.start, it.end) })
+        }
+    }
+
+    @Test fun oldShelfFootnotesLinkTheNumberInSuperscript() {
+        val page = parseWikiPreview("""<main id='page-content'><p>身高1.9米<sup><a class='footnoteref'>1</a></sup></p>
+            <div class='footnote-footer'><a>1</a>. 作者的注释。</div></main>""", "scp-049")
+        val text = page.blocks.single() as PreviewBlock.Paragraph
+        assertEquals(text.text.lastIndexOf('1'), text.links.single().start)
+        assertEquals("作者的注释。", page.footnotes["footnote-1"])
+    }
+
+    @Test fun ordinaryFragmentLinkSurvivesOfflineSave() {
+        val page = parseWikiPreview("""<main id='page-content'><p><a href='#foo'>见实验</a></p>
+            <p><a name='foo'></a>实验记录</p></main>""", "scp-049")
+        for (doc in listOf(page, parseWikiPreview("<main id='page-content'>${page.offlineHtml}</main>", page.slug))) {
+            assertEquals("#foo", (doc.blocks[0] as PreviewBlock.Paragraph).links.single().slug)
+            assertEquals(1, doc.anchors["foo"])
+        }
+    }
+
     @Test fun archiveImagesUseTrustedHttpsHostsAndSupportedRasterBytes() {
         assertNotNull(trustedImageUrl("https://scp-wiki.wdfiles.com/local--files/scp-049/photo.jpg"))
         for (url in listOf("http://scp-wiki.wdfiles.com/a", "https://example.net/a", "https://scp-wiki.wdfiles.com:8123/a", "https://user@scp-wiki.wdfiles.com/a"))

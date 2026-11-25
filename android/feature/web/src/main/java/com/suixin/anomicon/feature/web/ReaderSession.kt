@@ -27,7 +27,14 @@ private val persistenceScope = CoroutineScope(Dispatchers.Main.immediate + Super
 private val order = Mutex()
 private fun persist(action: suspend () -> Unit) { persistenceScope.launch { order.withLock { action() } } }
 
-internal class ReaderSession(val id: String, val data: NativeData, initial: ReaderPosition) {
+internal class ReaderSession(val id: String, val data: NativeData, initial: ReaderPosition, initiallyCompleted: Boolean = false) {
+    var completed by mutableStateOf(initiallyCompleted)
+        private set
+    fun toggleCompleted() {
+        completed = !completed
+        val value = completed
+        persist { data.setCompleted(id, title, value) }
+    }
     var position by mutableStateOf(initial)
         private set
     var title = id
@@ -59,7 +66,7 @@ internal class ReaderSession(val id: String, val data: NativeData, initial: Read
 internal fun rememberReaderSession(id: String, data: NativeData): ReaderSession? {
     val session by produceState<ReaderSession?>(null, id, data) {
         val row = order.withLock { data.history.first().firstOrNull { it.id == id } }
-        value = ReaderSession(id, data, row?.let { ReaderPosition(it.offset, it.progress) } ?: ReaderPosition())
+        value = ReaderSession(id, data, row?.let { ReaderPosition(it.offset, it.progress) } ?: ReaderPosition(), row?.completed == true)
     }
     return session
 }

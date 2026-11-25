@@ -38,7 +38,11 @@ fun wikiSlug(input: String): String? {
 @Serializable
 data class WikiPreview(val slug: String, val title: String, val blocks: List<PreviewBlock>,
     val tags: List<String> = emptyList(), val rating: String? = null, val objectClass: String? = null,
-    val hasInteractiveContent: Boolean = false, val credits: String = "", val offlineHtml: String = "")
+    val hasInteractiveContent: Boolean = false, val credits: String = "", val offlineHtml: String = "",
+    val footnotes: Map<String, String> = emptyMap(), val anchors: Map<String, Int> = emptyMap())
+
+@Serializable
+data class HiddenSpan(val start: Int, val end: Int)
 
 @Serializable
 data class WikiLink(val start: Int, val end: Int, val slug: String)
@@ -46,7 +50,7 @@ data class WikiLink(val start: Int, val end: Int, val slug: String)
 @Serializable
 sealed interface PreviewBlock {
     @Serializable data class Heading(val text: String) : PreviewBlock
-    @Serializable data class Paragraph(val text: String, val links: List<WikiLink> = emptyList()) : PreviewBlock
+    @Serializable data class Paragraph(val text: String, val links: List<WikiLink> = emptyList(), val hidden: List<HiddenSpan> = emptyList()) : PreviewBlock
     @Serializable data class Image(val url: String, val description: String, val caption: String = "") : PreviewBlock
     @Serializable data class Table(val rows: List<List<String>>) : PreviewBlock
 }
@@ -59,14 +63,26 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
         throw IOException("条目不存在")
     }
     // A static fragment keeps credit links and captions from the same revision the reader sees.
+    body.select("[style]").forEach { element ->
+        val css = element.attr("style").lowercase().split(';').associate { it.substringBefore(':').trim() to it.substringAfter(':').trim() }
+        val ink = css["color"]
+        if (ink != null && (ink == "transparent" || ink == css["background-color"] || ink == css["background"] ||
+            (ink in setOf("#fff", "white", "#ffffff") && css.keys.none { it.startsWith("background") }))) element.attr("data-concealed", "true")
+    }
+    // Earlier shelf copies retained the numbered markers, but omitted href/id.
+    for (ref in body.select("a.footnoteref")) {
+        val number = ref.text().trim().toIntOrNull() ?: continue
+        ref.attr("data-note", "footnote-$number")
+    }
     val source = body.clone()
     document.select(".page-tags,.rate-points").filter { it.closest("#page-content") == null }
         .forEach { source.appendChild(it.clone()) }
     val attribution = source.appendElement("div").addClass("licensebox").appendElement("div").addClass("collapsible-block-content")
     attribution.appendText("原文：").appendElement("a").attr("href", WIKI_BASE + slug).text(WIKI_BASE + slug)
+    // Store stable anchors through cleaning, including fragment-only footnote references.
     val offlineHtml = Jsoup.clean(source.html(), WIKI_BASE + slug, org.jsoup.safety.Safelist.relaxed()
         .addTags("figure", "figcaption", "main", "section", "article", "h1", "h2", "h3", "h4", "h5", "h6")
-        .addAttributes(":all", "class"))
+        .addAttributes(":all", "class", "id", "data-concealed").addAttributes("a", "data-note", "name"))
     val tags = document.select(".page-tags a").map { it.text() }.filter { it.isNotBlank() && !it.startsWith("_") }.distinct()
     val rating = document.selectFirst(".rate-points")?.text()?.let { Regex("[+−-]?\\s*\\d+").find(it)?.value?.replace(" ", "") }
     val classes = listOf("Safe", "Euclid", "Keter", "Thaumiel", "Apollyon", "Archon", "Neutralized", "Explained", "Pending")
@@ -79,6 +95,13 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
         .filter { it.isNotBlank() }.distinct().joinToString("\n\n")
     body.select(".info-container,.licensebox").remove()
     body.select("script,style,noscript,.page-rate-widget-box,.creditRate,.page-tags,.printuser").remove()
+    val notes = body.select(".footnote-footer").mapIndexed { index, item ->
+        val key = item.id().ifEmpty { "footnote-${index + 1}" }
+        val copy = item.clone()
+        copy.selectFirst("a")?.takeIf { it.text().trim().toIntOrNull() != null }?.remove()
+        key to copy.text().trimStart('.', ' ')
+    }.toMap()
+    body.select(".footnotes-footer,.footnote-footer").remove()
     val captions = body.select(".scp-image-block,figure").associate { frame ->
         val image = frame.selectFirst("img")
         val caption = frame.selectFirst(".scp-image-caption,figcaption")
@@ -87,7 +110,13 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
         image to text
     }
     val blocks = mutableListOf<PreviewBlock>()
+    val anchors = mutableMapOf<String, Int>()
     fun visit(node: Element) {
+        if (node.id().isNotBlank()) anchors[node.id()] = blocks.size
+        if (node.hasAttr("name")) anchors[node.attr("name")] = blocks.size
+        if (node.normalName() in setOf("p", "li", "pre", "table", "h1", "h2", "h3", "h4", "h5", "h6")) {
+            node.select("[id],a[name]").forEach { anchors[it.id().ifBlank { it.attr("name") }] = blocks.size }
+        }
         when (node.normalName()) {
             "h1", "h2", "h3", "h4", "h5", "h6" -> if (node.text().isNotBlank()) blocks += PreviewBlock.Heading(node.text())
             "table" -> {
@@ -104,17 +133,30 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
                 node.select("img").forEach(::visit)
                 val text = node.text()
                 if (text.isNotBlank()) {
-                    var offset = 0
-                    val links = node.select("a[href]").mapNotNull { link ->
+                    val links = node.select("a[href],a[data-note]").mapNotNull { link ->
                         val label = link.text()
-                        if (label.isBlank() || link.attr("href").startsWith('#')) return@mapNotNull null
-                        val target = wikiSlug(link.absUrl("href")) ?: return@mapNotNull null
-                        val start = text.indexOf(label, offset)
+                        if (label.isBlank()) return@mapNotNull null
+                        val note = link.attr("data-note").ifEmpty { link.attr("href").substringAfterLast('#', "") }
+                        val target = if (note in notes) "#$note" else {
+                            val url = link.absUrl("href").toHttpUrlOrNull() ?: return@mapNotNull null
+                            val page = wikiSlug(url.toString()) ?: return@mapNotNull null
+                            if (page == slug && !url.fragment.isNullOrBlank()) "#${url.fragment}" else page
+                        }
+                        // Mark the actual DOM node so a repeated digit in the preceding prose is never linked.
+                         val original = link.html()
+                         link.prependText("\uE000")
+                         val start = node.text().indexOf('\uE000')
+                         link.html(original)
                         if (start < 0) return@mapNotNull null
-                        offset = start + label.length
-                        WikiLink(start, offset, target)
+                        WikiLink(start, start + label.length, target)
                     }
-                    blocks += PreviewBlock.Paragraph(text, links)
+                    var end = 0
+                    val hidden = node.select("[data-concealed=true]").mapNotNull { span ->
+                        val label = span.text()
+                        val start = text.indexOf(label, end)
+                        if (start < 0 || label.isEmpty()) null else HiddenSpan(start, start + label.length).also { end = it.end }
+                    }
+                    blocks += PreviewBlock.Paragraph(text, links, hidden)
                 }
             }
             else -> {
@@ -126,7 +168,7 @@ fun parseWikiPreview(html: String, slug: String): WikiPreview {
     body.children().forEach(::visit)
     if (blocks.isEmpty()) throw IOException("此页暂无可预览正文，请查看原版网页")
     val title = document.getElementById("page-title")?.text()?.takeIf { it.isNotBlank() } ?: slug.uppercase(Locale.ROOT)
-    return WikiPreview(slug, title, blocks, tags, rating, objectClass, interactive, credits, offlineHtml)
+    return WikiPreview(slug, title, blocks, tags, rating, objectClass, interactive, credits, offlineHtml, notes, anchors.filterValues { it in blocks.indices })
 }
 
 /** The series indexes retain the translated short name when the article heading contains only its number. */

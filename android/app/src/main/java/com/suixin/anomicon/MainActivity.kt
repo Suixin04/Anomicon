@@ -42,7 +42,18 @@ class MainActivity : ComponentActivity() {
 }
 
 internal enum class Tab(val title: String) { Explore("探索"), Catalog("图鉴"), Foundation("基金会"), Stories("故事"), Terminal("终端") }
-internal enum class Detail(val title: String) { Web("原版网页"), Scene("三维档案馆"), Settings("设置") }
+internal enum class Detail(val title: String) { Web("原版网页"), Scene("三维档案馆"), Settings("设置"), About("关于格异录"), License("内容来源与许可"), Feedback("RAISA 终端运维工单") }
+
+internal data class DetailRoute(
+    val page: Detail,
+    val item: String = "",
+    val source: String = "",
+    val title: String = "",
+    val url: String = "",
+    val renderMode: String = "",
+    val revealed: Boolean = false,
+    val key: String = java.util.UUID.randomUUID().toString(),
+) : java.io.Serializable
 
 internal sealed interface Bootstrap {
     data object Loading : Bootstrap
@@ -52,16 +63,15 @@ internal sealed interface Bootstrap {
 
 @HiltViewModel
 internal class ShellViewModel @Inject constructor(@ApplicationContext context: Context, private val saved: SavedStateHandle) : ViewModel() {
-    private val data = NativeData.open(context)
+    val data = NativeData.open(context)
     private val migration = MutableStateFlow<Bootstrap>(Bootstrap.Loading)
     val bootstrap = migration.asStateFlow()
     val tab = saved.getStateFlow("tab", Tab.Explore)
-    val detail = saved.getStateFlow<Detail?>("detail", null)
-    val entry = saved.getStateFlow("entry", "")
-    fun openEntry(slug: String) {
-        saved["entry"] = slug
-        open(Detail.Web)
-    }
+    val routes = saved.getStateFlow("detailRoutes", arrayListOf<DetailRoute>())
+    fun push(route: DetailRoute) { saved["detailRoutes"] = ArrayList(routes.value + route) }
+    fun open(page: Detail) = push(DetailRoute(page))
+    fun openEntry(slug: String) = push(DetailRoute(Detail.Web, item = slug))
+    fun back() { saved["detailRoutes"] = ArrayList(routes.value.dropLast(1)) }
     init { migrate() }
     fun migrate() {
         migration.value = Bootstrap.Loading
@@ -76,8 +86,7 @@ internal class ShellViewModel @Inject constructor(@ApplicationContext context: C
             }
         }
     }
-    fun select(value: Tab) { saved["tab"] = value; open(null) }
-    fun open(value: Detail?) { saved["detail"] = value }
+    fun select(value: Tab) { saved["tab"] = value; saved["detailRoutes"] = arrayListOf<DetailRoute>() }
     fun theme(value: ThemeMode) { viewModelScope.launch { data.setThemeMode(value) } }
     fun material(value: Boolean) { viewModelScope.launch { data.setImmersiveMaterial(value) } }
     fun haptics(value: Boolean) { viewModelScope.launch { data.setHaptics(value) } }

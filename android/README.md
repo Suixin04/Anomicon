@@ -1,6 +1,6 @@
 # 格异录 · Android 原生客户端
 
-功能与协议基线为 `main@1a26470` 的 HarmonyOS 7.0 v1.2.11。第一阶段交付原生导航、数据迁移和可运行的阅读及三维入口。
+Android 客户端采用 Kotlin、Jetpack Compose 和 Material 3 Expressive。功能与协议基线为 `main@1a26470` 的 HarmonyOS 7.0 v1.2.11。
 
 ## 构建
 
@@ -24,4 +24,11 @@
 
 [设备截图与检查记录](verification/stage1/) · [在线原生阅读](verification/stage1/reader-live.png) · [宽屏双栏](verification/stage1/tablet-scene.png) · [宽屏全屏](verification/stage1/tablet-full.png)
 
-旧 Flutter 实现在本地标签 `archive/android-flutter`（`0bd97b8`）。旧格式数据由 Kotlin 一次性导入。商店素材位于 [store](store/)。完整五页业务、双阅读器与离线管理、三维档案和 RAISA 对应后续阶段。
+旧 Flutter 实现在本地标签 `archive/android-flutter`（`0bd97b8`）。首次启动时，Kotlin 客户端导入旧格式数据。商店素材与[发布检查清单](store/release-checklist.md)位于 [store](store/)。
+
+## 阅读与档案
+
+- 从探索、图鉴、故事和终端进入阅读器。原生阅读支持脚注、页内锚点、图片缩放与保存、文末标记已读。已读记录与滚动位置独立保存。
+- 在文章内保存离线副本。从终端的「离线书架」查看占用、打开副本、返回原文或删除。
+- 三维馆收录 10 个档案，4 个随包内置，6 个按需下载。详情提供署名、许可与阅读入口，下载完成后校验长度、GLB 头和 SHA-256。
+- 从基金会、终端、设置或文章进入 RAISA 工单。表单提示公开发布范围，支持选填附件与诊断、本地回执和失败重试。

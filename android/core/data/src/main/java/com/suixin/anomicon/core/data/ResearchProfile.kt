@@ -7,7 +7,7 @@ import java.util.TimeZone
 const val MINUTE_MS = 60_000L
 private const val DAY_MS = 86_400_000L
 internal val assessmentRewards = mapOf("cert-01" to 15, "cert-02" to 20, "cert-03" to 25)
-data class ReadingEntry(val id: String, val title: String, val offset: Int, val progress: Float)
+data class ReadingEntry(val id: String, val title: String, val offset: Int, val progress: Float, val completed: Boolean = false)
 data class SeriesProgress(val seriesId: String, val seriesTitle: String, val entryId: String, val entryTitle: String)
 data class AssessmentResult(val score: Int, val passed: Boolean, val attempts: Int)
 
@@ -20,7 +20,7 @@ internal fun readEntry(item: LibraryItem): ReadingEntry {
         blocks > 1 -> row.optInt("scrollOffset").toFloat() / (blocks - 1)
         else -> 0f
     }
-    return ReadingEntry(item.id, row.optString("title", item.id), row.optInt("webPixelOffset"), progress.coerceIn(0f, 1f))
+    return ReadingEntry(item.id, row.optString("title", item.id), row.optInt("webPixelOffset"), progress.coerceIn(0f, 1f), row.optBoolean("completed"))
 }
 
 internal data class Activity(val id: String, val start: Long, val end: Long, val ms: Long, val zoneMinutes: Int)

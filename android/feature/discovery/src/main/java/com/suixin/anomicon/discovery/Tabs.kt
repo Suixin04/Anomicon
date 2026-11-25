@@ -70,7 +70,7 @@ import java.time.LocalDate
             Column(Modifier.padding(if (large) 17.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) { Text(entry.id.uppercase(), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary); if (large) { Spacer(Modifier.width(6.dp)); Hint(if (entry.id.startsWith("scp-cn")) "中文原创" else "主站译文") } }
                 Heading(entry.title, large)
-                progress?.let { Hint(if (it >= .98f) "已读完" else "已读 ${(it*100).toInt()}%") }
+                progress?.let { Hint(if (it >= 1f) "已读完" else "已读 ${(it*100).toInt()}%") }
                 Text(preview?.text?.takeIf { it.isNotBlank() } ?: entry.detail, maxLines = if (large) 4 else 3, overflow = TextOverflow.Ellipsis, style = if (large) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
@@ -85,7 +85,8 @@ import java.time.LocalDate
     if (searching) { Search(store, onEntry) { searching = false }; return }
     val selected = series.first { it.key == key }
     val reads by store.data.history.collectAsState(emptyList())
-    val progress = remember(reads) { reads.associate { it.id to it.progress } }
+    val completed by store.data.completedIds.collectAsState(emptySet())
+    val progress = remember(reads, completed) { reads.associate { it.id to it.progress } + completed.associateWith { 1f } }
     ArchiveLargePage("图鉴", actions = { HeaderActions(onArchive) { searching = true } }) {
         Column(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             ArchiveSegments(listOf("主站译文", "中文原创"), if (selected.cn) 1 else 0) { branch ->
@@ -108,8 +109,17 @@ import java.time.LocalDate
 
 @Composable fun DiscoveryTab(onEntry: (String)->Unit) {
     val store = store(); var searching by rememberSaveable { mutableStateOf(false) }
-    ArchiveSecondaryPage(searching)
-    if(searching) { Search(store,onEntry) { searching = false }; return }
+    var collection by rememberSaveable { mutableStateOf<String?>(null) }
+    ArchiveSecondaryPage(searching || collection != null)
+    if (searching) { Search(store, onEntry) { searching = false }; return }
+    collection?.let { key ->
+        BackHandler { collection = null }
+        Column(Modifier.fillMaxSize()) {
+            ArchiveDetailBar(key, { collection = null })
+            Collection(store, key, true, onEntry)
+        }
+        return
+    }
     var batch by rememberSaveable { mutableIntStateOf(0) }
     var all by remember { mutableStateOf(emptyList<Entry>()) }
     var indexError by remember { mutableStateOf(false) }
@@ -117,7 +127,7 @@ import java.time.LocalDate
         try { all = store.all() } catch (e: IOException) { indexError = true }
     }
     val day = LocalDate.now().toEpochDay().toInt()
-    val pool = if (batch == 0 || all.isEmpty()) starter else all
+    val pool = all.ifEmpty { starter }
     val deck = remember(day, batch, pool) {
         val cards = dailyDeck(pool, 31 * day + batch)
         if (pool === starter) cards.sortedBy { it.id !in localCovers } else cards
@@ -132,7 +142,11 @@ import java.time.LocalDate
                 Row(Modifier.fillMaxWidth().padding(vertical=8.dp),verticalAlignment = Alignment.CenterVertically) { Hint("${pager.currentPage+1} / ${deck.size}　左右滑动切换，点按卡片查阅全文"); Spacer(Modifier.weight(1f)); TextButton(onClick = { batch++ }) { Text("换一组") } }
             } }
             if (indexError) item { Hint("完整目录暂时不可用，当前展示随包推荐") }
-            feeds.forEach { (key,title) -> item(key = key) { Feed(store,key,title,titles,onEntry) } }
+            item { Feed(store, "top-rated-pages", "热门原创", titles, onEntry) }
+            listOf("最近更新", "轻松一下").forEach { name -> item(key = name) {
+                Heading(name)
+                Collection(store, name, false, onEntry) { collection = name }
+            } }
         }
     }
 }
@@ -142,7 +156,7 @@ import java.time.LocalDate
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Heading(title); if(key == "top-rated-pages") Hint("中文分部高评分原创档案")
         ArchiveCard(Modifier.fillMaxWidth()) { Column {
-            rows.take(if(expanded) 40 else 5).forEachIndexed { i,e -> Row(Modifier.fillMaxWidth().clickable { open(e.id) }.padding(12.dp),verticalAlignment = Alignment.CenterVertically) {
+            rows.take(if(expanded) rows.size else 6).forEachIndexed { i,e -> Row(Modifier.fillMaxWidth().clickable { open(e.id) }.padding(12.dp),verticalAlignment = Alignment.CenterVertically) {
                 Text("${i+1}", Modifier.width(32.dp),color = MaterialTheme.colorScheme.primary); Column(Modifier.weight(1f)) { Text(titles[e.id]?.title ?: e.title,maxLines=2,overflow=TextOverflow.Ellipsis); Hint(e.id) }; Hint(if(key=="top-rated-pages") "+${e.detail.trimStart('+')}" else e.detail)
             } }
             Row { TextButton(onClick={expanded=!expanded}) { Text(if(expanded) "收起" else "显示更多") }; TextButton(onClick={refresh++}) { Text(if(error.isBlank()) "刷新" else "$error · 重试") } }
@@ -150,20 +164,64 @@ import java.time.LocalDate
     }
 }
 
+@Composable private fun Collection(store: DiscoveryStore, name: String, full: Boolean, open: (String) -> Unit, more: () -> Unit = {}) {
+    val recent = name == "最近更新"
+    val sources = if (recent) feeds.filterKeys { it.startsWith("most-recently") } else jokeSources
+    var entries by remember(name) { mutableStateOf(emptyList<Entry>()) }
+    var failed by remember(name) { mutableStateOf(false) }
+    var retry by remember { mutableIntStateOf(0) }
+    LaunchedEffect(name, retry) {
+        failed = false
+        val combined = mutableListOf<Entry>()
+        for ((source, label) in sources) {
+            try {
+                combined += store.index(source, retry > 0).map { it.copy(detail = listOf(label, it.detail).distinct().joinToString(" · ")) }
+            } catch (e: IOException) { failed = true }
+        }
+        entries = if (recent) combined.sortedByDescending { recentDate(it.detail) } else combined.distinctBy { it.id }.shuffled(kotlin.random.Random(LocalDate.now().toEpochDay()))
+    }
+    val row: @Composable (Entry) -> Unit = { entry ->
+        ArchiveCard(onClick = { open(entry.id) }, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp)) { Text(entry.title); Hint(entry.detail) }
+        }
+    }
+    if (full) {
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            if (failed) item { TextButton(onClick = { retry++ }) { Text("索引未完整加载 · 重试") } }
+            items(entries) { row(it) }
+        }
+    } else Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        entries.take(6).forEach { row(it) }
+        if (failed) TextButton(onClick = { retry++ }) { Text("重试") }
+        TextButton(onClick = more) { Text("查看更多") }
+    }
+}
+
 @Composable private fun Search(store: DiscoveryStore, open: (String)->Unit, close: ()->Unit) {
     BackHandler(onBack = close)
     var query by rememberSaveable { mutableStateOf("") }; val past by store.data.searchHistory.collectAsState(emptyList()); val scope = rememberCoroutineScope()
     var index by remember { mutableStateOf(emptyList<Entry>()) }; var error by remember { mutableStateOf("") }
-    LaunchedEffect(Unit) { try { index = store.all() } catch(e: IOException) { error = "无法加载搜索索引" } }
-    val hits = remember(index, query) { matches(index,query) }
-    val direct = wikiSlug(query)?.takeIf { it.matches(Regex("scp-(?:cn-)?[0-9]+(?:-[a-z0-9]+)*")) || query.startsWith("https://") }
+    var category by rememberSaveable { mutableIntStateOf(0) }
+    var refresh by remember { mutableIntStateOf(0) }
+    LaunchedEffect(refresh) {
+        val loaded = mutableListOf<Entry>()
+        error = ""
+        for (key in series.map { it.key } + taleSources) {
+            try { loaded += store.index(key, refresh > 0) } catch (e: IOException) { error = "部分索引未载入" }
+            index = loaded.distinctBy { it.id }
+        }
+    }
+    val hits = remember(index, query, category) { matches(index,query).filter { category == 0 || (it.detail == "故事") == (category == 2) } }
+    val direct = remember(query) { directTarget(query) }
     fun select(id: String) { scope.launch { store.data.saveSearch(query); open(id) } }
     Column(Modifier.fillMaxSize()) {
         ArchiveDetailBar("搜索", close)
-        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(horizontal = 16.dp),singleLine=true, placeholder={Text("搜索编号、标题或 Wiki 链接")})
+        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(horizontal = 16.dp),singleLine=true, placeholder={Text("搜索编号、标题、故事或 Wiki 链接")})
+        if (query.isNotBlank()) ArchiveSegments(listOf("全部", "档案", "故事"), category) { category = it }
+        if (error.isNotBlank()) TextButton(onClick = { refresh++ }) { Text("$error · 重试") }
         LazyColumn(contentPadding=PaddingValues(start = 16.dp, end = 16.dp, bottom = LocalArchiveBottomInset.current + 16.dp)) {
-            if(query.isBlank()) { item { Row(verticalAlignment=Alignment.CenterVertically) { Text("搜索历史",Modifier.weight(1f)); if(past.isNotEmpty()) TextButton(onClick={scope.launch { store.data.clearSearchHistory() }}) { Text("清空") } } }; items(past) { q -> TextButton(onClick={query=q}) { Text(q) } } }
-            else { if(direct!=null && hits.none { it.id==direct }) item { TextButton(onClick={select(direct)}) { Text("直接打开 ${direct.uppercase()}") } }; items(hits,key={it.id}) { entry -> Column(Modifier.fillMaxWidth().clickable { select(entry.id) }.padding(vertical=10.dp)) { Text(entry.title); Hint(entry.id.uppercase()) } }; if(hits.isEmpty()) item { Hint(error.ifBlank { if(index.isEmpty()) "正在加载索引…" else "没有匹配的目录条目" }) } }
+            if(query.isBlank()) { item { TextButton(onClick = { index.randomOrNull()?.let { open(it.id) } }, enabled = index.isNotEmpty()) { Text("随机发现") } }; item { Row(verticalAlignment=Alignment.CenterVertically) { Text("搜索历史",Modifier.weight(1f)); if(past.isNotEmpty()) TextButton(onClick={scope.launch { store.data.clearSearchHistory() }}) { Text("清空") } } }; items(past) { q -> TextButton(onClick={query=q}) { Text(q) } } }
+            else { if(direct!=null) item { TextButton(onClick={select(direct)}) { Text("直接打开 ${direct.uppercase()}") } }; items(hits,key={it.id}) { entry -> Column(Modifier.fillMaxWidth().clickable { select(entry.id) }.padding(vertical=10.dp)) { Text(entry.title); Hint(entry.id.uppercase()) } }; if(hits.isEmpty()) item { Hint(error.ifBlank { if(index.isEmpty()) "正在加载索引…" else "没有匹配的目录条目" }) } }
         }
     }
 }
