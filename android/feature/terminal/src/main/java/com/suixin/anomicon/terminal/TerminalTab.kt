@@ -27,7 +27,7 @@ import com.suixin.anomicon.core.data.*
 import java.time.LocalDate
 
 private val panel @Composable get() = MaterialTheme.colorScheme.surfaceContainerLowest
-private val tile @Composable get() = MaterialTheme.colorScheme.surfaceContainer
+private val tile @Composable get() = MaterialTheme.colorScheme.surfaceContainerLow
 private val ink @Composable get() = MaterialTheme.colorScheme.onSurface
 private val muted @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
 private val accent @Composable get() = MaterialTheme.colorScheme.primary
@@ -68,7 +68,7 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
         }
         return
     }
-    ArchiveLargePage("终端", actions = { SymbolButton("⚙", "设置", onSettings) }) {
+    ArchiveLargePage("终端", actions = { SymbolButton("settings", "设置", onSettings) }) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = LocalArchiveBottomInset.current + 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item {
@@ -77,11 +77,11 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
                     verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Column(Modifier.size(52.dp).background(tile, RoundedCornerShape(14.dp)), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                            Text("LV", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold)
-                            Text("${research.level}", fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ink)
+                            Text("LV", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelSmall, color = accent, fontWeight = FontWeight.Bold)
+                            Text("${research.level}", fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = ink)
                         }
                         Column(Modifier.weight(1f)) { Small("档案阅历  累计 ${research.xp} XP", FontFamily.Monospace); Heading(research.rank) }
-                        SymbolButton("ⓘ", "档案阅历说明", { detail = "档案阅历" })
+                        SymbolButton("info", "档案阅历说明", { detail = "档案阅历" })
                     }
                     Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
                         Small(if (research.level == 50) "已达最高等级" else "距 Lv.${research.level + 1}")
@@ -92,20 +92,23 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         seals.forEach { (id, title) ->
                             val passed = exams[id]?.passed == true
-                            Box(Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(tile).clickable { detail = title }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                Text("${if (passed) "✓" else "♙"} $title", color = if (passed) accent else muted, fontSize = 10.sp)
+                            ArchiveCard(onClick = { detail = title }, modifier = Modifier.weight(1f), containerColor = tile) {
+                                Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                                    ArchiveGlyph(if (passed) "verified" else "lock", Modifier.size(14.dp))
+                                    Text(title, color = if (passed) accent else muted, style = MaterialTheme.typography.labelSmall)
+                                }
                             }
                         }
                     }
                     Week(research)
                     val minutes = research.totalMs / MINUTE_MS
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Stat("◷  有效阅读", if (minutes >= 60) "${minutes / 60}时 ${minutes % 60}分" else if (minutes == 0L && research.totalMs > 0) "< 1 分钟" else "$minutes 分钟", Modifier.weight(1f))
-                        Stat("▣  已研读", "${research.researched} 篇", Modifier.weight(1f))
+                        Stat("schedule", "有效阅读", if (minutes >= 60) "${minutes / 60}时 ${minutes % 60}分" else if (minutes == 0L && research.totalMs > 0) "< 1 分钟" else "$minutes 分钟", Modifier.weight(1f))
+                        Stat("menu_book", "已研读", "${research.researched} 篇", Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Stat("★  收藏", "${favorites.size}", Modifier.weight(1f)) { collection = "全部收藏" }
-                        Stat("▤  记录", "${history.size}", Modifier.weight(1f)) { collection = "阅读记录" }
+                        Stat("bookmark", "收藏", "${favorites.size}", Modifier.weight(1f)) { collection = "全部收藏" }
+                        Stat("history", "记录", "${history.size}", Modifier.weight(1f)) { collection = "阅读记录" }
                     }
                 }
             }
@@ -113,9 +116,9 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
             item { Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { Heading("个人资料库"); Small("阅读进度、藏品与常用本地入口") } }
             item { Entry("离线书架", "已保存 ${shelf.size} 篇") { collection = "离线书架" } }
             item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Quick("⬡", "三维档案", Modifier.weight(1f), onArchive)
-                Quick("★", "全部收藏", Modifier.weight(1f)) { collection = "全部收藏" }
-                Quick("⚙", "阅读设置", Modifier.weight(1f), onSettings)
+                Quick("view_in_ar", "三维档案", Modifier.weight(1f), onArchive)
+                Quick("bookmark", "全部收藏", Modifier.weight(1f)) { collection = "全部收藏" }
+                Quick("settings", "阅读设置", Modifier.weight(1f), onSettings)
             } }
             if (resume.isNotEmpty()) {
                 item { Section("继续阅读", resume.size) { collection = "继续阅读" } }
@@ -146,10 +149,10 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
 }
 
 private fun caption(row: ReadingEntry) = when { row.progress >= 1f -> "已读完"; row.progress > 0f -> "阅读进度 ${(row.progress * 100).toInt()}%"; row.offset > 0 -> "已保存阅读位置"; else -> row.id }
-@Composable private fun Small(text: String, family: FontFamily? = null) { Text(text, fontFamily = family, color = muted, fontSize = 12.sp, lineHeight = 16.sp) }
-@Composable private fun Heading(text: String) { Text(text, color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
+@Composable private fun Small(text: String, family: FontFamily? = null) { Text(text, fontFamily = family, color = muted, style = MaterialTheme.typography.bodySmall) }
+@Composable private fun Heading(text: String) { Text(text, color = ink, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold) }
 @Composable private fun SymbolButton(mark: String, label: String, onClick: () -> Unit) {
-    ArchiveAction(label, onClick) { Text(mark, fontSize = 20.sp, color = ink) }
+    ArchiveAction(label, onClick) { ArchiveGlyph(mark) }
 }
 @Composable private fun Week(profile: ResearchProfile) {
     val today = LocalDate.now()
@@ -157,34 +160,48 @@ private fun caption(row: ReadingEntry) = when { row.progress >= 1f -> "已读完
     val peak = maxOf(20 * MINUTE_MS, dates.maxOf { profile.daily[it] ?: 0 })
     val todayMs = profile.daily[today] ?: 0
     Row(Modifier.fillMaxWidth().background(tile, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Small("今日研读"); Text("${if (todayMs in 1 until MINUTE_MS) "< 1" else todayMs / MINUTE_MS} / 180 分钟", color = ink, fontSize = 13.sp, fontWeight = FontWeight.Bold) }
+        Column(Modifier.weight(1f)) { Small("今日研读"); Text("${if (todayMs in 1 until MINUTE_MS) "< 1" else todayMs / MINUTE_MS} / 180 分钟", color = ink, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold) }
         dates.forEach { day ->
             val ms = profile.daily[day] ?: 0L
             Column(Modifier.width(14.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(Modifier.width(7.dp).height(24.dp).clip(CircleShape).background(muted.copy(alpha = .14f)), contentAlignment = Alignment.BottomCenter) {
                     if (ms > 0) Spacer(Modifier.fillMaxWidth().fillMaxHeight((ms.toFloat() / peak).coerceAtLeast(.22f)).background(accent, CircleShape))
                 }
-                Text("一二三四五六日"[day.dayOfWeek.value - 1].toString(), color = if (day == today) accent else muted, fontSize = 9.sp)
+                Text("一二三四五六日"[day.dayOfWeek.value - 1].toString(), color = if (day == today) accent else muted, style = MaterialTheme.typography.labelSmall)
             }
         }
     }
 }
-@Composable private fun Stat(label: String, value: String, modifier: Modifier, click: (() -> Unit)? = null) {
-    Column(modifier.clip(RoundedCornerShape(14.dp)).background(tile).then(if (click != null) Modifier.clickable(onClick = click) else Modifier).heightIn(min = 68.dp).padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
-        Small(if (click == null) label else "$label  ›"); Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = ink)
+@Composable private fun Stat(icon: String, label: String, value: String, modifier: Modifier, click: (() -> Unit)? = null) {
+    val body: @Composable ColumnScope.() -> Unit = {
+        Column(Modifier.fillMaxWidth().heightIn(min = 68.dp).padding(12.dp), verticalArrangement = Arrangement.SpaceBetween) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                ArchiveGlyph(icon, Modifier.size(16.dp))
+                Small(label)
+            }
+            Text(value, style = MaterialTheme.typography.titleMedium, fontFamily = FontFamily.Monospace, color = ink)
+        }
     }
+    if (click != null) ArchiveCard(onClick = click, modifier = modifier, containerColor = tile, content = body)
+    else Column(modifier.clip(RoundedCornerShape(14.dp)).background(tile), content = body)
 }
 @Composable private fun Quick(mark: String, title: String, modifier: Modifier, click: () -> Unit) {
-    Column(modifier.clip(RoundedCornerShape(16.dp)).background(panel).clickable(onClick = click).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(mark, fontSize = 18.sp, color = accent); Text(title, color = ink, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+    ArchiveCard(onClick = click, modifier = modifier) {
+        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            ArchiveGlyph(mark)
+            Text(title, style = MaterialTheme.typography.labelLarge)
+        }
     }
 }
 @Composable private fun Section(label: String, count: Int, more: (() -> Unit)? = null) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(label, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = ink); Small("   $count"); Spacer(Modifier.weight(1f)); if (more != null) TextButton(onClick = more) { Text("全部 ›") } }
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) { Text(label, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = ink); Small("   $count"); Spacer(Modifier.weight(1f)); if (more != null) TextButton(onClick = more) { Text("全部"); ArchiveGlyph("chevron_right", Modifier.size(16.dp)) } }
 }
-@Composable private fun Empty(label: String) { Text(label, Modifier.fillMaxWidth().background(panel, RoundedCornerShape(16.dp)).padding(18.dp), color = muted, fontSize = 13.sp) }
+@Composable private fun Empty(label: String) { Text(label, Modifier.fillMaxWidth().background(panel, RoundedCornerShape(14.dp)).padding(18.dp), color = muted, style = MaterialTheme.typography.bodyMedium) }
 @Composable private fun Entry(title: String, subtitle: String, click: () -> Unit) {
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(panel).clickable(onClick = click).padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-        Column(Modifier.weight(1f)) { Text(title, fontWeight = FontWeight.Bold, color = ink); Small(subtitle) }; Text("›", color = accent)
+    ArchiveCard(onClick = click, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) { Text(title, style = MaterialTheme.typography.titleMedium); Small(subtitle) }
+            ArchiveGlyph("chevron_right", Modifier.size(20.dp))
+        }
     }
 }

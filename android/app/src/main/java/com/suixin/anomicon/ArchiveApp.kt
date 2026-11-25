@@ -67,12 +67,11 @@ internal fun ArchiveApp(model: ShellViewModel, applyBarStyle: (Boolean) -> Unit)
                                 icon = { TabIcon(item, item == tab) }, label = { Text(item.title) }) }
                         }
                         val showBar = !split && detail == null && !secondary
-                        ArchiveFloatingNav(Modifier.fillMaxSize(), visible = showBar,
-                            bar = { PhoneTabs(tab, model::select, settings.haptics) }, content = {
+                        Column(Modifier.fillMaxSize()) {
                             val insets = if (fullStage) Modifier else Modifier.windowInsetsPadding(
                                 WindowInsets.safeDrawing.only(if (showBar) WindowInsetsSides.Top + WindowInsetsSides.Horizontal else WindowInsetsSides.Horizontal + WindowInsetsSides.Vertical))
                             CompositionLocalProvider(LocalArchiveSecondary provides reportSecondary) {
-                                Box(Modifier.fillMaxSize().then(insets)) {
+                                Box(Modifier.fillMaxWidth().weight(1f).then(insets)) {
                                     if (split) {
                                         val navigator = rememberListDetailPaneScaffoldNavigator<Nothing>()
                                         ListDetailPaneScaffold(directive = navigator.scaffoldDirective.copy(maxHorizontalPartitions = 2),
@@ -98,7 +97,8 @@ internal fun ArchiveApp(model: ShellViewModel, applyBarStyle: (Boolean) -> Unit)
                                     }
                                 }
                             }
-                        })
+                            if (showBar) PhoneTabs(tab, model::select, settings.haptics)
+                        }
                     }
                 }
             }
@@ -157,56 +157,31 @@ private fun SettingSwitch(label: String, value: Boolean, change: (Boolean) -> Un
 @Composable
 private fun PhoneTabs(current: Tab, select: (Tab) -> Unit, feedback: Boolean) {
     val haptic = LocalHapticFeedback.current
-    Row(Modifier.fillMaxWidth().height(58.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically) {
+    NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceContainer, tonalElevation = 0.dp) {
         Tab.entries.forEach { tab ->
             val selected = current == tab
-            val tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-            val scale by animateFloatAsState(if (selected) 1.10f else 1f, spring(dampingRatio = .64f), label = "页签选中")
-            Column(Modifier.weight(1f).fillMaxHeight().selectable(selected, role = Role.Tab) {
-                if (!selected && feedback) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                select(tab)
-            }, verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                CompositionLocalProvider(LocalContentColor provides tint) {
-                    Box(Modifier.graphicsLayer { scaleX = scale; scaleY = scale }) { TabIcon(tab, selected) }
-                    Text(tab.title, color = tint, style = MaterialTheme.typography.labelSmall)
-                }
-            }
+            NavigationBarItem(
+                selected = selected,
+                onClick = {
+                    if (!selected && feedback) haptic.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                    select(tab)
+                },
+                icon = { TabIcon(tab, selected) },
+                label = { Text(tab.title, style = MaterialTheme.typography.labelMedium) },
+                colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.primaryContainer)
+            )
         }
     }
 }
 
 @Composable
 private fun TabIcon(tab: Tab, selected: Boolean) {
-    val color = LocalContentColor.current
-    Canvas(Modifier.size(24.dp)) {
-        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.7.dp.toPx())
-        val unit = size.width / 24f
-        fun point(x: Int, y: Int) = androidx.compose.ui.geometry.Offset(x * unit, y * unit)
-        fun line(x: Int, y: Int, x2: Int, y2: Int) = drawLine(color, point(x,y), point(x2,y2), stroke.width)
-        if (selected) {
-            val contour = androidx.compose.ui.graphics.Path()
-            val points = when (tab) {
-                Tab.Foundation -> listOf(12 to 2, 21 to 6, 19 to 16, 12 to 22, 5 to 16, 3 to 6)
-                Tab.Stories -> listOf(5 to 2, 15 to 2, 21 to 8, 21 to 22, 5 to 22)
-                else -> emptyList()
-            }
-            points.forEachIndexed { i, (x,y) -> if(i==0) contour.moveTo(x*unit,y*unit) else contour.lineTo(x*unit,y*unit) }
-            if(points.isNotEmpty()) { contour.close(); drawPath(contour,color) }
-            val white = androidx.compose.ui.graphics.Color.White
-            fun detail(x:Int,y:Int,xx:Int,yy:Int) = drawLine(white,point(x,y),point(xx,yy),1.4f*unit)
-            when(tab) {
-                Tab.Explore -> { drawCircle(color,10*unit); detail(7,16,16,7); detail(16,7,13,14) }
-                Tab.Catalog -> { drawRoundRect(color,point(3,2),androidx.compose.ui.geometry.Size(18*unit,20*unit),androidx.compose.ui.geometry.CornerRadius(3*unit)); detail(8,5,8,19); detail(11,9,17,9) }
-                Tab.Foundation -> { drawCircle(white,2.6f*unit,point(12,11)); detail(12,12,12,16) }
-                Tab.Stories -> { detail(8,12,17,12); detail(8,16,17,16) }
-                Tab.Terminal -> { drawRoundRect(color,point(2,3),androidx.compose.ui.geometry.Size(20*unit,15*unit),androidx.compose.ui.geometry.CornerRadius(3*unit)); line(12,18,12,21); line(7,21,17,21); detail(5,14,18,14) }
-            }
-        } else when (tab) {
-            Tab.Explore -> { drawCircle(color, 9 * unit, style = stroke); line(8,16,11,10); line(11,10,16,8); line(16,8,13,14); line(13,14,8,16) }
-            Tab.Catalog -> { drawRoundRect(color, point(4,3), androidx.compose.ui.geometry.Size(16*unit,18*unit), androidx.compose.ui.geometry.CornerRadius(2*unit), style=stroke); line(8,3,8,21); line(11,9,17,9); line(11,13,16,13) }
-            Tab.Foundation -> { line(12,2,20,6); line(20,6,19,15); line(19,15,12,21); line(12,21,5,15); line(5,15,4,6); line(4,6,12,2) }
-            Tab.Stories -> { line(5,3,15,3); line(15,3,20,8); line(20,8,20,21); line(20,21,5,21); line(5,21,5,3); line(8,12,17,12); line(8,16,15,16) }
-            Tab.Terminal -> { drawRoundRect(color, point(2,4), androidx.compose.ui.geometry.Size(20*unit,14*unit), androidx.compose.ui.geometry.CornerRadius(2*unit), style=stroke); line(12,18,12,21); line(7,21,17,21) }
-        }
+    val icon = when (tab) {
+        Tab.Explore -> "explore"
+        Tab.Catalog -> "collections_bookmark"
+        Tab.Foundation -> "shield"
+        Tab.Stories -> "auto_stories"
+        Tab.Terminal -> "account_box"
     }
+    ArchiveGlyph(if (selected) "${icon}_filled" else icon)
 }

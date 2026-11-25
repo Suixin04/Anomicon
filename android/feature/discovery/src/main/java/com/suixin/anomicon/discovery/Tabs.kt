@@ -34,33 +34,25 @@ import java.time.LocalDate
     val context = LocalContext.current.applicationContext
     return remember(context) { DiscoveryStore(context) }
 }
-@Composable private fun Heading(text: String, size: Int) = Text(text, fontSize = size.sp, lineHeight = (size+4).sp, fontWeight = FontWeight.Bold)
-@Composable private fun Hint(text: String) = Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 12.sp, lineHeight = 17.sp)
+@Composable private fun Heading(text: String, large: Boolean = true) = Text(text, style = if (large) MaterialTheme.typography.titleLarge else MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+@Composable private fun Hint(text: String) = Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
 @Composable private fun HeaderActions( archive: (() -> Unit)? = null, search: ()->Unit) {
-        ArchiveAction("搜索", search) {
-            val ink = LocalContentColor.current
-            Canvas(Modifier.size(21.dp)) {
-                val radius = size.minDimension * .34f
-                val center = androidx.compose.ui.geometry.Offset(radius + 1.dp.toPx(), radius + 1.dp.toPx())
-                drawCircle(ink, radius, center, style = androidx.compose.ui.graphics.drawscope.Stroke(1.7.dp.toPx()))
-                drawLine(ink, center * 1.65f, androidx.compose.ui.geometry.Offset(size.width, size.height), 1.7.dp.toPx())
-            }
-        }
-        if (archive != null) {
-            Spacer(Modifier.width(8.dp))
-            ArchiveAction("三维档案", archive) { Text("3D", fontWeight = FontWeight.SemiBold) }
-        }
+    ArchiveAction("搜索", search) { ArchiveGlyph("search") }
+    if (archive != null) {
+        Spacer(Modifier.width(8.dp))
+        ArchiveAction("三维档案", archive) { ArchiveGlyph("view_in_ar") }
+    }
 }
 @Composable private fun Pill(text: String, selected: Boolean, click: ()->Unit) {
     Surface(onClick = click, shape = CircleShape, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceContainerHigh) {
-        Text(text, Modifier.padding(horizontal = 13.dp, vertical = 6.dp), fontSize = 13.sp)
+        Text(text, Modifier.padding(horizontal = 13.dp, vertical = 6.dp), style = MaterialTheme.typography.bodyMedium)
     }
 }
 @Composable private fun ArticleCard(store: DiscoveryStore, entry: Entry, large: Boolean, progress: Float?, open: ()->Unit) {
     var preview by remember(entry.id) { mutableStateOf<Preview?>(null) }
     var failed by remember(entry.id) { mutableStateOf(false) }
     LaunchedEffect(entry.id) { try { preview = store.preview(entry.id) } catch (e: IOException) { failed = true } }
-    ArchiveCard(Modifier.fillMaxWidth().clickable(onClick = open)) {
+    ArchiveCard(onClick = open, modifier = Modifier.fillMaxWidth()) {
         Column {
             val url = preview?.image
             val cover = localCovers[entry.id]
@@ -76,10 +68,10 @@ import java.time.LocalDate
                 }
             }
             Column(Modifier.padding(if (large) 17.dp else 12.dp), verticalArrangement = Arrangement.spacedBy(5.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) { Text(entry.id.uppercase(), fontFamily = FontFamily.Monospace, fontSize = 12.sp, color = MaterialTheme.colorScheme.primary); if (large) { Spacer(Modifier.width(6.dp)); Hint(if (entry.id.startsWith("scp-cn")) "中文原创" else "主站译文") } }
-                Heading(entry.title, if (large) 21 else 15)
-                progress?.let { Hint(if (it >= .98f) "✓ 已读完" else "已读 ${(it*100).toInt()}%") }
-                Text(preview?.text?.takeIf { it.isNotBlank() } ?: entry.detail, maxLines = if (large) 4 else 3, overflow = TextOverflow.Ellipsis, fontSize = if (large) 14.sp else 12.sp, lineHeight = if (large) 22.sp else 16.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) { Text(entry.id.uppercase(), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary); if (large) { Spacer(Modifier.width(6.dp)); Hint(if (entry.id.startsWith("scp-cn")) "中文原创" else "主站译文") } }
+                Heading(entry.title, large)
+                progress?.let { Hint(if (it >= .98f) "已读完" else "已读 ${(it*100).toInt()}%") }
+                Text(preview?.text?.takeIf { it.isNotBlank() } ?: entry.detail, maxLines = if (large) 4 else 3, overflow = TextOverflow.Ellipsis, style = if (large) MaterialTheme.typography.bodyMedium else MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
     }
@@ -133,7 +125,7 @@ import java.time.LocalDate
     val titles = remember(all) { (starter + all).associateBy { it.id } }
     ArchiveLargePage("探索", actions = { HeaderActions { searching = true } }) {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp,end = 16.dp,bottom = LocalArchiveBottomInset.current + 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            item { Heading("今日推荐", 21); Hint("每日从主站与中文原创档案库随机调阅一组条目") }
+            item { Heading("今日推荐"); Hint("每日从主站与中文原创档案库随机调阅一组条目") }
             item { key(batch) {
                 val pager = rememberPagerState { deck.size }
                 HorizontalPager(pager, pageSpacing = 10.dp) { i -> ArticleCard(store,deck[i],true,null) { onEntry(deck[i].id) } }
@@ -148,7 +140,7 @@ import java.time.LocalDate
     var rows by remember { mutableStateOf(emptyList<Entry>()) }; var expanded by rememberSaveable { mutableStateOf(false) }; var refresh by remember { mutableIntStateOf(0) }; var error by remember { mutableStateOf("") }
     LaunchedEffect(refresh) { try { rows = store.index(key,refresh>0); error = "" } catch(e: IOException) { error = "更新失败" } }
     Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
-        Heading(title,21); if(key == "top-rated-pages") Hint("中文分部高评分原创档案")
+        Heading(title); if(key == "top-rated-pages") Hint("中文分部高评分原创档案")
         ArchiveCard(Modifier.fillMaxWidth()) { Column {
             rows.take(if(expanded) 40 else 5).forEachIndexed { i,e -> Row(Modifier.fillMaxWidth().clickable { open(e.id) }.padding(12.dp),verticalAlignment = Alignment.CenterVertically) {
                 Text("${i+1}", Modifier.width(32.dp),color = MaterialTheme.colorScheme.primary); Column(Modifier.weight(1f)) { Text(titles[e.id]?.title ?: e.title,maxLines=2,overflow=TextOverflow.Ellipsis); Hint(e.id) }; Hint(if(key=="top-rated-pages") "+${e.detail.trimStart('+')}" else e.detail)
@@ -166,10 +158,10 @@ import java.time.LocalDate
     val hits = remember(index, query) { matches(index,query) }
     val direct = wikiSlug(query)?.takeIf { it.matches(Regex("scp-(?:cn-)?[0-9]+(?:-[a-z0-9]+)*")) || query.startsWith("https://") }
     fun select(id: String) { scope.launch { store.data.saveSearch(query); open(id) } }
-    Column(Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+    Column(Modifier.fillMaxSize()) {
         ArchiveDetailBar("搜索", close)
-        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth(),singleLine=true, placeholder={Text("搜索编号、标题或 Wiki 链接")})
-        LazyColumn(contentPadding=PaddingValues(bottom = LocalArchiveBottomInset.current + 16.dp)) {
+        OutlinedTextField(query,{query=it},Modifier.fillMaxWidth().padding(horizontal = 16.dp),singleLine=true, placeholder={Text("搜索编号、标题或 Wiki 链接")})
+        LazyColumn(contentPadding=PaddingValues(start = 16.dp, end = 16.dp, bottom = LocalArchiveBottomInset.current + 16.dp)) {
             if(query.isBlank()) { item { Row(verticalAlignment=Alignment.CenterVertically) { Text("搜索历史",Modifier.weight(1f)); if(past.isNotEmpty()) TextButton(onClick={scope.launch { store.data.clearSearchHistory() }}) { Text("清空") } } }; items(past) { q -> TextButton(onClick={query=q}) { Text(q) } } }
             else { if(direct!=null && hits.none { it.id==direct }) item { TextButton(onClick={select(direct)}) { Text("直接打开 ${direct.uppercase()}") } }; items(hits,key={it.id}) { entry -> Column(Modifier.fillMaxWidth().clickable { select(entry.id) }.padding(vertical=10.dp)) { Text(entry.title); Hint(entry.id.uppercase()) } }; if(hits.isEmpty()) item { Hint(error.ifBlank { if(index.isEmpty()) "正在加载索引…" else "没有匹配的目录条目" }) } }
         }

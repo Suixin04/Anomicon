@@ -63,9 +63,9 @@ fun StoriesTab(onEntry: (String) -> Unit) {
     }
     ArchiveLargePage("故事") {
         LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 14.dp, bottom = LocalArchiveBottomInset.current + 16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(26.dp), singleLine = true, leadingIcon = { Icon(painterResource(R.drawable.search), null, Modifier.size(18.dp)) }, placeholder = { Text("搜索故事标题或别名") }) }
+            item { OutlinedTextField(query, { query = it }, modifier = Modifier.fillMaxWidth(), shape = androidx.compose.foundation.shape.CircleShape, singleLine = true, leadingIcon = { ArchiveGlyph("search", Modifier.size(18.dp)) }, placeholder = { Text("搜索故事标题或别名") }) }
             item { LazyRow(horizontalArrangement = Arrangement.spacedBy(5.dp)) {
-                items(listOf("") + ('A'..'Z').map { it.toString() }) { key -> FilterChip(selected = key == letter, onClick = { letter = key }, label = { Text(key.ifEmpty { "全部" }) }, shape = RoundedCornerShape(24.dp)) }
+                items(listOf("") + ('A'..'Z').map { it.toString() }) { key -> FilterChip(selected = key == letter, onClick = { letter = key }, label = { Text(key.ifEmpty { "全部" }) }, shape = androidx.compose.foundation.shape.CircleShape) }
             } }
             if (query.isBlank() && letter.isEmpty()) {
                 item { Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
@@ -74,11 +74,11 @@ fun StoriesTab(onEntry: (String) -> Unit) {
                 } }
                 item { Panel {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Box(Modifier.size(38.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-                            Icon(painterResource(R.drawable.series_book), null, Modifier.size(21.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Box(Modifier.size(38.dp).background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+                            ArchiveGlyph("menu_book", Modifier.size(21.dp))
                         }
                         Column(Modifier.weight(1f)) {
-                            Text("逆模因部", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("逆模因部", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                             Caption("从 SCP-055 起步 · 按中心页顺序")
                         }
                         Tag("主线 ${mainline.count { it.slug in completed }}/19")
@@ -100,20 +100,22 @@ fun StoriesTab(onEntry: (String) -> Unit) {
 }
 
 @Composable private fun Tag(text: String) {
-    Text(text, Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp), fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+    Text(text, Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)).padding(horizontal = 7.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
 }
-@Composable private fun Heading(title: String) = Text(title, fontSize = 19.sp, fontWeight = FontWeight.Bold)
+@Composable private fun Heading(title: String) = Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 @Composable private fun Caption(text: String) = Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-@Composable private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    ArchiveCard(modifier.fillMaxWidth()) {
+@Composable private fun Panel(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    val body: @Composable ColumnScope.() -> Unit = {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp), content = content)
     }
+    if (onClick == null) ArchiveCard(modifier.fillMaxWidth(), content = body)
+    else ArchiveCard(onClick = onClick, modifier = modifier.fillMaxWidth(), content = body)
 }
 @Composable private fun StoryRow(tale: Tale, subtitle: String, open: () -> Unit) {
-    Panel(Modifier.clickable(onClick = open)) {
+    Panel(onClick = open) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) { Text(tale.title, fontWeight = FontWeight.SemiBold); Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontFamily = FontFamily.Monospace) }
-            Text("›", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ArchiveGlyph("chevron_right", Modifier.size(20.dp))
         }
     }
 }

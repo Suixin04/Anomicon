@@ -1,13 +1,10 @@
 package com.suixin.anomicon.designsystem
 
-import androidx.compose.ui.graphics.Shape
-import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -23,9 +20,9 @@ object ArchiveSpacing {
 @Composable
 fun ArchiveTheme(dark: Boolean, content: @Composable () -> Unit) {
     val palette = remember(dark) {
-        val canvas = if (dark) Color(0xff090a0d) else Color(0xfff1f3f5)
-        val card = if (dark) Color(0xff16181d) else Color.White
-        val inset = if (dark) Color(0xff20232a) else Color(0xfff6f7f9)
+        val canvas = if (dark) Color(0xff0b0d11) else Color(0xfff2f4f7)
+        val card = if (dark) Color(0xff13161c) else Color.White
+        val inset = if (dark) Color(0xff1b1f27) else Color(0xfff6f8fb)
         val text = if (dark) Color(0xfff0f1f4) else Color(0xff111317)
         val muted = if (dark) Color(0xffb3b7bf) else Color(0xff575d67)
         val blue = if (dark) Color(0xff2f80ff) else Color(0xff0a59f7)
@@ -35,8 +32,8 @@ fun ArchiveTheme(dark: Boolean, content: @Composable () -> Unit) {
             secondary = blue, onSecondary = Color.White, secondaryContainer = selected, onSecondaryContainer = text,
             surface = canvas, background = canvas, onBackground = text, onSurface = text,
             surfaceVariant = inset, onSurfaceVariant = muted, surfaceTint = Color.Transparent,
-            surfaceContainerLowest = card, surfaceContainerLow = inset, surfaceContainer = card,
-            surfaceContainerHigh = if (dark) Color(0xff292d35) else Color(0xffe5e8ee),
+            surfaceContainerLowest = card, surfaceContainerLow = inset, surfaceContainer = if (dark) Color(0xff232833) else Color(0xffeceff4),
+            surfaceContainerHigh = if (dark) Color(0xff2c3240) else Color(0xffe3e7ef),
             surfaceContainerHighest = if (dark) Color(0xff333842) else Color(0xffdce0e8),
             outline = if (dark) Color(0xff686d76) else Color(0xff9398a1),
             outlineVariant = if (dark) Color(0xff373b43) else Color(0xffd9dce1)
@@ -48,32 +45,24 @@ fun ArchiveTheme(dark: Boolean, content: @Composable () -> Unit) {
             headlineMedium = base.headlineMedium.copy(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
             titleLarge = base.titleLarge.copy(fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
             bodyLarge = base.bodyLarge.copy(fontSize = 16.sp, lineHeight = 25.sp),
-            labelSmall = base.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
-            labelMedium = base.labelMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+            labelSmall = base.labelSmall.copy(fontSize = 12.sp),
             labelLarge = base.labelLarge.copy(letterSpacing = 0.35.sp),
         )
     }
     CompositionLocalProvider(LocalArchiveDark provides dark) {
         MaterialExpressiveTheme(colorScheme = palette, typography = typography,
-        shapes = Shapes(medium = RoundedCornerShape(16.dp), large = RoundedCornerShape(24.dp)), content = content)
+        shapes = Shapes(
+            extraSmall = RoundedCornerShape(8.dp), small = RoundedCornerShape(8.dp),
+            medium = RoundedCornerShape(14.dp), large = RoundedCornerShape(20.dp), extraLarge = RoundedCornerShape(20.dp)
+        ), content = content)
     }
 }
 
 val LocalArchiveDark = staticCompositionLocalOf { false }
 
-@Deprecated("使用 Material 3 容器和色调层级")
-@Suppress("UNUSED_PARAMETER")
-fun Modifier.archiveGlassEdge(enabled: Boolean, shape: Shape = RectangleShape): Modifier = this
-
-@Deprecated("使用 Material 3 Surface 或浮动工具栏")
-@Suppress("UNUSED_PARAMETER")
-@Composable
-fun ArchiveOverlay(enabled: Boolean, modifier: Modifier = Modifier,
-    content: @Composable BoxScope.() -> Unit, overlay: @Composable BoxScope.(Modifier) -> Unit) {
-    Box(modifier) {
-        Box(Modifier.matchParentSize(), content = content)
-        overlay(Modifier.background(MaterialTheme.colorScheme.surfaceContainer))
-    }
+object ArchiveTypography {
+    val metadata: TextStyle
+        @Composable get() = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace)
 }
 
 object ArchiveClassification {

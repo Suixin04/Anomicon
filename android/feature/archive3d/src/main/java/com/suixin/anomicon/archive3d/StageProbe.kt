@@ -2,9 +2,7 @@ package com.suixin.anomicon.archive3d
 
 import com.suixin.anomicon.designsystem.ArchiveDetailBar
 import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.foundation.Canvas
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
+import com.suixin.anomicon.designsystem.ArchiveGlyph
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.activity.compose.BackHandler
@@ -113,40 +111,18 @@ fun StageProbe(
 @Composable
 private fun StageControls(modifier: Modifier, spinning: Boolean, fullscreen: Boolean,
                           spin: () -> Unit, reset: () -> Unit, expand: () -> Unit) {
-    HorizontalFloatingToolbar(expanded = true, modifier = modifier) {
-        StageAction(if (spinning) "暂停" else "360°", spin) { ink ->
-            if (spinning) {
-                drawLine(ink, Offset(7f,5f), Offset(7f,19f), 3f)
-                drawLine(ink, Offset(16f,5f), Offset(16f,19f), 3f)
-            } else drawPath(Path().apply { moveTo(6f,3f); lineTo(21f,12f); lineTo(6f,21f); close() },ink)
-        }
-        StageAction("复位",reset) { ink ->
-            drawArc(ink, 215f, 290f, false, Offset(4f,4f), androidx.compose.ui.geometry.Size(16f,16f),
-                style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
-            drawLine(ink, Offset(3f,3f),Offset(3f,9f),2f)
-            drawLine(ink, Offset(3f,9f),Offset(9f,9f),2f)
-        }
-        StageAction(if (fullscreen) "退出全屏" else "全屏",expand) { ink ->
-            for (x in listOf(4f,20f)) for (y in listOf(4f,20f)) {
-                val dx = if(x==4f) 6f else -6f
-                val dy = if(y==4f) 6f else -6f
-                val corner = if(fullscreen) Offset(x+dx,y+dy) else Offset(x,y)
-                drawLine(ink, corner,Offset(x+dx,y),2f)
-                drawLine(ink, corner,Offset(x,y+dy),2f)
-            }
-        }
+    HorizontalFloatingToolbar(
+        expanded = true,
+        modifier = modifier,
+        colors = FloatingToolbarDefaults.standardFloatingToolbarColors( toolbarContainerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+    ) {
+        StageAction(if (spinning) "暂停" else "360°", if (spinning) "pause" else "play_arrow", spin)
+        StageAction("复位", "restart_alt", reset)
+        StageAction(if (fullscreen) "退出全屏" else "全屏", if (fullscreen) "fullscreen_exit" else "fullscreen", expand)
     }
 }
 
 @Composable
-private fun StageAction(label: String, action: () -> Unit,
-                        glyph: androidx.compose.ui.graphics.drawscope.DrawScope.(androidx.compose.ui.graphics.Color) -> Unit) {
-    IconButton(onClick = action, modifier = Modifier.semantics { contentDescription = label }) {
-        val ink = LocalContentColor.current
-        Canvas(Modifier.size(24.dp)) {
-            val scale = size.width / 24f
-            drawContext.transform.scale(scale, scale, Offset.Zero)
-            glyph(ink)
-        }
-    }
+private fun StageAction(label: String, glyph: String, action: () -> Unit) {
+    IconButton(onClick = action, modifier = Modifier.semantics { contentDescription = label }) { ArchiveGlyph(glyph) }
 }

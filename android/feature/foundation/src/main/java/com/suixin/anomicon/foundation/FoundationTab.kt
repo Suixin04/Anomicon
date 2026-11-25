@@ -41,30 +41,30 @@ fun FoundationTab(onEntry: (String) -> Unit) {
             Caption("模拟 RAISA 编目工单与认知勘验，不阻断日常阅读，通过后签发工牌印章")
             val passed = exams.filter { results[it.id]?.passed == true }
             Panel {
-                BadgeHeader(R.drawable.cert_identity) {
+                BadgeHeader("badge") {
                     Text("RAISA 终端核验 · 已签发 ${passed.size}/3 枚印章", fontWeight = FontWeight.Bold)
                     Caption("每科首次通过可获一次性阅历奖励 · 已累计 ${passed.sumOf { it.xp }} / 60 XP")
                 }
             }
             exams.forEach { exam ->
                 val record = results[exam.id]
-                Panel(Modifier.clickable { activeId = exam.id }) {
+                Panel(onClick = { activeId = exam.id }) {
                     val badge = when (exam.id) {
-                        "cert-01" -> R.drawable.cert_lock
-                        "cert-02" -> R.drawable.cert_field
-                        else -> R.drawable.cert_eye
+                        "cert-01" -> "lock"
+                        "cert-02" -> "assignment"
+                        else -> "visibility"
                     }
                     BadgeHeader(badge) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(exam.code, Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text(exam.code, Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(8.dp)).padding(horizontal = 6.dp), style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                             Caption("建议 · ${exam.rank}" + if (exam.id == "cert-03") "  含透视勘验" else "")
                         }
-                        Text(exam.title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text(exam.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     }
                     Caption(exam.subtitle)
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text(if (record?.passed == true) "已签章 · ${record.score}/5" else "首次通过 +${exam.xp} XP", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                            Text(if (record?.passed == true) "已签章 · ${record.score}/5" else "首次通过 +${exam.xp} XP", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall)
                             Caption("印章：${exam.seal}")
                         }
                         Button(onClick = { activeId = exam.id }) { Text(if (record?.passed == true) "再次演练" else "开始核验") }
@@ -81,24 +81,26 @@ fun FoundationTab(onEntry: (String) -> Unit) {
     }
 }
 
-@Composable private fun BadgeHeader(icon: Int, content: @Composable ColumnScope.() -> Unit) {
+@Composable private fun BadgeHeader(icon: String, content: @Composable ColumnScope.() -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-        Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(12.dp)), contentAlignment = Alignment.Center) {
-            Icon(painterResource(icon), null, Modifier.size(23.dp), tint = MaterialTheme.colorScheme.primary)
+        Box(Modifier.size(42.dp).background(MaterialTheme.colorScheme.surfaceContainer, RoundedCornerShape(14.dp)), contentAlignment = Alignment.Center) {
+            ArchiveGlyph(icon, Modifier.size(24.dp))
         }
         Column(verticalArrangement = Arrangement.spacedBy(2.dp), content = content)
     }
 }
 
 @Composable private fun ManualCard(item: Manual, modifier: Modifier, open: (String) -> Unit) {
-    Panel(modifier.clickable { open(item.slug) }) { Caption(item.label); Text(item.title, fontWeight = FontWeight.Bold); Caption(item.subtitle) }
+    Panel(modifier, onClick = { open(item.slug) }) { Caption(item.label); Text(item.title, fontWeight = FontWeight.Bold); Caption(item.subtitle) }
 }
-@Composable private fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
-    ArchiveCard(modifier.fillMaxWidth()) {
+@Composable private fun Panel(modifier: Modifier = Modifier, onClick: (() -> Unit)? = null, content: @Composable ColumnScope.() -> Unit) {
+    val body: @Composable ColumnScope.() -> Unit = {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp), content = content)
     }
+    if (onClick == null) ArchiveCard(modifier.fillMaxWidth(), content = body)
+    else ArchiveCard(onClick = onClick, modifier = modifier.fillMaxWidth(), content = body)
 }
-@Composable private fun Heading(text: String) = Text(text, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+@Composable private fun Heading(text: String) = Text(text, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
 @Composable private fun Caption(text: String) = Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
 
 @Composable private fun ExamScreen(exam: Exam, open: (String) -> Unit, back: () -> Unit, save: suspend (Int) -> Unit) {
@@ -131,7 +133,9 @@ fun FoundationTab(onEntry: (String) -> Unit) {
             Text(question.prompt, fontWeight = FontWeight.Bold)
             question.choices.forEachIndexed { i, choice ->
                 OutlinedButton(onClick = { answers = answers.take(index).toIntArray() + i }, modifier = Modifier.fillMaxWidth()) {
-                    Text((if (answers.getOrNull(index) == i) "● " else "○ ") + choice, modifier = Modifier.fillMaxWidth())
+                    ArchiveGlyph(if (answers.getOrNull(index) == i) "radio_button_checked" else "radio_button_unchecked", Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(choice, modifier = Modifier.weight(1f))
                 }
             }
             Button(enabled = answers.size > index && !saving, onClick = {

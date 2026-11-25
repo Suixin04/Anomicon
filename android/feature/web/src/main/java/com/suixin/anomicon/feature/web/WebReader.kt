@@ -36,7 +36,6 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
@@ -151,7 +150,7 @@ internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier
             ReaderToolbar(slug, catalogTitle ?: title, favorite, original, offline, back,
                 toggleFavorite = { session?.favorite(favorite != true) }, toggleMode = { original = !original }, save = save)
             if (saving) LinearProgressIndicator(Modifier.fillMaxWidth())
-            saveResult?.let { Snackbar(action = { TextButton(onClick = { saveResult = null }) { Text("关闭") } }) { Text(it) } }
+            saveResult?.let { Snackbar(dismissAction = { FilledTonalButton(onClick = { saveResult = null }) { Text("关闭") } }) { Text(it) } }
             if (!original && document != null) {
                 ReaderStatus(session?.position?.progress ?: 0f, profile, onTool = { tool = it })
             }
@@ -226,7 +225,7 @@ private fun NativeBlock(block: PreviewBlock, open: (String) -> Unit) {
                 append(block.text)
                 block.links.forEach { link -> addLink(LinkAnnotation.Clickable(link.slug,
                     TextLinkStyles(style = SpanStyle(color = color)), { open(link.slug) }), link.start, link.end) }
-            }, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 29.sp))
+            }, style = MaterialTheme.typography.bodyLarge)
         }
         is PreviewBlock.Image -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
             AsyncImage(model = block.url, contentDescription = block.description.ifBlank { null },
