@@ -343,6 +343,7 @@ class _ArchiveStageState extends State<_ArchiveStage> {
   Future<void> Function(String)? _runJavaScript;
   var _autoRotate = false;
   var _generation = 0;
+  var _openingFullscreen = false;
 
   Future<void> _toggleRotation() async {
     final rotate = !_autoRotate;
@@ -352,8 +353,16 @@ class _ArchiveStageState extends State<_ArchiveStage> {
     if (mounted) setState(() => _autoRotate = rotate);
   }
 
-  void _openFullscreen() {
-    Navigator.of(context, rootNavigator: true).push(
+  Future<void> _openFullscreen() async {
+    setState(() {
+      _openingFullscreen = true;
+      _runJavaScript = null;
+      _autoRotate = false;
+    });
+    // Dispose the embedded platform view before opening the fullscreen view.
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) return;
+    await Navigator.of(context, rootNavigator: true).push(
       MaterialPageRoute<void>(
         fullscreenDialog: true,
         builder: (context) => Scaffold(
@@ -368,24 +377,27 @@ class _ArchiveStageState extends State<_ArchiveStage> {
         ),
       ),
     );
+    if (mounted) setState(() => _openingFullscreen = false);
   }
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Expanded(
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
-          child: ModelViewer(
-            key: ValueKey(_generation),
-            backgroundColor: _archiveBlue,
-            src: widget.src,
-            alt: '${widget.asset.title} GLB',
-            cameraControls: true,
-            touchAction: TouchAction.panY,
-            onWebViewCreated: (controller) =>
-                _runJavaScript = controller.runJavaScript,
-            relatedJs: """
+  Widget build(BuildContext context) => _openingFullscreen
+      ? const SizedBox.expand()
+      : Column(
+          children: [
+            Expanded(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(20),
+                child: ModelViewer(
+                  key: ValueKey(_generation),
+                  backgroundColor: _archiveBlue,
+                  src: widget.src,
+                  alt: '${widget.asset.title} GLB',
+                  cameraControls: true,
+                  touchAction: TouchAction.panY,
+                  onWebViewCreated: (controller) =>
+                      _runJavaScript = controller.runJavaScript,
+                  relatedJs: """
               const model = document.querySelector('model-viewer');
               model.addEventListener('error', () => {
                 const error = document.createElement('div');
@@ -394,37 +406,37 @@ class _ArchiveStageState extends State<_ArchiveStage> {
                 document.body.append(error);
               });
             """,
-          ),
-        ),
-      ),
-      Wrap(
-        alignment: WrapAlignment.center,
-        spacing: 8,
-        children: [
-          IconButton(
-            tooltip: _autoRotate ? '停止旋转' : '自动旋转',
-            onPressed: _toggleRotation,
-            icon: Icon(_autoRotate ? Icons.pause : Icons.threesixty),
-          ),
-          IconButton(
-            tooltip: '复位',
-            onPressed: () => setState(() {
-              _autoRotate = false;
-              _runJavaScript = null;
-              _generation++;
-            }),
-            icon: const Icon(Icons.restart_alt),
-          ),
-          if (!widget.fullScreen)
-            IconButton(
-              tooltip: '全屏查看',
-              onPressed: _openFullscreen,
-              icon: const Icon(Icons.fullscreen),
+                ),
+              ),
             ),
-        ],
-      ),
-    ],
-  );
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: 8,
+              children: [
+                IconButton(
+                  tooltip: _autoRotate ? '停止旋转' : '自动旋转',
+                  onPressed: _toggleRotation,
+                  icon: Icon(_autoRotate ? Icons.pause : Icons.threesixty),
+                ),
+                IconButton(
+                  tooltip: '复位',
+                  onPressed: () => setState(() {
+                    _autoRotate = false;
+                    _runJavaScript = null;
+                    _generation++;
+                  }),
+                  icon: const Icon(Icons.restart_alt),
+                ),
+                if (!widget.fullScreen)
+                  IconButton(
+                    tooltip: '全屏查看',
+                    onPressed: _openFullscreen,
+                    icon: const Icon(Icons.fullscreen),
+                  ),
+              ],
+            ),
+          ],
+        );
 }
 
 class ArchiveGalleryCard extends StatelessWidget {
