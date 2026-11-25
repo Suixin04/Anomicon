@@ -7,7 +7,7 @@ class PageCanvas extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ColoredBox(
+    return Material(
       color: Theme.of(context).scaffoldBackgroundColor,
       child: SafeArea(bottom: false, child: child),
     );

@@ -7,6 +7,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onSettingsChange,
     required this.onHaptic,
     this.onOpenArchiveGallery,
+    this.onOpenOffline,
     super.key,
   });
 
@@ -15,6 +16,7 @@ class SettingsScreen extends StatelessWidget {
   final ValueChanged<AppSettings> onSettingsChange;
   final VoidCallback onHaptic;
   final VoidCallback? onOpenArchiveGallery;
+  final VoidCallback? onOpenOffline;
 
   @override
   Widget build(BuildContext context) {
@@ -112,6 +114,17 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
+          if (onOpenOffline != null) ...[
+            const SizedBox(height: 16),
+            Card(
+              child: ListTile(
+                leading: const Icon(Icons.offline_pin_outlined),
+                title: const Text('离线书架'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: onOpenOffline,
+              ),
+            ),
+          ],
           if (onOpenArchiveGallery != null) ...[
             const SizedBox(height: 16),
             Card(

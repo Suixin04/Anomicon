@@ -9,9 +9,12 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'foundation.dart';
+import 'foundation_page.dart';
 import 'local_store.dart';
 import 'models.dart';
 import 'offline_article_store.dart';
+import 'raisa.dart';
+import 'raisa_page.dart';
 import 'repository.dart';
 import 'seed_data.dart';
 
@@ -23,17 +26,16 @@ part 'settings_page.dart';
 part 'shared_widgets.dart';
 
 const _surface = Color(0xFF202528);
-const _surfaceHigh = Color(0xFF34393C);
-const _surfaceLow = Color(0xFF171A1C);
 const _accent = Color(0xFF2F80FF);
 const _muted = Color(0xFF92979C);
 
-enum HomeTab { explore, catalog, stories, terminal }
+enum HomeTab { explore, catalog, foundation, stories, terminal }
 
 extension HomeTabMeta on HomeTab {
   String get title => switch (this) {
     HomeTab.explore => '探索',
     HomeTab.catalog => '图鉴',
+    HomeTab.foundation => '基金会',
     HomeTab.stories => '故事',
     HomeTab.terminal => '终端',
   };
@@ -41,6 +43,7 @@ extension HomeTabMeta on HomeTab {
   IconData get icon => switch (this) {
     HomeTab.explore => Icons.travel_explore_rounded,
     HomeTab.catalog => Icons.article_outlined,
+    HomeTab.foundation => Icons.shield_outlined,
     HomeTab.stories => Icons.description_outlined,
     HomeTab.terminal => Icons.desktop_windows_outlined,
   };
@@ -50,11 +53,13 @@ class AnomiconApp extends StatefulWidget {
   const AnomiconApp({
     required this.repository,
     required this.localStore,
+    required this.appVersion,
     super.key,
   });
 
   final AnomiconRepository repository;
   final LocalStore localStore;
+  final String appVersion;
 
   @override
   State<AnomiconApp> createState() => _AnomiconAppState();
@@ -119,6 +124,10 @@ class _AnomiconAppState extends State<AnomiconApp> {
         onOpenSettings: _openSettings,
         onOpenArchiveGallery: _openArchiveGallery,
         onOpenContent: _openContent,
+        foundationStore: widget.localStore.foundationStore,
+        onOpenAssessment: _openAssessment,
+        onOpenRaisa: () => _openRaisa(const RaisaOrigin.foundation()),
+        onOpenOffline: _openOffline,
         onToggleFavorite: _toggleFavorite,
         onHaptic: _playSelection,
         hasDetail: _hasDetail,
@@ -156,56 +165,72 @@ class _AnomiconAppState extends State<AnomiconApp> {
     await _details.currentState!.maybePop();
   }
 
-  Future<void> _openSettings() async {
+  Future<void> _openDetail(WidgetBuilder builder) async {
     unawaited(_playSelection());
-    if (!mounted) return;
-    await _pushDetail(
-      _details.currentState!,
-      (context) => SettingsScreen(
-        settings: _AppData.of(context).settings,
-        onBack: _popDetail,
-        onSettingsChange: _saveSettings,
-        onHaptic: _playSelection,
-        onOpenArchiveGallery: _openArchiveGallery,
-      ),
+    await _details.currentState!.push<void>(
+      MaterialPageRoute(builder: builder),
     );
   }
 
-  Future<void> _openArchiveGallery() async {
-    unawaited(_playSelection());
-    if (!mounted) return;
-    await _pushDetail(
-      _details.currentState!,
-      (context) => ArchiveGalleryScreen(
-        repository: widget.repository,
-        onBack: _popDetail,
-        onOpenAsset: _openArchive,
-        onOpenArticle: _openContent,
-        onHaptic: _playSelection,
-      ),
-    );
-  }
+  Future<void> _openSettings() => _openDetail(
+    (context) => SettingsScreen(
+      settings: _AppData.of(context).settings,
+      onBack: _popDetail,
+      onSettingsChange: _saveSettings,
+      onHaptic: _playSelection,
+      onOpenArchiveGallery: _openArchiveGallery,
+      onOpenOffline: _openOffline,
+    ),
+  );
 
-  Future<void> _openArchive(ArchiveAsset asset) async {
-    unawaited(_playSelection());
-    if (!mounted) return;
-    await _pushDetail(
-      _details.currentState!,
-      (context) => ArchiveDetailScreen(
-        asset: asset,
-        repository: widget.repository,
-        onBack: _popDetail,
-        onOpenArticle: () => _openContent(asset.contentRef),
-      ),
-    );
-  }
+  Future<void> _openArchiveGallery() => _openDetail(
+    (context) => ArchiveGalleryScreen(
+      repository: widget.repository,
+      onBack: _popDetail,
+      onOpenAsset: _openArchive,
+      onOpenArticle: _openContent,
+      onHaptic: _playSelection,
+    ),
+  );
 
-  Future<void> _openContent(ContentRef content) async {
-    unawaited(_playSelection());
+  Future<void> _openArchive(ArchiveAsset asset) => _openDetail(
+    (context) => ArchiveDetailScreen(
+      asset: asset,
+      repository: widget.repository,
+      onBack: _popDetail,
+      onOpenArticle: () => _openContent(asset.contentRef),
+    ),
+  );
+
+  Future<void> _openOffline() => _openDetail(
+    (context) => OfflineShelfScreen(
+      repository: widget.repository,
+      onBack: _popDetail,
+      onOpenContent: (content) => _openContent(content, offline: true),
+    ),
+  );
+
+  Future<void> _openAssessment(FoundationExam exam) => _openDetail(
+    (context) => FoundationAssessmentPage(
+      store: widget.localStore.foundationStore,
+      exam: exam,
+      onOpenContent: _openContent,
+    ),
+  );
+
+  Future<void> _openRaisa(RaisaOrigin origin) => _openDetail(
+    (context) => RaisaFeedbackPage(
+      store: widget.localStore.raisaStore,
+      origin: origin,
+      appVersion: widget.appVersion,
+    ),
+  );
+
+  Future<void> _openContent(ContentRef content, {bool offline = false}) async {
     final library = await widget.localStore.recordRead(content);
     if (!mounted) return;
     setState(() => _library = library);
-    await _pushDetail(_details.currentState!, (context) {
+    await _openDetail((context) {
       final data = _AppData.of(context);
       return ArticleScreen(
         content: content,
@@ -217,6 +242,11 @@ class _AnomiconAppState extends State<AnomiconApp> {
         onToggleFavorite: () => _toggleFavorite(content),
         onLibraryChanged: (library) => setState(() => _library = library),
         onOpenArchive: _openArchive,
+        offline: offline,
+        onOpenContent: _openContent,
+        onOpenSettings: _openSettings,
+        onReport: (mode) =>
+            _openRaisa(RaisaOrigin.article(content: content, renderMode: mode)),
       );
     });
   }
@@ -234,9 +264,6 @@ class _AnomiconAppState extends State<AnomiconApp> {
     await widget.localStore.saveSettings(normalized);
   }
 }
-
-Future<T?> _pushDetail<T>(NavigatorState navigator, WidgetBuilder builder) =>
-    navigator.push<T>(MaterialPageRoute<T>(builder: builder));
 
 class _DetailObserver extends NavigatorObserver {
   _DetailObserver(this.onChanged);
@@ -304,6 +331,10 @@ class HomeShell extends StatelessWidget {
     required this.onOpenContent,
     required this.onToggleFavorite,
     required this.onHaptic,
+    required this.foundationStore,
+    required this.onOpenAssessment,
+    required this.onOpenRaisa,
+    required this.onOpenOffline,
     this.detail,
     this.hasDetail = false,
     super.key,
@@ -318,6 +349,10 @@ class HomeShell extends StatelessWidget {
   final ValueChanged<ContentRef> onOpenContent;
   final ValueChanged<ContentRef> onToggleFavorite;
   final VoidCallback onHaptic;
+  final FoundationStore foundationStore;
+  final ValueChanged<FoundationExam> onOpenAssessment;
+  final VoidCallback onOpenRaisa;
+  final VoidCallback onOpenOffline;
   final Widget? detail;
   final bool hasDetail;
 
@@ -334,6 +369,12 @@ class HomeShell extends StatelessWidget {
         onOpenArchiveGallery: onOpenArchiveGallery,
         onHaptic: onHaptic,
       ),
+      HomeTab.foundation => FoundationScreen(
+        store: foundationStore,
+        onOpenContent: onOpenContent,
+        onOpenRaisa: onOpenRaisa,
+        onOpenAssessment: onOpenAssessment,
+      ),
       HomeTab.stories => StoriesScreen(
         repository: repository,
         onOpenContent: onOpenContent,
@@ -344,6 +385,9 @@ class HomeShell extends StatelessWidget {
         onOpenContent: onOpenContent,
         onToggleFavorite: onToggleFavorite,
         onOpenSettings: onOpenSettings,
+        foundationStore: foundationStore,
+        onOpenOffline: onOpenOffline,
+        onOpenArchiveGallery: onOpenArchiveGallery,
       ),
     };
     return LayoutBuilder(

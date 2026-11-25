@@ -79,7 +79,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
         .toList();
     final resumable = history
         .where(
-          (item) => item.scrollOffset > 0 && readingProgressPercent(item) < 1,
+          (item) =>
+              !item.completed &&
+              (item.scrollOffset > 0 || item.pixelOffset > 0),
         )
         .toList();
     final resumeEntry = resumable.firstOrNull;
