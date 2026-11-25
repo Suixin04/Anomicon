@@ -23,6 +23,5 @@ dependencies {
     implementation(libs.material)
     implementation("androidx.activity:activity-compose:1.11.0")
     implementation("io.github.sceneview:sceneview:2.3.0")
-    implementation("dev.chrisbanes.haze:haze:1.6.10")
     testImplementation("junit:junit:4.13.2")
 }

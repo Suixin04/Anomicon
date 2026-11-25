@@ -67,7 +67,7 @@ internal fun ArchiveApp(model: ShellViewModel, applyBarStyle: (Boolean) -> Unit)
                                 icon = { TabIcon(item, item == tab) }, label = { Text(item.title) }) }
                         }
                         val showBar = !split && detail == null && !secondary
-                        ArchiveFloatingNav(Modifier.fillMaxSize(), visible = showBar, material = settings.immersiveMaterial,
+                        ArchiveFloatingNav(Modifier.fillMaxSize(), visible = showBar,
                             bar = { PhoneTabs(tab, model::select, settings.haptics) }, content = {
                             val insets = if (fullStage) Modifier else Modifier.windowInsetsPadding(
                                 WindowInsets.safeDrawing.only(if (showBar) WindowInsetsSides.Top + WindowInsetsSides.Horizontal else WindowInsetsSides.Horizontal + WindowInsetsSides.Vertical))
@@ -123,25 +123,22 @@ private fun DetailPage(detail: Detail, settings: AppSettings, model: ShellViewMo
     Box(modifier.fillMaxSize()) {
         when (detail) {
             Detail.Web -> WebReader(entry = model.entry.collectAsStateWithLifecycle().value, onBack = { model.open(null) })
-            Detail.Scene -> StageProbe(onBack = { model.open(null) }, immersiveMaterial = settings.immersiveMaterial, onFullscreenChange = onFullscreenChange)
-            Detail.Settings -> Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(ArchiveSpacing.page), verticalArrangement = Arrangement.spacedBy(ArchiveSpacing.group)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    ArchiveAction("返回", { model.open(null) }) { BackChevron() }
-                    Text("设置", style = MaterialTheme.typography.headlineMedium)
-                }
+            Detail.Scene -> StageProbe(onBack = { model.open(null) }, onFullscreenChange = onFullscreenChange)
+            Detail.Settings -> Column(Modifier.fillMaxSize()) {
+                ArchiveDetailBar("设置", { model.open(null) })
+                Column(Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(ArchiveSpacing.page), verticalArrangement = Arrangement.spacedBy(ArchiveSpacing.group)) {
                 Text("外观", style = MaterialTheme.typography.titleLarge)
-                ArchiveCard {
+                ArchiveCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("主题", style = MaterialTheme.typography.titleMedium)
                         ArchiveSegments(listOf("跟随系统", "浅色", "深色"), ThemeMode.entries.indexOf(settings.themeMode)) { model.theme(ThemeMode.entries[it]) }
                     }
                 }
                 Text("交互", style = MaterialTheme.typography.titleLarge)
-                ArchiveCard {
+                ArchiveCard(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(horizontal = 18.dp)) {
-                        SettingSwitch("沉浸材质", settings.immersiveMaterial, model::material)
-                        HorizontalDivider(thickness = androidx.compose.ui.unit.Dp.Hairline, color = MaterialTheme.colorScheme.outlineVariant)
                         SettingSwitch("触感反馈", settings.haptics, model::haptics)
+                    }
                     }
                 }
             }
@@ -175,16 +172,6 @@ private fun PhoneTabs(current: Tab, select: (Tab) -> Unit, feedback: Boolean) {
                 }
             }
         }
-    }
-}
-
-@Composable private fun BackChevron() {
-    val color = LocalContentColor.current
-    Canvas(Modifier.size(20.dp)) {
-        val top = androidx.compose.ui.geometry.Offset(size.width * .62f, size.height * .18f)
-        val mid = androidx.compose.ui.geometry.Offset(size.width * .31f, size.height * .50f)
-        val bottom = top.copy(y = size.height * .82f)
-        drawLine(color, top, mid, 2.dp.toPx()); drawLine(color, mid, bottom, 2.dp.toPx())
     }
 }
 

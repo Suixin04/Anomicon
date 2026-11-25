@@ -1,10 +1,7 @@
 package com.suixin.anomicon.designsystem
 
-import android.os.Build
-import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.RectangleShape
-import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,9 +12,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import dev.chrisbanes.haze.HazeState
-import dev.chrisbanes.haze.hazeEffect
-import dev.chrisbanes.haze.hazeSource
 
 object ArchiveSpacing {
     val group = 12.dp
@@ -41,8 +35,9 @@ fun ArchiveTheme(dark: Boolean, content: @Composable () -> Unit) {
             secondary = blue, onSecondary = Color.White, secondaryContainer = selected, onSecondaryContainer = text,
             surface = canvas, background = canvas, onBackground = text, onSurface = text,
             surfaceVariant = inset, onSurfaceVariant = muted, surfaceTint = Color.Transparent,
-            surfaceContainerLowest = card, surfaceContainerLow = inset, surfaceContainer = inset,
-            surfaceContainerHigh = inset, surfaceContainerHighest = inset,
+            surfaceContainerLowest = card, surfaceContainerLow = inset, surfaceContainer = card,
+            surfaceContainerHigh = if (dark) Color(0xff292d35) else Color(0xffe5e8ee),
+            surfaceContainerHighest = if (dark) Color(0xff333842) else Color(0xffdce0e8),
             outline = if (dark) Color(0xff686d76) else Color(0xff9398a1),
             outlineVariant = if (dark) Color(0xff373b43) else Color(0xffd9dce1)
         )
@@ -53,6 +48,8 @@ fun ArchiveTheme(dark: Boolean, content: @Composable () -> Unit) {
             headlineMedium = base.headlineMedium.copy(fontSize = 28.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold),
             titleLarge = base.titleLarge.copy(fontSize = 21.sp, lineHeight = 28.sp, fontWeight = FontWeight.SemiBold),
             bodyLarge = base.bodyLarge.copy(fontSize = 16.sp, lineHeight = 25.sp),
+            labelSmall = base.labelSmall.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
+            labelMedium = base.labelMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace),
             labelLarge = base.labelLarge.copy(letterSpacing = 0.35.sp),
         )
     }
@@ -64,23 +61,18 @@ fun ArchiveTheme(dark: Boolean, content: @Composable () -> Unit) {
 
 val LocalArchiveDark = staticCompositionLocalOf { false }
 
-@Composable
-fun Modifier.archiveGlassEdge(enabled: Boolean, shape: Shape = RectangleShape): Modifier =
-    if (enabled && LocalArchiveDark.current) border(Dp.Hairline, Color.White.copy(alpha = 0.20f), shape) else this
+@Deprecated("使用 Material 3 容器和色调层级")
+@Suppress("UNUSED_PARAMETER")
+fun Modifier.archiveGlassEdge(enabled: Boolean, shape: Shape = RectangleShape): Modifier = this
 
+@Deprecated("使用 Material 3 Surface 或浮动工具栏")
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun ArchiveOverlay(enabled: Boolean, modifier: Modifier = Modifier,
     content: @Composable BoxScope.() -> Unit, overlay: @Composable BoxScope.(Modifier) -> Unit) {
-    val state = remember { HazeState() }
-    val surface = MaterialTheme.colorScheme.surface
-    val blur = enabled && Build.VERSION.SDK_INT >= 31
     Box(modifier) {
-        Box(if (blur) Modifier.matchParentSize().hazeSource(state) else Modifier.matchParentSize(), content = content)
-        val material = if (blur) Modifier.hazeEffect(state) {
-            backgroundColor = surface
-            blurRadius = 20.dp
-        }.background(surface.copy(alpha = .78f)) else Modifier.background(surface)
-        overlay(material.archiveGlassEdge(blur))
+        Box(Modifier.matchParentSize(), content = content)
+        overlay(Modifier.background(MaterialTheme.colorScheme.surfaceContainer))
     }
 }
 

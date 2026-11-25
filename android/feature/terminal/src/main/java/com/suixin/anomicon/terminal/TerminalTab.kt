@@ -1,6 +1,7 @@
 package com.suixin.anomicon.terminal
 
 import com.suixin.anomicon.designsystem.*
+import androidx.compose.ui.text.font.FontFamily
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -50,85 +51,82 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
     val view = collection
     if (view != null) {
         val entries = when (view) { "全部收藏" -> favorites; "继续阅读" -> resume; else -> history }
+        Column(Modifier.fillMaxSize()) {
+            ArchiveDetailBar("$view  ${entries.size}", { collection = null })
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            item { TextButton(onClick = { collection = null }) { Text("‹  返回终端") } }
-            item { Heading("$view  ${entries.size}") }
             if (entries.isEmpty()) item { Empty(if (view == "全部收藏") "暂无收藏" else "暂无阅读记录") }
             items(entries, key = { it.id }) { row -> Entry(row.title, caption(row), { onEntry(row.id) }) }
         }
+        }
         return
     }
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = LocalArchiveBottomInset.current + 16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        item {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("终端", style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = ink)
-                SymbolButton("⚙", "设置", onSettings)
-            }
-        }
-        item {
-            ArchiveCard(Modifier.fillMaxWidth()) {
-                Column(Modifier.fillMaxWidth().padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Column(Modifier.size(52.dp).background(tile, RoundedCornerShape(14.dp)), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("LV", fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold)
-                        Text("${research.level}", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ink)
+    ArchiveLargePage("终端", actions = { SymbolButton("⚙", "设置", onSettings) }) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = LocalArchiveBottomInset.current + 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            item {
+                ArchiveCard(Modifier.fillMaxWidth()) {
+                    Column(Modifier.fillMaxWidth().padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(Modifier.size(52.dp).background(tile, RoundedCornerShape(14.dp)), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text("LV", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = accent, fontWeight = FontWeight.Bold)
+                            Text("${research.level}", fontFamily = FontFamily.Monospace, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = ink)
+                        }
+                        Column(Modifier.weight(1f)) { Small("档案阅历  累计 ${research.xp} XP", FontFamily.Monospace); Heading(research.rank) }
+                        SymbolButton("ⓘ", "档案阅历说明", { detail = "档案阅历" })
                     }
-                    Column(Modifier.weight(1f)) { Small("档案阅历  累计 ${research.xp} XP"); Heading(research.rank) }
-                    SymbolButton("ⓘ", "档案阅历说明", { detail = "档案阅历" })
-                }
-                Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
-                    Small(if (research.level == 50) "已达最高等级" else "距 Lv.${research.level + 1}")
-                    Small(if (research.target == 0) "最高等级" else "${research.earned} / ${research.target} XP")
-                }
-                LinearProgressIndicator(progress = { if (research.target == 0) 1f else research.earned.toFloat() / research.target },
-                    modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = accent, trackColor = tile, drawStopIndicator = {})
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    seals.forEach { (id, title) ->
-                        val passed = exams[id]?.passed == true
-                        Box(Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(tile).clickable { detail = title }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                            Text("${if (passed) "✓" else "♙"} $title", color = if (passed) accent else muted, fontSize = 10.sp)
+                    Row(horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                        Small(if (research.level == 50) "已达最高等级" else "距 Lv.${research.level + 1}")
+                        Small(if (research.target == 0) "最高等级" else "${research.earned} / ${research.target} XP", FontFamily.Monospace)
+                    }
+                    LinearProgressIndicator(progress = { if (research.target == 0) 1f else research.earned.toFloat() / research.target },
+                        modifier = Modifier.fillMaxWidth().height(6.dp).clip(CircleShape), color = accent, trackColor = tile, drawStopIndicator = {})
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        seals.forEach { (id, title) ->
+                            val passed = exams[id]?.passed == true
+                            Box(Modifier.weight(1f).clip(RoundedCornerShape(9.dp)).background(tile).clickable { detail = title }.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
+                                Text("${if (passed) "✓" else "♙"} $title", color = if (passed) accent else muted, fontSize = 10.sp)
+                            }
                         }
                     }
-                }
-                Week(research)
-                val minutes = research.totalMs / MINUTE_MS
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Stat("◷  有效阅读", if (minutes >= 60) "${minutes / 60}时 ${minutes % 60}分" else if (minutes == 0L && research.totalMs > 0) "< 1 分钟" else "$minutes 分钟", Modifier.weight(1f))
-                    Stat("▣  已研读", "${research.researched} 篇", Modifier.weight(1f))
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Stat("★  收藏", "${favorites.size}", Modifier.weight(1f)) { collection = "全部收藏" }
-                    Stat("▤  记录", "${history.size}", Modifier.weight(1f)) { collection = "阅读记录" }
+                    Week(research)
+                    val minutes = research.totalMs / MINUTE_MS
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Stat("◷  有效阅读", if (minutes >= 60) "${minutes / 60}时 ${minutes % 60}分" else if (minutes == 0L && research.totalMs > 0) "< 1 分钟" else "$minutes 分钟", Modifier.weight(1f))
+                        Stat("▣  已研读", "${research.researched} 篇", Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Stat("★  收藏", "${favorites.size}", Modifier.weight(1f)) { collection = "全部收藏" }
+                        Stat("▤  记录", "${history.size}", Modifier.weight(1f)) { collection = "阅读记录" }
+                    }
                 }
             }
+            }
+            item { Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { Heading("个人资料库"); Small("阅读进度、藏品与常用本地入口") } }
+            item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Quick("⬡", "三维档案", Modifier.weight(1f), onArchive)
+                Quick("★", "全部收藏", Modifier.weight(1f)) { collection = "全部收藏" }
+                Quick("⚙", "阅读设置", Modifier.weight(1f), onSettings)
+            } }
+            if (resume.isNotEmpty()) {
+                item { Section("继续阅读", resume.size) { collection = "继续阅读" } }
+                item { val r = resume.first(); Entry(r.title, caption(r), { onEntry(r.id) }) }
+            }
+            if (series.isNotEmpty()) {
+                item { Section("正在跟读", series.size) }
+                items(series) { Entry(it.seriesTitle, it.entryTitle, { onEntry(it.entryId) }) }
+            }
+            if (shelf.isNotEmpty()) {
+                item { Section("离线保存", shelf.size) }
+                items(shelf) { Entry(it.title, "已存到本机", { onEntry("offline:${it.id}") }) }
+            }
+            item { Section("收藏", favorites.size) { collection = "全部收藏" } }
+            if (favorites.isEmpty()) item { Empty("暂无收藏，阅读时点亮星标即可在这里找到。") }
+            items(favorites.take(5)) { Entry(it.title, it.id, { onEntry(it.id) }) }
+            item { Section("最近阅读", history.size) { collection = "阅读记录" } }
+            if (history.isEmpty()) item { Empty("阅读过的档案将在这里显示。") }
+            items(history.filter { it.id != resume.firstOrNull()?.id }.take(5)) { Entry(it.title, caption(it), { onEntry(it.id) }) }
         }
-        }
-        item { Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) { Heading("个人资料库"); Small("阅读进度、藏品与常用本地入口") } }
-        item { Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Quick("⬡", "三维档案", Modifier.weight(1f), onArchive)
-            Quick("★", "全部收藏", Modifier.weight(1f)) { collection = "全部收藏" }
-            Quick("⚙", "阅读设置", Modifier.weight(1f), onSettings)
-        } }
-        if (resume.isNotEmpty()) {
-            item { Section("继续阅读", resume.size) { collection = "继续阅读" } }
-            item { val r = resume.first(); Entry(r.title, caption(r), { onEntry(r.id) }) }
-        }
-        if (series.isNotEmpty()) {
-            item { Section("正在跟读", series.size) }
-            items(series) { Entry(it.seriesTitle, it.entryTitle, { onEntry(it.entryId) }) }
-        }
-        if (shelf.isNotEmpty()) {
-            item { Section("离线保存", shelf.size) }
-            items(shelf) { Entry(it.title, "已存到本机", { onEntry("offline:${it.id}") }) }
-        }
-        item { Section("收藏", favorites.size) { collection = "全部收藏" } }
-        if (favorites.isEmpty()) item { Empty("暂无收藏，阅读时点亮星标即可在这里找到。") }
-        items(favorites.take(5)) { Entry(it.title, it.id, { onEntry(it.id) }) }
-        item { Section("最近阅读", history.size) { collection = "阅读记录" } }
-        if (history.isEmpty()) item { Empty("阅读过的档案将在这里显示。") }
-        items(history.filter { it.id != resume.firstOrNull()?.id }.take(5)) { Entry(it.title, caption(it), { onEntry(it.id) }) }
     }
     detail?.let { title ->
         val seal = seals.firstOrNull { it.second == title }
@@ -139,7 +137,7 @@ fun TerminalTab(onEntry: (String) -> Unit, onSettings: () -> Unit, onArchive: ()
 }
 
 private fun caption(row: ReadingEntry) = when { row.progress >= 1f -> "已读完"; row.progress > 0f -> "阅读进度 ${(row.progress * 100).toInt()}%"; row.offset > 0 -> "已保存阅读位置"; else -> row.id }
-@Composable private fun Small(text: String) { Text(text, color = muted, fontSize = 12.sp, lineHeight = 16.sp) }
+@Composable private fun Small(text: String, family: FontFamily? = null) { Text(text, fontFamily = family, color = muted, fontSize = 12.sp, lineHeight = 16.sp) }
 @Composable private fun Heading(text: String) { Text(text, color = ink, fontSize = 20.sp, fontWeight = FontWeight.Bold) }
 @Composable private fun SymbolButton(mark: String, label: String, onClick: () -> Unit) {
     ArchiveAction(label, onClick) { Text(mark, fontSize = 20.sp, color = ink) }

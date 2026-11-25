@@ -36,6 +36,7 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import coil3.compose.AsyncImage
@@ -62,7 +63,7 @@ internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier
     if (initial == null) {
         Column(modifier.padding(20.dp)) {
             Text("无法识别此 Wiki 条目")
-            TextButton(onClick = onBack) { Text("返回") }
+            FilledTonalButton(onClick = onBack) { Text("返回") }
         }
         return
     }
@@ -141,7 +142,7 @@ internal fun ReaderContent(entry: String, onBack: () -> Unit, modifier: Modifier
                 original -> OriginalPage(session, slug, { webView = it }, openNative, loadOriginal)
                 message != null -> Column(Modifier.padding(20.dp)) {
                     Text(message!!)
-                    TextButton(onClick = { attempt++ }) { Text("重新加载") }
+                    FilledTonalButton(onClick = { attempt++ }) { Text("重新加载") }
                 }
                 document == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 else -> NativePage(document!!, session, scroll, offsets, !offline, { original = true }, openNative)
@@ -185,7 +186,7 @@ private fun NativePage(document: WikiPreview, session: ReaderSession, scroll: Sc
         }
         if (document.credits.isNotBlank()) {
             var expanded by remember { mutableStateOf(false) }
-            TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起署名与许可" else "查看署名与许可") }
+            FilledTonalButton(onClick = { expanded = !expanded }) { Text(if (expanded) "收起署名与许可" else "查看署名与许可") }
             if (expanded) Text(document.credits, style = MaterialTheme.typography.bodySmall)
         }
     }
@@ -201,7 +202,7 @@ private fun NativeBlock(block: PreviewBlock, open: (String) -> Unit) {
                 append(block.text)
                 block.links.forEach { link -> addLink(LinkAnnotation.Clickable(link.slug,
                     TextLinkStyles(style = SpanStyle(color = color)), { open(link.slug) }), link.start, link.end) }
-            }, style = MaterialTheme.typography.bodyLarge)
+            }, style = MaterialTheme.typography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 29.sp))
         }
         is PreviewBlock.Image -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
             AsyncImage(model = block.url, contentDescription = block.description.ifBlank { null },

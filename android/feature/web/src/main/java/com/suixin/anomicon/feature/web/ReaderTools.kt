@@ -1,7 +1,6 @@
 package com.suixin.anomicon.feature.web
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -23,7 +22,7 @@ import com.suixin.anomicon.core.network.PreviewBlock
 import com.suixin.anomicon.core.network.WikiPreview
 import androidx.compose.ui.graphics.Color
 import com.suixin.anomicon.designsystem.ArchiveClassification
-import com.suixin.anomicon.designsystem.ArchiveAction
+import androidx.compose.ui.text.font.FontFamily
 import com.suixin.anomicon.designsystem.ArchiveCard
 import kotlin.math.cos
 import kotlin.math.sin
@@ -60,19 +59,33 @@ private fun ReaderIcon(symbol: Symbol, filled: Boolean = false) {
 }
 
 @Composable
+private fun ReaderAction(label: String, symbol: Symbol, onClick: () -> Unit, selected: Boolean = false) {
+    FilledTonalIconButton(onClick = onClick, modifier = Modifier.semantics { contentDescription = label }) {
+        ReaderIcon(symbol, selected)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 internal fun ReaderToolbar(slug: String, title: String, favorite: Boolean?, original: Boolean, offline: Boolean,
     back: () -> Unit, toggleFavorite: () -> Unit, toggleMode: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal=16.dp, vertical=6.dp),
-        horizontalArrangement=Arrangement.spacedBy(6.dp), verticalAlignment=Alignment.CenterVertically) {
-        ArchiveAction("返回", back) { ReaderIcon(Symbol.Back) }
-        Column(Modifier.weight(1f)) {
-            val code = slug.startsWith("scp-")
-            Text(if (code) slug.uppercase() else title, maxLines=1, overflow=TextOverflow.Ellipsis, style=MaterialTheme.typography.titleLarge)
-            if (code && !title.equals(slug,true)) Text(title, maxLines=1, overflow=TextOverflow.Ellipsis, style=MaterialTheme.typography.bodySmall)
-        }
-        if (favorite != null) ArchiveAction(if (favorite) "已收藏" else "收藏", toggleFavorite) { ReaderIcon(Symbol.Star, favorite) }
-        if (!offline) ArchiveAction(if (original) "原生视图" else "原版网页", toggleMode) { ReaderIcon(Symbol.Web) }
-    }
+    val numbered = slug.startsWith("scp-")
+    TopAppBar(
+        windowInsets = WindowInsets(0),
+        navigationIcon = { ReaderAction("返回", Symbol.Back, back) },
+        title = {
+            Column {
+                Text(if (numbered) slug.uppercase() else title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    fontFamily = if (numbered) FontFamily.Monospace else null, style = MaterialTheme.typography.titleLarge)
+                if (numbered && !title.equals(slug, true)) Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        },
+        actions = {
+            if (favorite != null) ReaderAction(if (favorite) "已收藏" else "收藏", Symbol.Star, toggleFavorite, favorite)
+            if (!offline) ReaderAction(if (original) "原生视图" else "原版网页", Symbol.Web, toggleMode)
+        },
+    )
 }
 
 @Composable
@@ -81,9 +94,9 @@ internal fun ReaderStatus(progress: Float, profile: ResearchProfile?, onTool: (R
         Row(Modifier.padding(horizontal=10.dp), verticalAlignment=Alignment.CenterVertically, horizontalArrangement=Arrangement.spacedBy(6.dp)) {
             CircularProgressIndicator(progress={progress}, modifier=Modifier.size(18.dp), strokeWidth=2.dp)
             Text(when { progress >= .98f -> "已读完"; progress > 0 -> "已读 ${(progress*100).toInt()}%"; else -> "开始阅读" }, Modifier.weight(1f), style=MaterialTheme.typography.labelMedium)
-            profile?.let { Text("Lv.${it.level}  ${it.xp} XP", style=MaterialTheme.typography.labelMedium) }
-            TextButton(onClick={ onTool(ReaderTool.Contents) }, contentPadding=PaddingValues(horizontal=4.dp)) { ReaderIcon(Symbol.Contents); Text("目录") }
-            IconButton(onClick={ onTool(ReaderTool.Find) }, modifier=Modifier.size(38.dp).semantics { contentDescription="查找" }) { ReaderIcon(Symbol.Find) }
+            profile?.let { Text("Lv.${it.level}  ${it.xp} XP", fontFamily = FontFamily.Monospace, style=MaterialTheme.typography.labelMedium) }
+            ReaderAction("目录", Symbol.Contents, { onTool(ReaderTool.Contents) })
+            ReaderAction("查找", Symbol.Find, { onTool(ReaderTool.Find) })
         }
     }
 }
@@ -94,7 +107,7 @@ internal fun ReaderArticleInfo(doc: WikiPreview, online: Boolean, onOriginal: ()
     if (online && doc.hasInteractiveContent) ArchiveCard(Modifier.fillMaxWidth()) {
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment=Alignment.CenterVertically) {
             Text("本文包含交互组件或音视频，建议切换原版网页体验", Modifier.weight(1f), style=MaterialTheme.typography.bodySmall)
-            TextButton(onClick=onOriginal) { Text("原版网页") }
+            FilledTonalButton(onClick=onOriginal) { Text("原版网页") }
         }
     }
     if (doc.tags.isNotEmpty() || doc.rating != null || doc.objectClass != null) ArchiveCard(Modifier.fillMaxWidth()) {
@@ -108,10 +121,10 @@ internal fun ReaderArticleInfo(doc: WikiPreview, online: Boolean, onOriginal: ()
                         else -> MaterialTheme.colorScheme.primary
                     }
                     Surface(shape = MaterialTheme.shapes.small, color = color, contentColor = Color.White) {
-                        Text(classification, Modifier.padding(horizontal=8.dp, vertical=3.dp), style=MaterialTheme.typography.labelLarge)
+                        Text(classification, Modifier.padding(horizontal=8.dp, vertical=3.dp), fontFamily = FontFamily.Monospace, style=MaterialTheme.typography.labelLarge)
                     }
                 }
-                doc.rating?.let { Text(it,style=MaterialTheme.typography.labelLarge) }
+                doc.rating?.let { Text(it, fontFamily = FontFamily.Monospace, style=MaterialTheme.typography.labelLarge) }
             }
             FlowRow(horizontalArrangement=Arrangement.spacedBy(5.dp), verticalArrangement=Arrangement.spacedBy(4.dp)) {
                 doc.tags.filterNot { it.equals(doc.objectClass,true) || it == "scp" }.forEach { tag ->
@@ -152,8 +165,8 @@ internal fun ReaderTools(tool: ReaderTool, doc: WikiPreview?, onClose: () -> Uni
         text={ Column {
             if (tool==ReaderTool.Find) OutlinedTextField(query, { query=it }, singleLine=true, label={ Text("关键词") })
             LazyColumn(Modifier.heightIn(max=380.dp)) {
-                items(targets) { (index, label) -> Text(label, Modifier.fillMaxWidth().clickable { onSelect(index) }.padding(vertical=12.dp)) }
+                items(targets) { (index, label) -> Surface(onClick = { onSelect(index) }, modifier = Modifier.fillMaxWidth().padding(vertical=2.dp), shape = MaterialTheme.shapes.small, color = MaterialTheme.colorScheme.surfaceContainerHigh) { Text(label, Modifier.padding(12.dp)) } }
                 if (targets.isEmpty() && (tool==ReaderTool.Contents || query.isNotBlank())) item { Text(if (tool==ReaderTool.Find) "未找到匹配段落" else "正文没有章节标题", Modifier.padding(vertical=12.dp)) }
             }
-        } }, confirmButton={ TextButton(onClick=onClose) { Text("关闭") } })
+        } }, confirmButton={ FilledTonalButton(onClick=onClose) { Text("关闭") } })
 }

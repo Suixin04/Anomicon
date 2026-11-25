@@ -1,6 +1,7 @@
 package com.suixin.anomicon.foundation
 
 import com.suixin.anomicon.designsystem.*
+import androidx.compose.ui.text.font.FontFamily
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.ui.res.painterResource
@@ -34,48 +35,49 @@ fun FoundationTab(onEntry: (String) -> Unit) {
         ExamScreen(active, onEntry, { activeId = null }) { score -> data.saveAssessment(active.id, score, score >= active.cutoff) }
         return
     }
-    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text("基金会", Modifier.padding(top = 14.dp, bottom = 12.dp), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold)
-        Heading("档案资质考核")
-        Caption("模拟 RAISA 编目工单与认知勘验，不阻断日常阅读，通过后签发工牌印章")
-        val passed = exams.filter { results[it.id]?.passed == true }
-        Panel {
-            BadgeHeader(R.drawable.cert_identity) {
-                Text("RAISA 终端核验 · 已签发 ${passed.size}/3 枚印章", fontWeight = FontWeight.Bold)
-                Caption("每科首次通过可获一次性阅历奖励 · 已累计 ${passed.sumOf { it.xp }} / 60 XP")
-            }
-        }
-        exams.forEach { exam ->
-            val record = results[exam.id]
-            Panel(Modifier.clickable { activeId = exam.id }) {
-                val badge = when (exam.id) {
-                    "cert-01" -> R.drawable.cert_lock
-                    "cert-02" -> R.drawable.cert_field
-                    else -> R.drawable.cert_eye
-                }
-                BadgeHeader(badge) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(exam.code, Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                        Caption("建议 · ${exam.rank}" + if (exam.id == "cert-03") "  含透视勘验" else "")
-                    }
-                    Text(exam.title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                }
-                Caption(exam.subtitle)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(if (record?.passed == true) "已签章 · ${record.score}/5" else "首次通过 +${exam.xp} XP", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
-                        Caption("印章：${exam.seal}")
-                    }
-                    Button(onClick = { activeId = exam.id }) { Text(if (record?.passed == true) "再次演练" else "开始核验") }
+    ArchiveLargePage("基金会") {
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Heading("档案资质考核")
+            Caption("模拟 RAISA 编目工单与认知勘验，不阻断日常阅读，通过后签发工牌印章")
+            val passed = exams.filter { results[it.id]?.passed == true }
+            Panel {
+                BadgeHeader(R.drawable.cert_identity) {
+                    Text("RAISA 终端核验 · 已签发 ${passed.size}/3 枚印章", fontWeight = FontWeight.Bold)
+                    Caption("每科首次通过可获一次性阅历奖励 · 已累计 ${passed.sumOf { it.xp }} / 60 XP")
                 }
             }
+            exams.forEach { exam ->
+                val record = results[exam.id]
+                Panel(Modifier.clickable { activeId = exam.id }) {
+                    val badge = when (exam.id) {
+                        "cert-01" -> R.drawable.cert_lock
+                        "cert-02" -> R.drawable.cert_field
+                        else -> R.drawable.cert_eye
+                    }
+                    BadgeHeader(badge) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(exam.code, Modifier.background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(6.dp)).padding(horizontal = 6.dp), fontSize = 11.sp, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Caption("建议 · ${exam.rank}" + if (exam.id == "cert-03") "  含透视勘验" else "")
+                        }
+                        Text(exam.title, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Caption(exam.subtitle)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(if (record?.passed == true) "已签章 · ${record.score}/5" else "首次通过 +${exam.xp} XP", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp)
+                            Caption("印章：${exam.seal}")
+                        }
+                        Button(onClick = { activeId = exam.id }) { Text(if (record?.passed == true) "再次演练" else "开始核验") }
+                    }
+                }
+            }
+            Heading("基金会手册")
+            manuals.take(1).forEach { ManualCard(it, Modifier.fillMaxWidth(), onEntry) }
+            manuals.drop(1).chunked(2).forEach { row ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { ManualCard(it, Modifier.weight(1f), onEntry) } }
+            }
+            Spacer(Modifier.height(LocalArchiveBottomInset.current + 16.dp))
         }
-        Heading("基金会手册")
-        manuals.take(1).forEach { ManualCard(it, Modifier.fillMaxWidth(), onEntry) }
-        manuals.drop(1).chunked(2).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) { row.forEach { ManualCard(it, Modifier.weight(1f), onEntry) } }
-        }
-        Spacer(Modifier.height(LocalArchiveBottomInset.current + 16.dp))
     }
 }
 
@@ -108,9 +110,10 @@ fun FoundationTab(onEntry: (String) -> Unit) {
     val scope = rememberCoroutineScope()
     val question = exam.questions[index]
     val scroll = key(index, finished) { rememberScrollState() }
-    Column(Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        TextButton(onClick = back) { Text("‹ 基金会") }
-        Caption(exam.code); Heading(exam.title)
+    Column(Modifier.fillMaxSize()) {
+        ArchiveDetailBar(exam.title, back)
+        Column(Modifier.verticalScroll(scroll).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Text(exam.code, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.labelMedium)
         if (finished) {
             val score = exam.score(answers.toList())
             Heading(if (score >= exam.cutoff) "核验通过 · ${exam.seal}" else "待复核")
@@ -139,5 +142,6 @@ fun FoundationTab(onEntry: (String) -> Unit) {
             }) { Text(if (index == exam.questions.lastIndex) "提交核验" else "下一题") }
         }
         Spacer(Modifier.height(88.dp))
+    }
     }
 }

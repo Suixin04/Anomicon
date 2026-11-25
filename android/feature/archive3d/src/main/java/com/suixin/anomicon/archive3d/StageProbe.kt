@@ -1,35 +1,28 @@
 package com.suixin.anomicon.archive3d
 
-import android.graphics.Bitmap
-import android.graphics.Rect
-import android.os.Build
-import android.os.Handler
-import android.os.Looper
-import android.view.PixelCopy
+import com.suixin.anomicon.designsystem.ArchiveDetailBar
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.LocalActivity
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
-import dev.chrisbanes.haze.*
-import com.suixin.anomicon.designsystem.archiveGlassEdge
 import io.github.sceneview.*
 import io.github.sceneview.math.Position
 import io.github.sceneview.node.ModelNode
@@ -38,11 +31,7 @@ import java.nio.ByteOrder
 import java.security.MessageDigest
 import kotlin.math.*
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
-import kotlin.coroutines.resume
 
 internal fun verifiedModel(bytes: ByteArray): ByteBuffer {
     require(bytes.size == 3969944) { "模型长度不匹配" }
@@ -56,7 +45,6 @@ internal fun verifiedModel(bytes: ByteArray): ByteBuffer {
 @Composable
 fun StageProbe(
     onBack: () -> Unit,
-    immersiveMaterial: Boolean = true,
     onFullscreenChange: (Boolean) -> Unit = {},
 ) {
     val assets = LocalContext.current.assets
@@ -87,9 +75,10 @@ fun StageProbe(
     }
     val back = { if (fullscreen) fullscreen = false else onBack() }
     BackHandler(onBack = back)
-    var surface by remember { mutableStateOf<SceneView?>(null) }
     Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
-        if (!fullscreen) Text("SCP-173 · 三维档案", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
+        if (!fullscreen) ArchiveDetailBar("三维档案", onBack) {
+            Text("SCP-173", Modifier.padding(end = 16.dp), fontFamily = FontFamily.Monospace)
+        }
         Box(Modifier.fillMaxWidth().weight(1f)) {
             model?.let { buffer ->
                 val engine = rememberEngine()
@@ -99,7 +88,7 @@ fun StageProbe(
                 val lastFrame = remember { longArrayOf(0L) }
                 Scene(modifier = Modifier.fillMaxSize(), engine = engine, modelLoader = loader,
                     childNodes = nodes, cameraNode = camera, cameraManipulator = null,
-                    onViewCreated = { surface = this }, onFrame = { now ->
+                    onFrame = { now ->
                         if (spinning && lastFrame[0] != 0L) yaw = (yaw + ((now - lastFrame[0]) * 1e-9f).coerceAtMost(0.1f) * 0.42f) % (2f * PI.toFloat())
                         lastFrame[0] = now
                         camera.position = Position(distance * cos(pitch) * sin(yaw), distance * sin(pitch), distance * cos(pitch) * cos(yaw))
@@ -113,51 +102,51 @@ fun StageProbe(
                     }
                 })
             } ?: Text(failure ?: "正在校验模型…", Modifier.align(Alignment.Center))
-            StageControls(Modifier.align(Alignment.BottomCenter), surface, immersiveMaterial, spinning, fullscreen,
-                back, { spinning = !spinning }, { spinning = false; yaw = 0f; pitch = 0f; distance = 3.2f }, { fullscreen = !fullscreen })
+            StageControls(Modifier.align(Alignment.BottomCenter).padding(16.dp), spinning, fullscreen,
+                { spinning = !spinning }, { spinning = false; yaw = 0f; pitch = 0f; distance = 3.2f }, { fullscreen = !fullscreen })
         }
         if (!fullscreen) Text("单指旋转 · 双指缩放", Modifier.padding(20.dp), style = MaterialTheme.typography.bodyMedium)
     }
 }
 
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun StageControls(modifier: Modifier, surface: SceneView?, material: Boolean, spinning: Boolean,
-                          fullscreen: Boolean, back: () -> Unit, spin: () -> Unit, reset: () -> Unit, expand: () -> Unit) {
-    val height = with(LocalDensity.current) { 56.dp.roundToPx() }
-    val blur = material && Build.VERSION.SDK_INT >= 31
-    val haze = rememberHazeState(blurEnabled = blur)
-    var frame by remember(surface, blur) { mutableStateOf<Bitmap?>(null) }
-    // SurfaceView is composed in a separate Android surface. Copy only the control strip
-    // into a reduced Compose layer so Haze sees actual Filament pixels.
-    LaunchedEffect(surface, height, blur) {
-        val scene = surface ?: return@LaunchedEffect
-        if (!blur) return@LaunchedEffect
-        val handler = Handler(Looper.getMainLooper())
-        while (isActive) {
-            if (scene.isShown && scene.holder.surface.isValid && scene.width > 0 && scene.height >= height) {
-                val bitmap = Bitmap.createBitmap(max(1, scene.width / 6), max(1, height / 6), Bitmap.Config.ARGB_8888)
-                val src = Rect(0, scene.height - height, scene.width, scene.height)
-                val copied = suspendCancellableCoroutine { continuation ->
-                    PixelCopy.request(scene, src, bitmap, { result -> if (continuation.isActive) continuation.resume(result) }, handler)
-                }
-                if (copied == PixelCopy.SUCCESS) frame = bitmap
+private fun StageControls(modifier: Modifier, spinning: Boolean, fullscreen: Boolean,
+                          spin: () -> Unit, reset: () -> Unit, expand: () -> Unit) {
+    HorizontalFloatingToolbar(expanded = true, modifier = modifier) {
+        StageAction(if (spinning) "暂停" else "360°", spin) { ink ->
+            if (spinning) {
+                drawLine(ink, Offset(7f,5f), Offset(7f,19f), 3f)
+                drawLine(ink, Offset(16f,5f), Offset(16f,19f), 3f)
+            } else drawPath(Path().apply { moveTo(6f,3f); lineTo(21f,12f); lineTo(6f,21f); close() },ink)
+        }
+        StageAction("复位",reset) { ink ->
+            drawArc(ink, 215f, 290f, false, Offset(4f,4f), androidx.compose.ui.geometry.Size(16f,16f),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(2f))
+            drawLine(ink, Offset(3f,3f),Offset(3f,9f),2f)
+            drawLine(ink, Offset(3f,9f),Offset(9f,9f),2f)
+        }
+        StageAction(if (fullscreen) "退出全屏" else "全屏",expand) { ink ->
+            for (x in listOf(4f,20f)) for (y in listOf(4f,20f)) {
+                val dx = if(x==4f) 6f else -6f
+                val dy = if(y==4f) 6f else -6f
+                val corner = if(fullscreen) Offset(x+dx,y+dy) else Offset(x,y)
+                drawLine(ink, corner,Offset(x+dx,y),2f)
+                drawLine(ink, corner,Offset(x,y+dy),2f)
             }
-            delay(120)
         }
     }
-    val background = MaterialTheme.colorScheme.surface
-    val shape = RoundedCornerShape(topStart = 18.dp, topEnd = 18.dp)
-    Box(modifier.fillMaxWidth().height(56.dp).clip(shape).archiveGlassEdge(blur, shape)) {
-        Box(Modifier.fillMaxSize().hazeSource(haze).background(background)) {
-            frame?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxSize(), contentScale = ContentScale.FillBounds) }
-        }
-        Row(Modifier.fillMaxSize().hazeEffect(haze) { blurRadius = 16.dp; backgroundColor = background }
-            .background(background.copy(alpha = if (blur) .72f else 1f)),
-            horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = back) { Text("返回") }
-            TextButton(onClick = spin) { Text(if (spinning) "暂停" else "360°") }
-            TextButton(onClick = reset) { Text("复位") }
-            TextButton(onClick = expand) { Text(if (fullscreen) "退出全屏" else "全屏") }
+}
+
+@Composable
+private fun StageAction(label: String, action: () -> Unit,
+                        glyph: androidx.compose.ui.graphics.drawscope.DrawScope.(androidx.compose.ui.graphics.Color) -> Unit) {
+    IconButton(onClick = action, modifier = Modifier.semantics { contentDescription = label }) {
+        val ink = LocalContentColor.current
+        Canvas(Modifier.size(24.dp)) {
+            val scale = size.width / 24f
+            drawContext.transform.scale(scale, scale, Offset.Zero)
+            glyph(ink)
         }
     }
 }
