@@ -796,6 +796,8 @@ export struct FoundationAssessmentView {
     }
     .scrollable(ScrollDirection.Vertical)
     .scrollBar(BarState.Off)
+    .align(Alignment.Top)
+    .clip(false)
     .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
     .width('100%')
     .height('100%')

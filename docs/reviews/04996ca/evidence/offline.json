@@ -1,0 +1,101 @@
+{
+  "reviewer_id": "offline",
+  "persona": "可靠性审查员",
+  "scope_slice": "Anomicon 04996ca。审查九次本地提交涉及的文章功能及其依赖，覆盖从原生 HTML 解析、正文映射与缓存，到永久离线副本及配图的保存、更新和重开。",
+  "coverage": {
+    "paths_reviewed": [
+      "features/article/src/main/ets/data/ContentGateway.ets",
+      "features/article/src/main/ets/data/RdbOfflineArticleStore.ets",
+      "features/article/src/main/ets/data/RdbArticleDocumentCache.ets",
+      "features/article/src/main/ets/data/ScpNativeHtmlParser.ets",
+      "features/article/src/main/ets/data/ScpNativeHtmlParseTask.ets",
+      "features/article/src/main/ets/data/ScpDocumentMapper.ets",
+      "features/article/src/main/ets/domain/ArticleCachePolicy.ets",
+      "features/article/src/main/ets/domain/ArticleOfflineContracts.ets",
+      "features/article/src/main/ets/application/ArticleContentUseCase.ets",
+      "features/article/src/main/ets/composition/ArticleFeatureFactory.ets",
+      "features/article/src/main/ets/presentation/viewmodel/ArticleViewModel.ets",
+      "features/article/src/main/ets/presentation/view/ArticleNativeRenderer.ets",
+      "features/article/src/main/ets/presentation/view/ScpArticleImage.ets",
+      "features/article/src/main/resources/rawfile/dom_extract.js",
+      "features/article/src/test/ArticleOffline.test.ets",
+      "features/article/src/test/ArticleDocumentMapper.test.ets",
+      "features/terminal/src/main/ets/presentation/view/TerminalLibraryComponents.ets",
+      "features/terminal/src/main/ets/presentation/view/TerminalHome.ets",
+      "products/phone/src/main/ets/pages/MainTabIndex.ets",
+      "products/phone/src/main/ets/pages/ScpArticlePage.ets",
+      "products/phone/src/main/ets/composition/SettingsStorageAdapter.ets",
+      "common/anomiconbasic/src/main/ets/storage/AtomicTextCacheFileStore.ets"
+    ],
+    "notes": "已用对照用例缩小范围。清除临时缓存后断网重开，永久副本仍返回旧正文和可用的本地图。书架缺图发生在正文缓存和永久副本版本不同、且新版图片没有单独缓存时。本机 Node 24.19.0 直接执行去除类型标注的原生解析器、映射器、正文网关和离线仓库逻辑，网络、数据库和文件操作使用内存替身。页面行为依据调用点和界面文案核对。"
+  },
+  "findings": [
+    {
+      "title": "从离线书架重开时，较新的临时正文会盖过已存全的图文版本",
+      "severity": "P2",
+      "domain": "reliability",
+      "file": "features/article/src/main/ets/data/ContentGateway.ets",
+      "line": 57,
+      "why_it_matters": "书架显示“正文与图片已就绪”，读者却可能在断网时打开另一版正文。那一版新增的配图没有随副本保存，图叙型文章会缺少内容。",
+      "suggested_fix": "让“离线保存”书架传递打开已保存版本的意图，按同一条离线记录读取正文和图片清单。普通阅读入口仍可选用较新的正文。",
+      "confidence": 0.99,
+      "evidence": [
+        "先保存带图 A 的 v1。日后普通联网阅读命中已过期的正文缓存，ArticleViewModel.ets 第 570–580 行触发后台重验，ContentGateway.ets 第 112–132 行把含图 B 的 v2 写入临时缓存。若读者未更新离线副本、也未浏览过图 B，随后断网从终端的“离线保存”列表打开。",
+        "TerminalLibraryComponents.ets 第 652–653 行只传 item.content，TerminalHome.ets 第 349–352 行和 MainTabIndex.ets 第 257–266、685–686 行将它送入通用文章路由。ContentGateway.ets 第 51–73 行命中临时正文就返回。ArticleNativeRenderer.ets 第 2924–2927、3755–3765 行仍拿 v1 的图片清单查图 B，查不到后 ScpArticleImage.ets 第 39–65、112–129 行改用远程地址，加载失败时显示“图片加载失败”。",
+        "内存用例返回 document_cache、正文 v2，书架快照仍为“正文与图片已就绪”。图 A 有本地 URI，当前正文引用的图 B 没有。移除临时正文缓存后，同一操作返回 offline_archive、正文 v1，图 A 可以从包内解析。"
+      ]
+    },
+    {
+      "title": "清理临时缓存后，联网点击“更新副本”仍会把旧正文保存一遍",
+      "severity": "P2",
+      "domain": "correctness",
+      "file": "features/article/src/main/ets/presentation/viewmodel/ArticleViewModel.ets",
+      "line": 954,
+      "why_it_matters": "原文已经修订时，读者仍会得到保存完成提示和新的保存时间，以为最新内容已可离线阅读。",
+      "suggested_fix": "将“更新副本”和“补齐离线图片”区分处理。更新正文时先针对原文发条件请求，用已确认的修订生成副本。网络失败时保留旧包，并提示本次未能检查更新。补图可继续使用当前副本。",
+      "confidence": 0.99,
+      "evidence": [
+        "保存 v1 后在设置清理临时缓存，保持联网，原站已提供 v2。SettingsStorageAdapter.ets 第 62–67 行清理临时正文与图鉴缓存，永久副本仍在。普通重开时 ContentGateway.ets 第 71–83 行先返回永久正文，stale 为 false，ArticleViewModel.ets 第 570–581 行因此进入 READY 并跳过后台校验。",
+        "ScpArticlePage.ets 第 1009–1019、1216–1223 行显示“更新副本”，点击后 ArticleViewModel.ets 第 941–957 行直接保存当前 document 和 documentPayloadJson。RdbOfflineArticleStore.ets 第 190–191、329–345 行用当前时间落库。ScpArticlePage.ets 第 966–969 行据此提示“离线保存完成”。",
+        "内存用例给 HTML 端口配置了 v2。普通打开并按上述参数保存后，HTML 调用次数为 0，重读永久正文仍为 v1。对照用例中，保留一份已过期的临时缓存会得到 stale=true，随后强制重验调用 HTML 1 次并返回 v2。"
+      ]
+    },
+    {
+      "title": "离线副本更新失败时，旧正文和图片已经被替换",
+      "severity": "P2",
+      "domain": "data",
+      "file": "features/article/src/main/ets/data/RdbOfflineArticleStore.ets",
+      "line": 285,
+      "why_it_matters": "更新前完整可读的副本会在保存报错后变成正文和图片清单分属两个版本的包。读者断网重开时，连上一版已经下载的图片也无法使用。",
+      "suggested_fix": "把本次更新的正文、清单和新增图片写入独立的版本目录，校验完毕后一次切换数据库指向的版本，成功后再回收上一版。写入失败或应用中断时保留仍被数据库引用的完整版本。",
+      "confidence": 0.99,
+      "evidence": [
+        "原离线包 v1 引用图 A，更新至改用图 B 的 v2。RdbOfflineArticleStore.ets 第 201–204、282–286 行先覆盖两版共用的 document.json，第 297–321、797–807 行随后清掉图 A。直到第 344–346 行才提交新清单。数据库插入失败会在第 565–576 行抛错，第 366–368 行只清除保存标记。",
+        "在真实 save、loadDocument、verifyRowOnDisk 和清理流程中，用内存文件及数据库替身使最后一次元数据写入失败。保存确实抛错，再次读取却得到 v2 正文、登记 v1.png 的旧清单，以及只剩 v2.png 的图片目录。重新检查的计数为 0/1，徽标为“仍缺 1 张图”。",
+        "第 708–732 行的临时文件、fsync 和 rename 能保护单个正文文件。第 182–185 行的同篇保存互斥也能挡住并发保存。上述用例只有一次更新，完整重试并成功提交元数据后，新图恢复可读。"
+      ]
+    },
+    {
+      "title": "原生阅读会把数字引用表示的扩展汉字和表情解成错误字符",
+      "severity": "P3",
+      "domain": "correctness",
+      "file": "features/article/src/main/ets/data/ScpNativeHtmlParser.ets",
+      "line": 408,
+      "why_it_matters": "作者用 HTML 数字引用书写的生僻字、表情或代码示例会在原生正文中变样。解析仍返回成功，错误文本也会进入正文缓存及离线副本。",
+      "suggested_fix": "按 HTML 字符引用做单次解码，合法 Unicode 码点用 String.fromCodePoint 生成字符。用基本平面汉字、补充平面字符和表示字面实体的文本分别做回归断言。",
+      "confidence": 1,
+      "evidence": [
+        "用有效标题和正文构造文章，段落内放入十六进制 &#x20000;、十进制 &#128512;、字面实体文本 &amp;lt; 和普通汉字引用 &#x4E2D;。ScpNativeHtmlParser.ets 第 389–395、398–413 行依次做字符串替换，并将数字交给只取低 16 位的 String.fromCharCode。",
+        "实际执行原生解析和 ScpDocumentMapper 后，解析标记 ok=true。前三项分别输出 U+0000、U+F600 和 <，原应是 U+20000、U+1F600 和字面文本 &lt;。作为对照，&#x4E2D; 正确得到“中”。ContentGateway.ets 第 112–138 行接受成功结果并写入正文缓存，只有出错时才进入 ArkWeb 提取。"
+      ]
+    }
+  ],
+  "residual_risks": [
+    "实际可见的缺图数量取决于新版改了哪些图片，以及设备是否另有相同图片的临时缓存。",
+    "原生字符引用问题已在给定 HTML 上复现，线上文章使用这些引用的频率尚未统计。"
+  ],
+  "testing_gaps": [
+    "ArticleOffline.test.ets 第 288–321 行使用恒为空的临时正文缓存和内存离线仓库，覆盖了清缓存后的断网重开。还需将临时缓存和永久副本置于不同修订，分别通过书架入口和更新入口核对正文与图片。",
+    "数据库提交失败用例使用内存替身。设备端仍需覆盖真实文件写入、RDB 提交前中断、重启后的恢复，以及 ArkUI 图片加载结果。"
+  ]
+}

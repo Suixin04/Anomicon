@@ -1,0 +1,90 @@
+{
+  "reviewer_id": "reader",
+  "persona": "frontend-reviewer",
+  "scope_slice": "04996ca 的文章原生与网页阅读器、手机阅读页及阅读状态。重点核对了新增的目录、文内查找、系列阅读与上滑已读。",
+  "coverage": {
+    "paths_reviewed": [
+      "features/article/src/main/ets/presentation/view/ArticleNativeRenderer.ets",
+      "features/article/src/main/ets/presentation/view/ArticleWebRenderer.ets",
+      "features/article/src/main/ets/presentation/view/ArticleRenderer.ets",
+      "features/article/src/main/ets/presentation/view/ArticleScrollRestore.ets",
+      "features/article/src/main/ets/presentation/view/ArticleReadingStatusBar.ets",
+      "features/article/src/main/ets/presentation/viewmodel/ArticleViewModel.ets",
+      "features/article/src/main/ets/domain/ArticleNavigation.ets",
+      "products/phone/src/main/ets/pages/ScpArticlePage.ets",
+      "features/library/src/main/ets/application/ReadingActivityCoord.ets",
+      "features/library/src/main/ets/domain/ReadingActivityPolicy.ets",
+      "features/article/src/test/ArticleNavigation.test.ets",
+      "features/article/src/test/ArticleReadingRestore.test.ets",
+      "features/article/src/test/ArticleScrollRestore.test.ets"
+    ],
+    "notes": "沿历史查询和首次布局的两种先后顺序检查了原生续读。ArticleScrollRestore 会等两者到齐才应用正偏移，用户先滚动或打开带锚点的路由会取消此次恢复。已读文章重开从顶部开始是已读锁的明确行为。单独检查了脚注正向路径，点击引用后窄屏显示对应脚注面板，宽屏选中侧栏对应条目。"
+  },
+  "findings": [
+    {
+      "title": "长折叠块或标签页中的搜索结果只跳到容器开头",
+      "severity": "P2",
+      "domain": "frontend",
+      "file": "features/article/src/main/ets/presentation/view/ArticleNativeRenderer.ets",
+      "line": 1364,
+      "why_it_matters": "读者从目录或搜索定位几屏之后的段落时，正确的折叠块会打开，命中计数和摘要也会更新，但目标正文仍在屏外，需要手动再找一次。",
+      "suggested_fix": "先滚动到外层列表项，等目标容器展开并完成布局后，再按 blockKey 将目标子块移入可视区。脚注返回引用时也保存引用所在子块及其折叠、标签路径。",
+      "confidence": 0.99,
+      "evidence": [
+        "在长折叠块尾部搜索一个独有词，或从目录点其中的子标题。ArticleNavigation.ets:227 和 274–286 会保留每个子块的键，但子块继承相同的 sectionIndex。ArticleNativeRenderer.ets:1015–1029 把整个折叠块作为一个列表项。",
+        "ArticleNativeRenderer.ets:1334–1370 展开祖先、切换标签后仅按 sectionIndex 滚至行首，blockKey 只用于高亮。本机用 61 段的折叠块执行实际索引、搜索和跳转方法，以记录器接收 Scroller 调用。第 1 段与第 61 段的高亮键不同，滚动指令同为第 2 行、START、偏移 −12 vp，独立段落则滚到第 3 行。",
+        "页底脚注的「返回正文」也只查引用对应的外层行。引用在折起的容器中时，这条路径连容器也不会展开。见 ArticleNativeRenderer.ets:1030–1036、1511–1519、3531。普通顶层段落和靠近容器开头的命中可以直接看到。"
+      ]
+    },
+    {
+      "title": "在原版网页持续滚动阅读，研读计时仍会因空闲而暂停",
+      "severity": "P2",
+      "domain": "correctness",
+      "file": "products/phone/src/main/ets/pages/ScpArticlePage.ets",
+      "line": 1449,
+      "why_it_matters": "原生正文已就绪时，读者切换到原版网页连续阅读数分钟，只操作网页会使研究档案少记实际阅读时长。自动切入网页的交互文章也会经过这条路径。",
+      "suggested_fix": "网页阅读器把用户滚动或触控事件传给现有阅读会话，并在滚动结束、切换模式或离开页面时结束连续交互。用同一篇文章分别检查网页持续滚动和静置时的计时结果。",
+      "confidence": 0.98,
+      "evidence": [
+        "打开一篇已就绪的长文，进入「原版网页模式」，保持前台三分钟并持续在网页内滚动。ScpArticlePage.ets:1415–1444 只给隐藏的原生列表绑定滚动开始、停止和检查点。1449–1461 创建的网页阅读器仅上报链接、后退状态及返回原生。ArticleWebRenderer.ets:60–63 也没有阅读交互回调。",
+        "ReadingActivityCoord.ets:19–21、390–405 每 30 秒检查一次。没有新交互时，有效时长最多算到最后一次可识别交互之后 90 秒，此后以 idle 结束。用实际 ReadingActivityPolicy.ets 纯函数输入经过 180 秒、最后交互在第 0 秒、上限 90 秒，返回有效终点 90 秒。",
+        "原生列表会报告连续滚动，下一次可识别交互也会启动新的计时段。资料库负责人核对了 ReadingActivityCoord.ets:245–295、436–455，确认该空闲边界。"
+      ]
+    },
+    {
+      "title": "原生阅读页缺少可用键盘或读屏激活的已读操作",
+      "severity": "P2",
+      "domain": "frontend",
+      "file": "products/phone/src/main/ets/pages/ScpArticlePage.ets",
+      "line": 1139,
+      "why_it_matters": "只用键盘、滚轮或读屏激活控件的读者可以读到文末，却不能在普通单篇的原生页将文章标为已读或取消已读锁，资料库里的完成状态与阅读情况脱节。",
+      "suggested_fix": "保留文末上滑手势，同时让页尾成为可聚焦、可激活的按钮，或在原生模式的更多菜单里复用已有的「标为已读／取消已读标记」。",
+      "confidence": 0.98,
+      "evidence": [
+        "打开普通单篇原生正文，用键盘或滚轮移到文末并尝试激活完成提示。ArticleNativeRenderer.ets:3688–3736 的页尾只有图标、文字和拖动进度条。组件唯一触发 onToggleCompleted 的路径要求在底部向上拖到 72 vp，再收到 TouchType.Up。见 643、1169–1229、4770–4772。",
+        "ScpArticlePage.ets:1139–1185 仅在网页模式提供显式完成菜单。触屏用户可执行手势，部分系列文章的「完成并下一篇」也可标记当前条目，普通单篇的原生模式缺少对应操作。"
+      ]
+    },
+    {
+      "title": "原版网页切到下一迭代后，外部浏览器仍打开进入时的页面",
+      "severity": "P3",
+      "domain": "correctness",
+      "file": "products/phone/src/main/ets/pages/ScpArticlePage.ets",
+      "line": 1205,
+      "why_it_matters": "读者想用系统浏览器继续读当前迭代，交接时却回到入口版本，必须再次寻找刚才的那一页。",
+      "suggested_fix": "让网页阅读器在主文档导航完成时向父页报告当前 URL。外部打开操作使用通过现有 URL 策略校验的当前地址，进入网页的目标地址单独保留。",
+      "confidence": 0.98,
+      "evidence": [
+        "从多迭代文章首页进入原版网页，在 Web 内跟随同篇的 /offset/2，再点更多菜单「在浏览器中打开」。ArticleWebRenderer.ets:184–196、220–235 放行同篇迭代导航，332–340 只更新子组件自己的 lastLoadedUrl。",
+        "ScpArticlePage.ets:716–735 进入模式时记录 webModeUrl，1449–1461 的父子回调没有同步当前地址。1201–1207 因此把入口地址交给系统。若直接从原生正文点击 /offset/2 进入网页且未继续翻页，793–797 会将该迭代作为入口，外部打开的位置正确。"
+      ]
+    }
+  ],
+  "residual_risks": [
+    "网页模式的退出和重新进入也值得在同一文章连续检查。ScpArticlePage.ets:597–606、1689–1697 用原生列表偏移保存进度，新创建的网页控制器会加载入口 URL。具体站点可能自行用网页存储恢复状态。"
+  ],
+  "testing_gaps": [
+    "本次实际执行的是 Node.js 内存实验，使用仓库中的导航、搜索、跳转方法和空闲计时纯函数。跳转实验记录了 Scroller 入参。实际 ArkUI 可视区域、键盘或读屏焦点、系统浏览器交接仍待设备验证。",
+    "核对了仓库阅读恢复与导航测试的源码。本次未构建、安装或操作设备。"
+  ]
+}

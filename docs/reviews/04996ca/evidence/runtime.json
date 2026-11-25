@@ -1,0 +1,308 @@
+{
+  "commit": "04996ca",
+  "product": "phone Release",
+  "emulatorApi": 26,
+  "isolatedBundle": "com.suixin.anomicon.uxaudit",
+  "hapBytes": 25385313,
+  "hapSha256": "d19b97b97ac5d393e1cb7efaf8cfea8e5da60836c7f8d91774ded1d3eefb1413",
+  "uiTreeExtracts": {
+    "scp173-first": [
+      {
+        "type": "Text",
+        "text": "正在加载正文…",
+        "clickable": "false",
+        "bounds": "[363,1281][645,1328]"
+      }
+    ],
+    "scp173-ready": [
+      {
+        "type": "Text",
+        "text": "Euclid",
+        "clickable": "false",
+        "bounds": "[86,428][258,497]"
+      },
+      {
+        "type": "Text",
+        "text": "收容中的SCP-173",
+        "clickable": "false",
+        "bounds": "[57,1480][951,1520]"
+      },
+      {
+        "type": "Text",
+        "text": "项目编号：SCP-173",
+        "clickable": "true",
+        "bounds": "[46,1577][962,1674]"
+      }
+    ],
+    "web-loaded": [
+      {
+        "type": "Text",
+        "text": "原版网页模式",
+        "clickable": "false",
+        "bounds": "[143,299][350,339]"
+      },
+      {
+        "type": "image",
+        "text": "SCP-173.jpg",
+        "clickable": "false",
+        "bounds": "[33,575][896,1281]"
+      },
+      {
+        "type": "paragraph",
+        "text": "项目编号：SCP-173",
+        "clickable": "false",
+        "bounds": "[46,573][964,1413]"
+      }
+    ],
+    "article-menu-saved": [
+      {
+        "type": "MenuItem",
+        "text": "离线已就绪 · 更新副本",
+        "clickable": "true",
+        "bounds": "[329,978][951,1117]"
+      },
+      {
+        "type": "Text",
+        "text": "离线已就绪 · 更新副本",
+        "clickable": "false",
+        "bounds": "[364,1001][895,1093]"
+      },
+      {
+        "type": "MenuItem",
+        "text": "移除离线保存",
+        "clickable": "true",
+        "bounds": "[329,1117][951,1256]"
+      },
+      {
+        "type": "Text",
+        "text": "移除离线保存",
+        "clickable": "false",
+        "bounds": "[364,1140][895,1232]"
+      }
+    ],
+    "model173": [
+      {
+        "type": "Text",
+        "text": "三维档案",
+        "clickable": "false",
+        "bounds": "[184,132][414,199]"
+      },
+      {
+        "type": "Text",
+        "text": "三维模型暂时无法加载，请稍后重试。",
+        "clickable": "false",
+        "bounds": "[162,782][847,850]"
+      },
+      {
+        "type": "Button",
+        "text": "重新加载",
+        "clickable": "true",
+        "bounds": "[383,885][625,994]"
+      }
+    ],
+    "model173-retry": [
+      {
+        "type": "Text",
+        "text": "三维模型暂时无法加载，请稍后重试。",
+        "clickable": "false",
+        "bounds": "[162,782][847,850]"
+      },
+      {
+        "type": "Button",
+        "text": "重新加载",
+        "clickable": "true",
+        "bounds": "[383,885][625,994]"
+      }
+    ],
+    "remote131": [
+      {
+        "type": "Text",
+        "text": "三维档案",
+        "clickable": "false",
+        "bounds": "[184,132][414,199]"
+      },
+      {
+        "type": "Text",
+        "text": "该模型尚未下载，请先前往三维档案馆获取。",
+        "clickable": "false",
+        "bounds": "[142,748][867,884]"
+      },
+      {
+        "type": "Button",
+        "text": "重新加载",
+        "clickable": "true",
+        "bounds": "[383,919][625,1028]"
+      }
+    ],
+    "remote131-retry": [
+      {
+        "type": "Text",
+        "text": "该模型尚未下载，请先前往三维档案馆获取。",
+        "clickable": "false",
+        "bounds": "[142,748][867,884]"
+      },
+      {
+        "type": "Button",
+        "text": "重新加载",
+        "clickable": "true",
+        "bounds": "[383,919][625,1028]"
+      }
+    ],
+    "completion-tap": [
+      {
+        "type": "Text",
+        "text": "已读 100%",
+        "clickable": "false",
+        "bounds": "[166,299][332,339]"
+      },
+      {
+        "type": "Text",
+        "text": "继续上滑标记已读完",
+        "clickable": "false",
+        "bounds": "[373,1946][684,1986]"
+      }
+    ],
+    "completion-pull": [
+      {
+        "type": "Text",
+        "text": "已读完",
+        "clickable": "false",
+        "bounds": "[166,299][270,339]"
+      },
+      {
+        "type": "Text",
+        "text": "已读完 · 进度已锁定",
+        "clickable": "false",
+        "bounds": "[372,1946][684,1986]"
+      }
+    ],
+    "clear-history-before": [
+      {
+        "type": "Text",
+        "text": "当前保留 2 条本地搜索记录",
+        "clickable": "false",
+        "bounds": "[230,1214][649,1254]"
+      }
+    ],
+    "clear-history-confirmed": [
+      {
+        "type": "Text",
+        "text": "暂无本地搜索记录",
+        "clickable": "false",
+        "bounds": "[230,1214][506,1254]"
+      },
+      {
+        "type": "Toast",
+        "text": "搜索历史已清空",
+        "clickable": "false",
+        "bounds": "[317,1819][691,1923]"
+      },
+      {
+        "type": "Text",
+        "text": "搜索历史已清空",
+        "clickable": "false",
+        "bounds": "[317,1819][691,1923]"
+      }
+    ],
+    "search-after-clear": [
+      {
+        "type": "Text",
+        "text": "历史搜索",
+        "clickable": "false",
+        "bounds": "[46,566][208,613]"
+      },
+      {
+        "type": "Text",
+        "text": "SCP-131",
+        "clickable": "true",
+        "bounds": "[46,642][255,712]"
+      },
+      {
+        "type": "Text",
+        "text": "SCP-173",
+        "clickable": "true",
+        "bounds": "[278,642][487,712]"
+      }
+    ],
+    "search-clean-ready": [
+      {
+        "type": "Text",
+        "text": "随机发现",
+        "clickable": "false",
+        "bounds": "[46,566][962,613]"
+      }
+    ]
+  },
+  "modelRetryProcessLog": [
+    "11-24 20:55:33.879 18604 18604 F C01402/com.suixin.anomicon.uxaudit/ohos_lume: (object_registry.cpp:294): Failed to build object (SceneManager).",
+    "11-24 20:55:33.879 18604 18604 F C01402/com.suixin.anomicon.uxaudit/ohos_lume: (object_registry.cpp:284): Could not create instance of SceneManager",
+    "11-24 20:55:33.879 18604 18604 E C01402/com.suixin.anomicon.uxaudit/ohos_lume: Creating scene manager failed"
+  ],
+  "packedModels": {
+    "resources/rawfile/models/scp-939.glb": {
+      "bytes": 3209604,
+      "sha256": "cd243a640bcba5379609957ebb94beea3c31c2bd8a6e7e8a53e605abe4a33767",
+      "scenes": 1,
+      "meshes": 1
+    },
+    "resources/rawfile/models/scp-173.glb": {
+      "bytes": 3969944,
+      "sha256": "f89aefe1f7cf116dc8c12e9c5d554278217afe4744e49e14ab52840ca91f256d",
+      "scenes": 1,
+      "meshes": 1
+    },
+    "resources/rawfile/models/scp-049.glb": {
+      "bytes": 6947368,
+      "sha256": "7d9fd347d38e67ed2e3b8465b62d27674cacfeeb15c4e31b953fef19e97ef962",
+      "scenes": 1,
+      "meshes": 1
+    },
+    "resources/rawfile/models/scp-106.glb": {
+      "bytes": 8662380,
+      "sha256": "b4141e5b4ca03cce7da388a28d0d18d25a8dbb9d88545e79028ebd965fd0d23b",
+      "scenes": 1,
+      "meshes": 1
+    }
+  },
+  "hostTests": {
+    "common/anomiconbasic": {
+      "Success": 6
+    },
+    "features/article": {
+      "Success": 47
+    },
+    "features/catalog": {
+      "Success": 35,
+      "Error": 3
+    },
+    "features/explore": {
+      "Success": 19
+    },
+    "features/library": {
+      "Success": 15
+    },
+    "features/settings": {
+      "Success": 4
+    },
+    "features/terminal": {
+      "Success": 10
+    }
+  },
+  "failedHostCases": [
+    {
+      "module": "features/catalog",
+      "test": "returns the 200 HTML while the queued cache put is still pending",
+      "result": "Error"
+    },
+    {
+      "module": "features/catalog",
+      "test": "retries without validators when a 304 cannot renew a discarded body",
+      "result": "Error"
+    },
+    {
+      "module": "features/catalog",
+      "test": "uses the newer cached body when a late 304 cannot renew",
+      "result": "Error"
+    }
+  ]
+}

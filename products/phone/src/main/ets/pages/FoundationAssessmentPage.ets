@@ -147,5 +147,9 @@ struct FoundationAssessmentPage {
       popNavigationDestination(this.pageStack);
       return true;
     })
+    .ignoreLayoutSafeArea(
+      [LayoutSafeAreaType.SYSTEM],
+      [LayoutSafeAreaEdge.TOP, LayoutSafeAreaEdge.BOTTOM]
+    )
   }
 }

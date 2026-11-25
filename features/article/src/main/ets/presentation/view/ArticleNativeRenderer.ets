@@ -628,6 +628,7 @@ export struct ArticleNativeRenderer {
   private pendingRouteAnchor: string = '';
   private hasLaidOutCurrentDoc: boolean = false;
   private readonly bottomPullTriggerVp: number = 72;
+  private readonly bottomPullDeadZoneVp: number = 4;
   private bottomPullTracking: boolean = false;
   private bottomPullAnchorY: number = 0;
   private bottomPullLastY: number = 0;
@@ -1169,9 +1170,13 @@ export struct ArticleNativeRenderer {
       }
       this.bottomPullLastY = touchY;
       const pullDelta = this.bottomPullAnchorY - touchY;
-      if (pullDelta <= 0 || !this.isScrollerAtBottom()) {
-        this.bottomPullProgress = 0;
-        this.bottomPullReady = false;
+      if (pullDelta <= 0) {
+        if (this.bottomPullProgress !== 0) {
+          this.bottomPullProgress = 0;
+        }
+        if (this.bottomPullReady) {
+          this.bottomPullReady = false;
+        }
         if (!this.isScrollerAtBottom()) {
           this.bottomPullTracking = false;
         } else {
@@ -1179,7 +1184,12 @@ export struct ArticleNativeRenderer {
         }
         return;
       }
-      this.bottomPullProgress = this.clampValue(pullDelta / this.bottomPullTriggerVp, 0, 1);
+      const effectiveSpan = Math.max(1, this.bottomPullTriggerVp - this.bottomPullDeadZoneVp);
+      const rawProgress = this.clampValue((pullDelta - this.bottomPullDeadZoneVp) / effectiveSpan, 0, 1);
+      const quantizedProgress = Math.round(rawProgress * 48) / 48;
+      if (quantizedProgress !== this.bottomPullProgress) {
+        this.bottomPullProgress = quantizedProgress;
+      }
       if (!this.bottomPullReady && pullDelta >= this.bottomPullTriggerVp) {
         this.bottomPullReady = true;
         this.onBottomPullHaptic();
@@ -3693,22 +3703,21 @@ export struct ArticleNativeRenderer {
   @Builder
   private licenseFooter() {
     Column({ space: 6 }) {
-      if (this.bottomPullProgress > 0) {
-        Stack({ alignContent: Alignment.Start }) {
-          Row()
-            .width(48)
-            .height(2)
-            .borderRadius(1)
-            .backgroundColor($r('sys.color.comp_background_tertiary'))
-          Row()
-            .width(this.bottomPullBarWidth())
-            .height(2)
-            .borderRadius(1)
-            .backgroundColor(this.bottomPullBarFillColor())
-        }
-        .width(48)
-        .height(2)
+      Stack({ alignContent: Alignment.Start }) {
+        Row()
+          .width(48)
+          .height(2)
+          .borderRadius(1)
+          .backgroundColor($r('sys.color.comp_background_tertiary'))
+        Row()
+          .width(this.bottomPullBarWidth())
+          .height(2)
+          .borderRadius(1)
+          .backgroundColor(this.bottomPullBarFillColor())
       }
+      .width(48)
+      .height(2)
+      .opacity(this.bottomPullProgress > 0 ? 1 : 0)
 
       Row({ space: 5 }) {
         SymbolGlyph(this.bottomPullPrimaryIcon())
@@ -3718,7 +3727,9 @@ export struct ArticleNativeRenderer {
           .fontSize(AppTypography.CAPTION_L)
           .fontWeight(this.bottomPullPrimaryWeight())
           .fontColor(this.bottomPullPrimaryColor())
+          .maxLines(1)
       }
+      .height(20)
       .alignItems(VerticalAlign.Center)
 
       if (this.document.pageVersion.length > 0) {
@@ -3731,7 +3742,7 @@ export struct ArticleNativeRenderer {
     .id('articleCompletionFooter')
     .width('100%')
     .alignItems(HorizontalAlign.Center)
-    .padding({ top: 18, bottom: 16 })
+    .padding({ top: 10, bottom: 16 })
   }
 
   private hasArticleMetadataChips(): boolean {

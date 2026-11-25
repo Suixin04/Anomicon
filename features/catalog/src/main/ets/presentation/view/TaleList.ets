@@ -1,3 +1,10 @@
+import {
+  LazyColumnLayout,
+  LazyColumnLayoutAttribute,
+  LazyVWaterFlowLayout,
+  LazyVWaterFlowLayoutAttribute,
+  LengthMetrics
+} from '@kit.ArkUI';
 import { CatalogTaleEntry } from '../../domain/CatalogContracts';
 import { TaleListViewModel } from '../viewmodel/TaleListViewModel';
 import { TALE_FILTER_BAR_HEIGHT, TaleFilterState } from '../TaleFilterState';
@@ -101,8 +108,7 @@ export struct TaleList {
   @Monitor('filterState.letter')
   onTaleLetterChange(): void {
     this.viewModel.setLetter(this.filterState.letter);
-    // 回到列表顶边时保留悬浮标题栏和筛选栏的 contentStartOffset。
-    this.scroller.scrollEdge(Edge.Top);
+    this.scroller.scrollTo({ xOffset: 0, yOffset: 0, animation: false });
   }
 
   @Monitor('completionRevision')
@@ -400,48 +406,68 @@ export struct TaleList {
       .padding({ top: 4, bottom: 2 })
     }
     .width('100%')
-    .padding({ bottom: 8 })
+    .padding({
+      left: this.horizontalMargin(),
+      right: this.horizontalMargin(),
+      bottom: 8
+    })
+    .alignItems(HorizontalAlign.Start)
+  }
+
+  @Builder
+  private listHeader() {
+    Column() {
+      Blank()
+        .width('100%')
+        .height(pageContentTop() + TALE_FILTER_BAR_HEIGHT + PHONE_TAB_CONTENT_TOP_GAP)
+
+      if (this.showVisibleDirectoryBanner()) {
+        this.directoryUpdateBlock()
+      }
+
+      if (this.shouldShowFeaturedSeries()) {
+        this.featuredSeriesHeader()
+      }
+    }
+    .width('100%')
     .alignItems(HorizontalAlign.Start)
   }
 
   build() {
     Column() {
       Stack({ alignContent: Alignment.Top }) {
-        List({ scroller: this.scroller, space: 10 }) {
-          if (this.shouldShowFeaturedSeries()) {
-            ListItemGroup({ header: this.featuredSeriesHeader() })
+        Scroll(this.scroller) {
+          LazyColumnLayout() {
+            LazyVWaterFlowLayout() {
+              Repeat<CatalogTaleEntry>(this.viewModel.visibleTales)
+                .each((row: RepeatItem<CatalogTaleEntry>) => {
+                  this.taleRow(row);
+                })
+                .key((tale: CatalogTaleEntry) => tale.id)
+                .virtualScroll();
+            }
+            .columnsTemplate(this.columnCount() > 1 ? '1fr 1fr' : '1fr')
+            .columnsGap(LengthMetrics.vp(12))
+            .rowsGap(LengthMetrics.vp(10))
+            .padding({
+              left: this.horizontalMargin(),
+              right: this.horizontalMargin(),
+              bottom: PHONE_TAB_CONTENT_BOTTOM_SPACE
+            });
           }
-
-          Repeat<CatalogTaleEntry>(this.viewModel.visibleTales)
-            .each((row: RepeatItem<CatalogTaleEntry>) => {
-              ListItem() {
-                this.taleRow(row)
-              }
-            })
-            .key((tale: CatalogTaleEntry) => tale.id)
-            .virtualScroll()
-        }
-        .lanes(this.columnCount(), 12)
-        .contentStartOffset(
-          pageContentTop() + TALE_FILTER_BAR_HEIGHT + PHONE_TAB_CONTENT_TOP_GAP +
-            (this.showVisibleDirectoryBanner() ? 52 : 0)
-        )
-        .contentEndOffset(PHONE_TAB_CONTENT_BOTTOM_SPACE)
-        .scrollBar(BarState.Off)
-        .edgeEffect(EdgeEffect.Spring)
-        .width('100%')
-        .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH })
-        .height('100%')
-        .padding({ left: this.horizontalMargin(), right: this.horizontalMargin() })
-
-        if (this.showVisibleDirectoryBanner()) {
-          Column() {
-            this.directoryUpdateBlock()
-          }
+          .header(() => {
+            this.listHeader();
+          })
           .width('100%')
-          .alignItems(HorizontalAlign.Center)
-          .margin({ top: pageContentTop() + TALE_FILTER_BAR_HEIGHT + PHONE_TAB_CONTENT_TOP_GAP })
+          .constraintSize({ maxWidth: WIDE_CONTENT_MAX_WIDTH });
         }
+        .scrollable(ScrollDirection.Vertical)
+        .scrollBar(BarState.Off)
+        .align(Alignment.Top)
+        .clip(false)
+        .edgeEffect(EdgeEffect.Spring, { alwaysEnabled: true })
+        .width('100%')
+        .height('100%')
 
         if (this.viewModel.tales.length === 0 && this.viewModel.loading) {
           this.loadingBlock()

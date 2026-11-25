@@ -191,10 +191,11 @@ test('footer uses pull-up guidance without an explicit completion button', () =>
       }
     }
   });
-  const view = native({ Column: widget(), If: widget(), Row: widget(), SymbolGlyph: widget(), Text: widget(),
-    Button: ButtonProxy, HorizontalAlign: {}, VerticalAlign: {}, AppTypography: {} });
+  const view = native({ Column: widget(), If: widget(), Row: widget(), Stack: widget(), SymbolGlyph: widget(),
+    Text: widget(), Button: ButtonProxy, Alignment: {}, HorizontalAlign: {}, VerticalAlign: {}, AppTypography: {} });
   let activations = 0;
   let hapticCount = 0;
+  let atBottom = true;
   Object.assign(view, {
     ifElseBranchUpdateFunction: (_, action) => action(),
     document: { pageVersion: '' },
@@ -204,9 +205,10 @@ test('footer uses pull-up guidance without an explicit completion button', () =>
     bottomPullAnchorY: 0,
     bottomPullLastY: 0,
     bottomPullTriggerVp: 72,
+    bottomPullDeadZoneVp: 4,
     completed: false,
-    scroller: { isAtEnd: () => true },
-    isScrollerAtBottom: () => true,
+    scroller: { isAtEnd: () => atBottom },
+    isScrollerAtBottom: () => atBottom,
     cancelBlockAlignment: noop,
     clampValue: (val, min, max) => Math.max(min, Math.min(max, val)),
     bottomPullBarWidth: () => 0,
@@ -221,9 +223,19 @@ test('footer uses pull-up guidance without an explicit completion button', () =>
   view.licenseFooter();
   assert.equal(buttons.length, 0);
 
+  // Slow 1vp-per-frame pull-up with transient isAtEnd() flicker mid-pull must remain monotonic.
   view.handleListTouch({ type: touches.Down, touches: [{ windowY: 500 }], changedTouches: [] });
-  view.handleListTouch({ type: touches.Move, touches: [{ windowY: 420 }], changedTouches: [] });
+  let previousProgress = 0;
+  for (let y = 499; y >= 420; y--) {
+    if (y === 488) {
+      atBottom = false;
+    }
+    view.handleListTouch({ type: touches.Move, touches: [{ windowY: y }], changedTouches: [] });
+    assert.ok(view.bottomPullProgress >= previousProgress, `progress dropped at y=${y}`);
+    previousProgress = view.bottomPullProgress;
+  }
   assert.equal(view.bottomPullReady, true);
+  assert.equal(view.bottomPullProgress, 1);
   assert.equal(hapticCount, 1);
   view.handleListTouch({ type: touches.Up, touches: [], changedTouches: [{ windowY: 420 }] });
   assert.equal(activations, 1);

@@ -1,0 +1,115 @@
+{
+  "reviewer_id": "shell",
+  "persona": "frontend-reviewer",
+  "scope_slice": "04996ca 的通用界面、设置、手机产品入口与导航、宽窄屏及装配生命周期。优先核对本地九次提交涉及的路由与设置读写路径。",
+  "coverage": {
+    "paths_reviewed": [
+      "common/anomiconbasic/src/main/ets/ui/ResponsiveLayoutPolicy.ets",
+      "common/anomiconbasic/src/main/ets/ui/NavigationStyles.ets",
+      "common/anomiconbasic/src/main/ets/ui/AppMotion.ets",
+      "products/phone/src/main/ets/entryability/EntryAbility.ets",
+      "products/phone/src/main/ets/startup/StartupCoordinator.ets",
+      "products/phone/src/main/ets/composition/AppLifecycleCoordinator.ets",
+      "products/phone/src/main/ets/composition/AppContainerImpl.ets",
+      "products/phone/src/main/ets/composition/SettingsStorageAdapter.ets",
+      "products/phone/src/main/ets/navigation/AppNavigationCoordinator.ets",
+      "products/phone/src/main/ets/pages/Index.ets",
+      "products/phone/src/main/ets/pages/MainTabIndex.ets",
+      "products/phone/src/main/ets/pages/routes/RouteAdapters.ets",
+      "products/phone/src/main/ets/pages/SettingsPage.ets",
+      "products/phone/src/main/ets/pages/ExploreCollectionPage.ets",
+      "products/phone/src/main/ets/pages/LibraryCollectionPage.ets",
+      "products/phone/src/main/ets/pages/FoundationAssessmentPage.ets",
+      "products/phone/src/main/ets/pages/ScpSearchPage.ets",
+      "products/phone/src/main/ets/pages/ScpArticlePage.ets",
+      "features/settings/src/main/ets/presentation/view/SettingsPage.ets",
+      "features/settings/src/main/ets/presentation/view/SettingsControls.ets",
+      "features/settings/src/main/ets/presentation/view/AboutPage.ets",
+      "features/settings/src/main/ets/presentation/view/ContentLicensePage.ets",
+      "features/settings/src/main/ets/presentation/viewmodel/SettingsViewModel.ets",
+      "features/settings/src/main/ets/data/SettingsPreferencesRepo.ets",
+      "features/settings/src/test/SettingsViewModel.test.ets",
+      "features/catalog/src/main/ets/data/ScpSearchHistoryService.ets",
+      "features/catalog/src/main/ets/data/SearchHistoryAdapter.ets",
+      "features/catalog/src/main/ets/presentation/viewmodel/CatalogSearchViewModel.ets",
+      "features/catalog/src/main/ets/presentation/view/CatalogSearchView.ets",
+      "features/explore/src/main/ets/presentation/view/ExploreHome.ets",
+      "features/library/src/main/ets/presentation/viewmodel/StorySeriesViewModel.ets",
+      "features/article/src/main/ets/composition/ArticleFeatureFactory.ets",
+      "features/article/src/main/ets/data/RdbOfflineArticleStore.ets"
+    ],
+    "notes": "核对了从首页切换页签、打开搜索及集合、经正文进入设置再返回的路径。窗口宽度由 EntryAbility 的 windowSizeChange 换算成 vp，首页根据详情栈与 840vp 断点切换主从栏，设置布局按实际窗格宽度计算列数。排除了『从设置返回后正文仍一直使用旧字号』这一猜想。ScpArticlePage.ets:380–390、1627–1630、1675–1678 在目的页显示时重读字号、行距、对齐和常亮状态，反白透视另保留用户在本篇的手动选择。核对了启动遮罩退出、窗口监听解绑和异步释放前后对 Ability 所有者的校验。"
+  },
+  "findings": [
+    {
+      "title": "从设置清空搜索历史后，原路返回的搜索页仍显示已删除的词",
+      "severity": "P2",
+      "domain": "frontend",
+      "file": "features/catalog/src/main/ets/presentation/viewmodel/CatalogSearchViewModel.ets",
+      "line": 205,
+      "why_it_matters": "清空操作可以成功落盘，设置也显示清空成功，但原先的搜索页仍会把旧词显示为可点击的历史记录。用户在同一次使用中可以再次看见刚删除的内容。",
+      "suggested_fix": "每次搜索页重新激活时，先读取共享历史再发布界面快照，并保留已有查询、系列与结果。也可订阅共享历史变更。加一例从正文进入设置清空、再两次返回原搜索页的回归用例。",
+      "confidence": 0.99,
+      "evidence": [
+        "在默认『全部系列』中提交 SCP-173，搜索头先调用 addHistory 再打开正文。搜索宿主把正文压在搜索页之上，正文的『阅读设置』继续压入设置页。见 CatalogSearchView.ets:118–132、ScpSearchPage.ets:93–103、ScpArticlePage.ets:1209–1214。",
+        "确认『清空搜索历史』后，设置适配器清空共享仓库并重新统计，页面显示『搜索历史已清空』。见 SettingsStorageAdapter.ets:70–73、功能设置页 SettingsPage.ets:540–551。",
+        "连续返回两次，保留的搜索页调用 activate。只有首次激活才 listHistory，已初始化分支只观察目录。再清空输入框时，快照仍发布原 history 数组，空查询界面将它绘制为历史标签。见 ScpSearchPage.ets:160–167、CatalogSearchViewModel.ets:198–218、736–751、CatalogSearchView.ets:109–116、804–835、965–968。",
+        "本地 Node 实验执行了源码中的搜索激活、历史发布和清理方法，以内存替身模拟 Preferences 和目录观察。磁盘替身为 []，设置计数为 0，复用的搜索页快照仍为 [SCP-173]。若退出搜索后重建页面，或执行会重读列表的 addHistory，快照可以恢复。见 CatalogSearchViewModel.ets:296–302。"
+      ]
+    },
+    {
+      "title": "搜索历史未能写盘时，设置仍提示『搜索历史已清空』",
+      "severity": "P2",
+      "domain": "reliability",
+      "file": "features/catalog/src/main/ets/data/ScpSearchHistoryService.ets",
+      "line": 119,
+      "why_it_matters": "用户收到删除成功提示，计数也变为零。如果存储持续写入失败并在恢复前结束进程，下次启动还能读取原有记录。",
+      "suggested_fix": "让显式清空命令把写盘结果传给设置页。保存失败时保留可重试状态并显示失败提示，成功写盘后再确认删除。针对持续失败、随后恢复和重建服务分别验证。",
+      "confidence": 0.99,
+      "evidence": [
+        "前提是已有至少一条落盘记录。设置页按已有计数启用『清空搜索历史』，确认后按 clearSearchHistory 返回的 Promise 选择成功或失败提示。见功能设置页 SettingsPage.ets:516–550、935–944。",
+        "服务先清空内存再 flush。putSync 或 flushSync 抛错时仅记日志、丢弃句柄并正常返回。设置适配器随后 inspect，用 list() 的内存副本计算计数。见 ScpSearchHistoryService.ets:50–53、73–83、104–124，SearchHistoryAdapter.ets:20–22，SettingsStorageAdapter.ets:53–58、70–73。",
+        "本地 Node 实验执行了上述服务和设置适配器。让清空及随后的 list 重试连续两次写盘失败，设置操作仍成功返回计数 0，而从同一磁盘替身新建的服务读回 [SCP-055]。保留原服务、恢复写盘并再次 list 后，新服务读到 []。这将失败条件限定在待写操作成功重试以前。见 ScpSearchHistoryService.ets:24–35、80–83。"
+      ]
+    },
+    {
+      "title": "有大量离线配图时，清空搜索历史也要等整库逐图检查",
+      "severity": "P2",
+      "domain": "performance",
+      "file": "products/phone/src/main/ets/composition/SettingsStorageAdapter.ets",
+      "line": 49,
+      "why_it_matters": "只保留一条搜索记录的用户，也要等与这次删除无关的全部离线文章和配图检查完，按钮才可用。确认清空后还会再等一轮，期间设置页继续显示清理状态。",
+      "suggested_fix": "让搜索历史计数、清空结果与离线容量各自更新。合并首次显示的重复统计请求，设置页的文章数量使用轻量计数或已更新的摘要，保留逐图核验给确实需要检查离线完整性的操作。",
+      "confidence": 0.97,
+      "evidence": [
+        "有历史记录和较多本地离线配图时打开设置。aboutToAppear 与 onWillShow 都触发 refreshStorageUsage，后者每次都会启动新的 inspect。完整统计返回以前，计数未发布，清空搜索历史按钮因此不能点击。见功能设置页 SettingsPage.ets:253–259、285–294、935–944、1160–1162。",
+        "inspect 遍历临时缓存、模型及永久离线目录，随后为了取数组长度又请求 listOfflineArticles。listSummaries 持有独占操作锁，对每篇正文和每个已保存配图顺序调用 regularFileSize，后者执行 access、lstat。见 SettingsStorageAdapter.ets:30–59、75–105，ArticleFeatureFactory.ets:89–91，RdbOfflineArticleStore.ets:409–420、579–604、782–792、909–914。",
+        "确认清空时，仓库已经执行清除，但适配器再次等待完整 inspect，界面一直等到该 Promise 完成才提示成功并释放 storageBusy。见 SettingsStorageAdapter.ets:70–73、功能设置页 SettingsPage.ets:540–562。",
+        "本地 Node 实验顺序调用首次显示的两个源码统计入口，离线清单替身收到了两次读取。让清单延迟完成，历史已空时仍得到 storageBusy=true，释放清单后才出现『搜索历史已清空』。空库或小库等待会很短，其他设置项可继续操作。实验验证等待关系，设备上的具体耗时待测。"
+      ]
+    },
+    {
+      "title": "关闭『沉浸光感』后，四个二级页的顶栏仍请求沉浸材质",
+      "severity": "P3",
+      "domain": "frontend",
+      "file": "features/settings/src/main/ets/presentation/view/AboutPage.ets",
+      "line": 144,
+      "why_it_matters": "在支持沉浸材质的设备上，设置页已经切换顶栏样式，点进『关于』或『内容来源与许可』又会看到沉浸样式。探索集合与资料库集合也绕过同一个外观偏好。",
+      "suggested_fix": "在四个目的页的路由装配中传入共享的外观偏好，显式传给顶栏样式函数。把 materialEnabled 改为必填参数，在能力开启和关闭的两种设备条件下检查开关后的页面。",
+      "confidence": 0.99,
+      "evidence": [
+        "在 HDS 提供 IMMERSIVE 的设备上关闭『沉浸光感』。开关说明包含顶栏，写入成功后 ViewModel 立即发布 false，设置页自身的顶栏接收该值。见功能设置页 SettingsPage.ets:347–355、654–661、1133–1143，SettingsViewModel.ets:87–100。",
+        "接着点击应用信息或『内容来源与许可』。设置用导航栈打开相应页面，但两个产品路由未注入外观偏好。两处信息页，以及探索和资料库集合顶栏均无参调用样式函数。见功能设置页 SettingsPage.ets:992–1003，产品 SettingsPage.ets:13–20、54–59，RouteAdapters.ets:47–55、79–86，AboutPage.ets:144、ContentLicensePage.ets:139、ExploreCollectionPage.ets:88、LibraryCollectionPage.ets:93。",
+        "createAppTitleBarStyle 默认 materialEnabled=true，有能力时选 IMMERSIVE；显式传 false 时选 ADAPTIVE 并为返回按钮提供普通背景。设备未提供 IMMERSIVE 时，两条路径都会选 ADAPTIVE。首页和新基金会考核页也显式传偏好，这限定了受影响的范围。见 NavigationStyles.ets:176–183、234–265，MainTabIndex.ets:793，FoundationAssessmentPage.ets:122。"
+      ]
+    }
+  ],
+  "residual_risks": [
+    "系统返回手势在 HDS 分栏、图片预览和正文网页内部历史之间的实际派发顺序，仍需通过设备交互记录核对。SDK 将目的页与入口页返回定义为两种回调，静态检查不足以确定其先后。",
+    "冷启动过渡在真机上的合成帧，以及折叠屏跨 840vp 时导航栏动画的实际观感，仍缺观察数据。"
+  ],
+  "testing_gaps": [
+    "主机 Node 实验使用所读源码的方法和可控存储、目录观察替身，覆盖了旧页恢复、连续写入失败及恢复重试、离线清单阻塞设置状态。真实 Preferences、HDS 视觉和设备 I/O 延迟留待验证。",
+    "适合追加设备用例：从搜索结果进正文，再从阅读设置清空后走两次返回；用有大量配图的离线库观察设置计数和按钮可用时间；在支持 IMMERSIVE 的设备上检查四个顶栏，并在普通设备上对照。"
+  ]
+}

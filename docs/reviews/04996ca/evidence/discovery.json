@@ -1,0 +1,89 @@
+{
+  "reviewer_id": "discovery",
+  "persona": "correctness-reviewer（正确性审查，兼顾性能）",
+  "scope_slice": "04996ca 的图鉴系列切换、统一搜索、故事刷新、探索推荐、热门原创和卡片预览。",
+  "coverage": {
+    "paths_reviewed": [
+      "features/catalog/src/main/ets/data/TaleRepositoryAdapter.ets",
+      "features/catalog/src/main/ets/data/TaleListService.ets",
+      "features/catalog/src/main/ets/presentation/viewmodel/TaleListViewModel.ets",
+      "features/catalog/src/main/ets/presentation/viewmodel/CatalogSearchViewModel.ets",
+      "features/catalog/src/main/ets/presentation/view/CatalogSearchView.ets",
+      "features/catalog/src/main/ets/composition/CatalogFeatureFactory.ets",
+      "features/catalog/src/main/ets/data/ScpRequestScheduler.ets",
+      "features/catalog/src/test/ScpRequestScheduler.test.ets",
+      "features/catalog/src/main/ets/data/ScpCatalogTitleResolver.ets",
+      "features/catalog/src/main/ets/presentation/viewmodel/CatalogViewModel.ets",
+      "features/catalog/src/main/ets/presentation/view/ScpCatalogHome.ets",
+      "features/catalog/src/main/ets/presentation/view/ScpCatalogCard.ets",
+      "features/explore/src/main/ets/application/ExploreContentUseCase.ets",
+      "features/explore/src/main/ets/data/RecommendationService.ets",
+      "features/explore/src/main/ets/presentation/viewmodel/ExploreHomeViewModel.ets",
+      "features/explore/src/main/ets/presentation/view/ExploreContentSections.ets",
+      "features/explore/src/main/ets/composition/ExploreFeatureFactory.ets",
+      "features/explore/src/test/ExploreSnapshot.test.ets",
+      "products/phone/src/main/ets/composition/AppContainerImpl.ets"
+    ],
+    "notes": "从 A 系列切到 B 再回到 A 时，图鉴和搜索会使旧请求失效（CatalogViewModel 138–168 行、CatalogSearchViewModel 259–293 和 732–734 行）。卡片回填预览图前核对条目和请求代次，首页区分抓取失败与页面无图（ScpCatalogCard 85–114 和 140–175 行、ScpCatalogHome 130–171 行）。今日推荐先发布卡片再补标题，整榜等待的发现限于热门原创。"
+  },
+  "findings": [
+    {
+      "title": "刷新时，一个故事索引失败会让半份目录覆盖完整缓存",
+      "severity": "P2", "domain": "correctness",
+      "file": "features/catalog/src/main/ets/data/TaleRepositoryAdapter.ets", "line": 82,
+      "why_it_matters": "此前能找到的中文原创故事可能从故事列表和统一搜索同时消失。重新打开页面仍会使用残缺目录。",
+      "suggested_fix": "分别记录译文和原创索引的抓取与解析结果。双源均成功才替换完整缓存。单源失败时沿用该来源上次有效的条目，向读者标明缺失来源并允许重试。",
+      "confidence": 0.99,
+      "evidence": [
+        "先载入完整故事目录，再刷新。令译文索引返回有效故事，原创索引返回没有故事链接的页面。原创请求失败且没有可解析的原始缓存也可触发。",
+        "TaleRepositoryAdapter 199–243 行过滤抓取失败的来源，任一索引解析出故事就返回成功。64–94 行在 82 行写回剩余条目，91 行设 partial=false。110–142 行的初次获取也接受单源结果。TaleListService 87–103 行以同一 tales 键替换原记录。",
+        "TaleRepositoryAdapter 146–165 行按抓取时间判断新鲜度。TaleListViewModel 139–149、177–186 行发布 READY，仅在过期时自动重验。CatalogSearchViewModel 482–494 行也使用同一故事快照。",
+        "若原创请求失败但仍能读到可解析的原创原始页，两源条目可以保留。下一次双源刷新成功也能恢复缺失故事。"
+      ]
+    },
+    {
+      "title": "设备持续报告弱网时，全部系列搜索会一直等待未缓存目录",
+      "severity": "P2", "domain": "reliability",
+      "file": "features/catalog/src/main/ets/presentation/viewmodel/CatalogSearchViewModel.ets", "line": 560,
+      "why_it_matters": "用户输入只属于未缓存系列的中文标题时，搜索进度可能一直停在“已加载 1/15”，即使前台请求仍有可用网络配额。",
+      "suggested_fix": "把当前查询必需的索引放入有并发上限的前台队列。若延后部分目录，展示已查范围并提供继续加载入口。",
+      "confidence": 0.96,
+      "evidence": [
+        "设备保持联网且持续向应用报告 WEAK。只缓存一个有条目的系列，其余目录既无解析缓存也无新鲜原始页。进入全部系列搜索，输入只属于未缓存系列的中文标题。",
+        "CatalogSearchViewModel 522–565 行先发布已有系列，再每批加载三个缺失系列。只有完全冷启动的首批获用户优先级。已有任一系列时，其余普通加载均用 BACKGROUND。445–464 行对故事索引也使用 BACKGROUND。",
+        "CatalogFeatureFactory 213–221 行为 WEAK 配置 (2, 0)。ScpRequestScheduler 135–160、170–172 行把低优先级请求留在队列中。ScpRequestScheduler.test 27–65 行断言前台请求结束后后台仍排队。CatalogSearchViewModel 646–655 行在已有目录条目时取消 40 秒超时，CatalogSearchView 280–295 行继续显示进度。",
+        "新鲜原始页可绕过网络队列。对同一 URL 的前台请求可以晋升排队任务，网络质量恢复也会放行。精确编号可通过直达入口打开。"
+      ]
+    },
+    {
+      "title": "部分系列加载失败后，零命中搜索会隐藏失败提示和重试按钮",
+      "severity": "P2", "domain": "frontend",
+      "file": "features/catalog/src/main/ets/presentation/view/CatalogSearchView.ets", "line": 969,
+      "why_it_matters": "目标文章可能就在失败系列里。界面只显示“无匹配条目”，容易让读者以为已查遍目录，当前空结果分支也没有重试入口。",
+      "suggested_fix": "独立于匹配数渲染部分失败提示、已检索范围和重试按钮。索引完整且零命中时才显示普通空状态。",
+      "confidence": 0.99,
+      "evidence": [
+        "让至少一个系列加载成功，另一个未缓存系列请求失败。等系列与故事请求全部结束，再搜只属于失败系列的中文标题，避开精确编号直达。",
+        "CatalogSearchViewModel 657–659 行发布 PARTIAL 和“部分系列目录加载失败”提示，693–698、736–758 行交给视图的是按关键词筛选后的条目。CatalogSearchView 298–315 行的完全失败分支仅接受 ERROR，部分失败提示要求存在匹配条目或直达目标。",
+        "CatalogSearchView 962–984 行将零命中导向空文本，280–295 行在 PARTIAL 且加载结束时返回“无匹配条目”，因此 557–570 行已有的重试按钮也未显示。",
+        "在同一份不完整的目录上改搜成功系列的标题，925–933 行会展示失败提示和重试。目录完整时，普通空状态符合预期。"
+      ]
+    },
+    {
+      "title": "热门原创榜等所有标题补齐才显示已有排名",
+      "severity": "P2", "domain": "performance",
+      "file": "features/explore/src/main/ets/application/ExploreContentUseCase.ets", "line": 40,
+      "why_it_matters": "即使本地已有新鲜榜单，一行需要另查系列目录的标题也会挡住其他已有标题和评分的行。持续弱网时，整个区块可能一直显示骨架，读者无法打开已有排名。",
+      "suggested_fix": "先用现有标题或编号发布可点击的排名和评分。收到补齐的标题后，核对请求仍属于当前页面，再更新对应行。",
+      "confidence": 0.96,
+      "evidence": [
+        "首次进入本轮探索首页。热门原创榜已有新鲜快照，至少一条 SCP 标题只有编号，且所属系列没有可用目录或原始页缓存。",
+        "ExploreContentUseCase 195–209 行可直接取得新鲜榜单，38–41、154–192 行仍等待所有标题查询。ExploreHomeViewModel 239–257 行在查询结束后才发布 topRatedEntries。ExploreContentSections 75–76、190–220 行在首屏空列表且 loading 时显示骨架。",
+        "AppContainerImpl 342–349 行与 ExploreFeatureFactory 48–51 行接入真实解析器。ScpCatalogTitleResolver 77–104 行等待缺失编号所属系列。CatalogFeatureFactory 261–279 行设置 BACKGROUND 优先级，213–221 行为 WEAK 配置零个低优先级槽位。",
+        "标题原本可读、系列已缓存、同一 URL 获前台晋升或网络恢复时可发布榜单。最近更新和搞笑条目在 ExploreContentUseCase 125–145 行先发布列表，今日推荐在 RecommendationService 116–146 行先发卡。ExploreSnapshot.test 182–192 行覆盖标题立即返回的情形。"
+      ]
+    }
+  ],
+  "residual_risks": ["持续排队依赖设备报告 WEAK、缺少可用缓存且同一 URL 未获前台晋升。真实设备上的发生频率与停留时间待测。"],
+  "testing_gaps": ["本轮依据源码、手机装配及既有测试断言进行静态审查，构建、安装、设备操作和应用测试均未执行。", "用双源故事夹具核对完整缓存经原创解析失败刷新后，重新进入页面及搜索的条目与提示。", "分别测试持续 WEAK 的未决请求和已结束的 PARTIAL。在后者的同一份索引上只改变关键词，对照有命中和零命中的提示及重试入口。", "让一项榜单标题查询暂缓返回，验证其余行可先显示并打开，再核对标题回填。"]
+}

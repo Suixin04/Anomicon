@@ -1,0 +1,85 @@
+{
+  "reviewer_id": "models",
+  "persona": "可靠性审查员（兼看渲染性能）",
+  "scope_slice": "04996ca 的三维档案。覆盖内置和按需模型从条目、档案馆进入查看器的路径，系统下载、安装校验、重试、进程恢复，以及渲染、手势和页面离开。",
+  "coverage": {
+    "paths_reviewed": [
+      "features/archive3d/src/main/ets/domain/Scp3DModelAsset.ets",
+      "features/archive3d/src/main/ets/domain/ArchiveModelDescriptor.ets",
+      "features/archive3d/src/main/ets/domain/ArchiveModelInstall.ets",
+      "features/archive3d/src/main/ets/application/ArchiveModelUseCase.ets",
+      "features/archive3d/src/main/ets/composition/Archive3DFeatureFactory.ets",
+      "features/archive3d/src/main/ets/data/SandboxArchiveModelPackageRepository.ets",
+      "features/archive3d/src/main/ets/data/ArchiveModelFileStore.ets",
+      "common/anomiconbasic/src/main/ets/platform/BackgroundDownloadContracts.ets",
+      "common/anomiconbasic/src/main/ets/platform/RequestAgentBackgroundDownloadAdapter.ets",
+      "products/phone/src/main/ets/composition/AppContainerImpl.ets",
+      "products/phone/src/main/ets/composition/Archive3DSceneLoader.ets",
+      "products/phone/src/main/ets/pages/routes/RouteAdapters.ets",
+      "products/phone/src/main/ets/pages/Scp3DArchiveGalleryPage.ets",
+      "products/phone/src/main/ets/pages/Scp3DArchivePage.ets",
+      "products/phone/src/main/ets/pages/ScpArticlePage.ets",
+      "features/settings/src/main/ets/presentation/view/SettingsPage.ets",
+      "products/phone/src/main/ets/pages/SettingsPage.ets",
+      "build-profile.json5",
+      "products/phone/src/main/module.json5",
+      "README.md"
+    ],
+    "notes": "安装与渲染分开核查。4 项内置走 rawfile，6 项按需模型先写临时文件，验长度、GLB 头和 SHA-256 后改名发布，打开前再次核验（ArchiveModelFileStore.ets:140–171、274–299）。任务记录先于启动持久化，重复完成事件由单次校验保护，取回失效任务时会尝试挽回完整临时文件（SandboxArchiveModelPackageRepository.ets:191–233、595–607、708–739）。排查离页回调时可见页面会取消重绘，使旧加载失效，迟到的场景由回调销毁（Scp3DArchivePage.ets:257–264、329–332、375–393、429–433、689–706）。旋转、缩放、自动旋转与复位共用逐帧更新（435–473、553–575、586–656）。设备范围按声明和实测分别核查。build-profile.json5:6–8 指定 API 26，module.json5:7 声明 phone、tablet、2in1，README.md:15、18、60 还描述折叠屏形态和宽屏工作台。SDK 这三类设备的配置分别在 phone.json:33、tablet.json:33、2in1.json:32 声明 Graphics3D。协调者的运行证据限于此次模拟器。仓库手机端 SCP-049 的展示图只能佐证历史展示，无法确认对应构建或设备。"
+  },
+  "findings": [
+    {
+      "title": "模拟器打不开内置 SCP-173，查看器把引擎初始化失败提示为稍后重试",
+      "severity": "P2",
+      "domain": "reliability",
+      "file": "products/phone/src/main/ets/pages/Scp3DArchivePage.ets",
+      "line": 357,
+      "why_it_matters": "在已复现的模拟器环境，用户能打开档案说明，却看不到模型。即使资源已随包交付，界面仍将再次加载作为唯一的错误处理按钮，用户无法从提示判断当前运行环境的三维引擎未能启动。",
+      "suggested_fix": "在场景加载边界记录模型 ID、来源类型、失败阶段和平台错误码。运行时三维引擎初始化失败时解释当前环境无法显示模型，保留资料和返回操作。用同一发布构建在支持 ArkGraphics3D 的真机上补验首帧。",
+      "confidence": 0.98,
+      "evidence": [
+        "协调者实测。以基线隔离 Release 构建在本地模拟器打开已内置的 SCP-173，界面显示“三维模型暂时无法加载，请稍后重试。”。点“重新加载”仍失败，应用未崩溃。该进程的 ArkGraphics3D / ohos_lume 日志出现“Could not create instance of SceneManager”和“Creating scene manager failed”。",
+        "Scp3DModelAsset.ets:289–294 将 SCP-173 声明为内置。SandboxArchiveModelPackageRepository.ets:357–360 直接返回内置来源，Archive3DSceneLoader.ets:227–243 以固定 rawfile 加载。Scp3DArchivePage.ets:326–342 等场景句柄返回后才创建 Component3D 所需的配置。347–359 将除未安装外的错误合并为上述提示，363–369、825–831 让按钮重跑相同路径。",
+        "反证与范围。协调者核对了四个随包 GLB 的字节数、摘要和场景结构。该 SCP-173 路径不下载文件，日志已将本次失败收窄到场景管理器创建环节。SDK 设备能力声明不包含本次真机首帧验证。"
+      ]
+    },
+    {
+      "title": "从 SCP 正文打开未安装的按需模型，错误页只有“重新加载”",
+      "severity": "P2",
+      "domain": "frontend",
+      "file": "products/phone/src/main/ets/pages/Scp3DArchivePage.ets",
+      "line": 826,
+      "why_it_matters": "首次从正文进入任一按需模型的读者，即使联网也不能就地获取。页面告诉用户去三维档案馆，按钮却只重复本地检查。用户须离开文章路径，另行找到同一模型并下载。",
+      "suggested_fix": "未安装时提供“获取此模型”，带模型 ID 打开档案馆对应卡片或在原页显示下载操作。安装完成后回到同一查看器继续加载。",
+      "confidence": 0.99,
+      "evidence": [
+        "源码推演。假设首次安装、SCP-131 无已安装包且无在途下载。用户打开该条正文并点“三维档案”。Scp3DModelAsset.ets:365–380 将其列为按需模型，676–680 的可用性判断只查清单成员。RouteAdapters.ets:58–67 把此判断注入正文，ScpArticlePage.ets:1041–1057、1098–1104 据此直接导航到查看器。",
+        "RouteAdapters.ets:102–106 调用仓库 resolve。SandboxArchiveModelPackageRepository.ets:357–370 检查私有缓存，缺件时抛出“三维模型尚未下载”。Scp3DArchivePage.ets:353–357 显示“该模型尚未下载，请先前往三维档案馆获取。”，825–831 只绘制“重新加载”，363–368 再次查找相同资源。",
+        "已核对可行的绕路。设置的“三维档案模型包”能打开档案馆（features/settings/src/main/ets/presentation/view/SettingsPage.ets:946–954、products/phone/src/main/ets/pages/SettingsPage.ets:19–20、54–59）。在那里点“下载”，校验成功后卡片可打开（Scp3DArchiveGalleryPage.ets:243–246、266–284、467–474）。若本地已装好，或原有后台任务恰好完成，同一个重试按钮可以成功通过本地检查。"
+      ]
+    },
+    {
+      "title": "重开档案馆后，暂停的下载显示“下载中”且无法在卡片上继续",
+      "severity": "P2",
+      "domain": "reliability",
+      "file": "products/phone/src/main/ets/pages/routes/RouteAdapters.ets",
+      "line": 162,
+      "why_it_matters": "系统仍保留任务和已下载的字节。用户回到档案馆时看到活动指示器，只能等待一个当前并不传输的任务。即使重开应用，页面也不会提供继续操作。",
+      "suggested_fix": "保留 PAUSED 状态，显示“已暂停”和“继续下载”，把操作接到已有的 ArchiveModelUseCase.resume。用重开页面和重启应用两条路径验证继续的是同一系统任务。",
+      "confidence": 0.98,
+      "evidence": [
+        "源码推演。用户此前在档案馆下载 SCP-3199，系统任务与部分文件仍在，系统上报 PAUSED。此时用户重新打开应用并进入档案馆。RequestAgentBackgroundDownloadAdapter.ets:52–74、129–134、230–240 保留原生状态。SandboxArchiveModelPackageRepository.ets:519–530 会重连并读取任务，只自动启动 INITIALIZED，590–594 将 PAUSED 连同进度原样发布。",
+        "RouteAdapters.ets:123–136、156–165 在订阅时将 PAUSED 转成 DOWNLOADING。Scp3DArchiveGalleryPage.ets:232–233、443–457 因此只显示“下载中”和转圈。产品未注入自定义点卡片动作（RouteAdapters.ets:173–178），未就绪的卡片会直接返回（Scp3DArchiveGalleryPage.ets:266–276）。",
+        "已查补救条件。真正的 FAILED 状态仍显示下载按钮，可发起重试。对持续 PAUSED 的任务，普通 install 在 SandboxArchiveModelPackageRepository.ets:150–154、768–773 提前返回。专用 resume 已在 ArchiveModelUseCase.ets:32–34、SandboxArchiveModelPackageRepository.ets:262–276、RequestAgentBackgroundDownloadAdapter.ets:203–211 接通，产品适配器 140–146 只暴露安装和删除。若系统在应用外恢复任务，后续状态仍可更新。"
+      ]
+    }
+  ],
+  "residual_risks": [
+    "同一查看器从失活恢复时会重新建场景并将旋转、缩放恢复到初值（Scp3DArchivePage.ets:334–337、689–699、1172–1182）。SCP-3199 为 51,054,324 字节，重开前会再验完整摘要。各设备会在哪些短暂覆盖操作中触发失活，以及恢复耗时，仍需量测。",
+    "系统下载禁止计费网络，档案馆将 WAITING 统一显示为“等待网络”（SandboxArchiveModelPackageRepository.ets:170–178、RequestAgentBackgroundDownloadAdapter.ets:77–89、437–440、Scp3DArchiveGalleryPage.ets:228–233）。不同系统镜像下任务通知是否提供暂停或继续操作，属于设备端补测范围。"
+  ],
+  "testing_gaps": [
+    "此次运行证据由协调者提供，仅覆盖该模拟器的内置 SCP-173 和一次重试。在 API 26 真机手机、折叠屏展开态、平板与二合一设备上，仍需分别验证内置模型与已下载模型的首帧、手势、切后台返回及宽屏工作台。",
+    "按需模型从正文进入和已暂停任务的卡片状态已按源码核对。还需在具备下载服务的设备上走通首次获取、弱网或计费网络等待、保留部分数据后重启、实际继续、摘要失败后重下及最终打开模型。"
+  ]
+}

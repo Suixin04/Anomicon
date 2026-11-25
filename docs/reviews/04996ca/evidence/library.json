@@ -1,0 +1,102 @@
+{
+  "reviewer_id": "library",
+  "persona": "数据持久化与迁移、功能正确性",
+  "scope_slice": "HEAD 04996ca 的资料库与终端，沿手机产品入口核对阅读记录裁剪、系列续读、基金会考核回执及研读统计，覆盖本地领先的九次提交和相关既有行为。",
+  "coverage": {
+    "paths_reviewed": [
+      "features/library/src/main/ets/data/ReadingHistorySchema.ets",
+      "features/library/src/main/ets/data/ReadingHistoryRepo.ets",
+      "features/library/src/main/ets/presentation/viewmodel/ReadingHistoryViewModel.ets",
+      "features/library/src/main/ets/presentation/viewmodel/LibraryCollectionVM.ets",
+      "features/library/src/main/ets/domain/StorySeriesContracts.ets",
+      "features/library/src/main/ets/presentation/viewmodel/StorySeriesViewModel.ets",
+      "features/library/src/main/ets/data/FoundationAssessmentRepo.ets",
+      "features/library/src/main/ets/presentation/viewmodel/FoundationAssessmentViewModel.ets",
+      "features/library/src/main/ets/data/ResearchActivityRepo.ets",
+      "features/library/src/main/ets/domain/ResearchProgress.ets",
+      "features/library/src/main/ets/presentation/viewmodel/ResearchProfileViewModel.ets",
+      "features/terminal/src/main/ets/presentation/viewmodel/TerminalViewModel.ets",
+      "features/terminal/src/main/ets/presentation/model/TerminalProfileHelpers.ets",
+      "features/terminal/src/main/ets/presentation/view/FoundationAssessmentView.ets",
+      "features/terminal/src/main/ets/presentation/view/ResearchProfileCard.ets",
+      "features/terminal/src/main/ets/presentation/view/TerminalLibraryComponents.ets",
+      "features/terminal/src/main/ets/presentation/view/TerminalHome.ets",
+      "products/phone/src/main/ets/composition/TerminalLibraryAdapters.ets",
+      "products/phone/src/main/ets/composition/AppContainerImpl.ets",
+      "products/phone/src/main/ets/composition/AppLifecycleCoordinator.ets",
+      "products/phone/src/main/ets/pages/MainTabIndex.ets",
+      "products/phone/src/main/ets/pages/LibraryCollectionPage.ets"
+    ],
+    "notes": "核对了“最近浏览裁剪会删除旧进度”的猜想。阅读记录与永久状态在同一事务提交，裁剪 SQL 只删除最近浏览表中的旧行。内存 SQLite 裁剪 502 条记录后，两篇旧文的偏移仍分别为 100 和 200。终端只展示一张续读卡符合源码明确的设计，下面只报告其他旧进度无法从资料库列出的问题。"
+  },
+  "findings": [
+    {
+      "title": "考核首次通过后，阅历刷新失败会让同一份答卷再记一次",
+      "severity": "P2",
+      "domain": "correctness",
+      "file": "features/library/src/main/ets/presentation/viewmodel/FoundationAssessmentViewModel.ets",
+      "line": 264,
+      "why_it_matters": "用户点“生成核验回执”时，成绩、印章和首次奖励已经保存，页面却停在最后一题并显示错误。用户再次点同一按钮，就会增加一次作答，回执也只显示重考结果。",
+      "suggested_fix": "保存成绩成功后即返回本次回执。让阅历刷新单独报告失败，并提供只刷新阅历的重试操作。",
+      "confidence": 0.99,
+      "evidence": [
+        "首次通过后，成绩保存与档案阅历刷新是两个步骤。features/library/src/main/ets/presentation/viewmodel/FoundationAssessmentViewModel.ets:224-260 先递增 attempts、保存首次 XP 并构造结果，263-266 才等待刷新回调。products/phone/src/main/ets/composition/AppContainerImpl.ets:287-295 将回调接到研读画像重载，features/library/src/main/ets/presentation/viewmodel/ResearchProfileViewModel.ets:89-104 会抛出读取错误。",
+        "features/terminal/src/main/ets/presentation/view/FoundationAssessmentView.ets:259-274 仅在提交正常返回后显示回执。失败分支保留答案、恢复按钮。596-612 的“生成核验回执”因此可再次提交同一答案。",
+        "在 Node 中执行实际考核 ViewModel，使用内存记录仓库并让画像刷新抛错。CERT-01 首次通过已保存 1 次、15 XP，调用返回错误。同分重试得到 2 次、本次奖励 0 XP，刷新回调总共只执行 1 次。正常刷新会在首次提交返回回执，两次路径均只发放一份 XP。"
+      ]
+    },
+    {
+      "title": "应用跨日后，终端会把昨天的研读时长显示为今天",
+      "severity": "P2",
+      "domain": "correctness",
+      "file": "features/terminal/src/main/ets/presentation/model/TerminalProfileHelpers.ets",
+      "line": 74,
+      "why_it_matters": "昨天已有研读记录的用户，今天保留原进程先打开终端，就可能在尚未阅读时看到已使用的今日额度。此时若重建七日图，同一段时长还会出现在昨天和今天两栏。",
+      "suggested_fix": "从带日期键的 daily 记录按当前本地日读取今日时长，让额度和七日图共用该值。终端重新出现、应用回到前台或可见页面跨过午夜时，更新当前日期键。",
+      "confidence": 0.98,
+      "evidence": [
+        "昨天产生过研读快照，今天在同一进程内直接打开终端。features/library/src/main/ets/domain/ResearchProgress.ets:652-665 在生成快照时计算 todayActiveMs。features/terminal/src/main/ets/presentation/viewmodel/TerminalViewModel.ets:185-198 激活时调用 initialize，features/library/src/main/ets/presentation/viewmodel/ResearchProfileViewModel.ets:52-65 对已初始化的画像直接返回。products/phone/src/main/ets/composition/AppLifecycleCoordinator.ets:32-34 的前台回调只通知研读计时。",
+        "features/terminal/src/main/ets/presentation/view/ResearchProfileCard.ets:184-187、290-294 分别构建七日图和显示今日额度。features/terminal/src/main/ets/presentation/model/TerminalProfileHelpers.ets:58-75 先按日期填历史栏，再把未携带日期的 todayActiveMs 写进渲染时的今天。",
+        "用实际统计函数处理 6 月 1 日唯一的一段 10 分钟研读。用旧快照构建 6 月 2 日的图，昨天和今天均为 10 分钟。用相同账本按 6 月 2 日重新派生画像，今日为 0。新一次研读写入或成功重载画像即可纠正显示。"
+      ]
+    },
+    {
+      "title": "系列主线 19/19 后，“下一篇”仍打开刚读完的终章",
+      "severity": "P3",
+      "domain": "frontend",
+      "file": "products/phone/src/main/ets/composition/TerminalLibraryAdapters.ets",
+      "line": 195,
+      "why_it_matters": "读完逆模因部主线后，进度数字已满，旁边却仍然推荐已读的《尾声：胜冠徒然》。点击卡片会再次进入终章，用户无法据此分辨还有下一篇还是可以重读。",
+      "suggested_fix": "区分待续读的章节与可重读的章节。当前主线已经读完且没有待续章节时，显示“主线已全部读完”，把操作明确标为“查看目录”或“重读终章”。",
+      "confidence": 0.99,
+      "evidence": [
+        "已跟读用户把最后一篇主线标为已读。features/library/src/main/ets/domain/StorySeriesContracts.ets:576-599 找完后续和前面遗漏的主线后返回 currentEntry。features/library/src/main/ets/presentation/viewmodel/StorySeriesViewModel.ets:304-325 把该章节与独立计算的完成数一起发布。",
+        "products/phone/src/main/ets/composition/TerminalLibraryAdapters.ets:187-200 将所有存在的 resumeEntry 标为“下一篇”，只有值为空才显示“主线已全部读完”。features/terminal/src/main/ets/presentation/view/TerminalLibraryComponents.ets:725、754-761 渲染文案并打开该文章。独立的“目录”按钮仍可用。",
+        "用内置系列与实际解析函数验证，19 篇主线全部完成且游标在终章时，续读目标仍为《尾声：胜冠徒然》。把此前的《难忘的你》改为未读，函数便正确返回该篇。"
+      ]
+    },
+    {
+      "title": "两篇未读完的旧文被移出最近浏览后，资料库只能列出一篇",
+      "severity": "P3",
+      "domain": "frontend",
+      "file": "features/terminal/src/main/ets/presentation/view/TerminalHome.ets",
+      "line": 300,
+      "why_it_matters": "长期读者可能记得自己留过阅读位置，却忘了文章标题。两篇未收藏的旧文都超出最近 500 条后，较早的一篇没有可浏览的续读入口。自行找到原文仍可恢复位置。",
+      "suggested_fix": "保留首页的一张续读卡。当可续读条目超过一篇时，增加“全部续读”入口，复用已有的 CONTINUE_READING 列表。",
+      "confidence": 0.98,
+      "evidence": [
+        "两篇旧文各有非零进度且均未完成，之后又打开 500 篇不同的文章。features/library/src/main/ets/data/ReadingHistorySchema.ets:44-48 只裁剪最近记录，features/library/src/main/ets/presentation/viewmodel/ReadingHistoryViewModel.ets:381-397 仍将旧文加入 resumableItems。features/terminal/src/main/ets/presentation/viewmodel/TerminalViewModel.ets:346-358 只取第一条作续读卡，最近列表来自已裁剪的 history.items。",
+        "features/terminal/src/main/ets/presentation/view/TerminalHome.ets:91-94 明确只提升最近一篇以减少重复，297-309 的卡片只打开该文章。核对该页所有打开资料列表的操作（370、449、492、543-544），只有收藏与最近浏览。features/library/src/main/ets/presentation/viewmodel/LibraryCollectionVM.ets:189-200 已有列出所有未完成进度的 CONTINUE_READING 模式。",
+        "实际运行项目建表、回填、裁剪 SQL 与两个列表 ViewModel。内存 SQLite 的 502 条记录裁为 500 条，两篇旧文均从最近浏览移除，永久状态保留两项。终端续读投影只有较新一项，直接调用完整续读列表则能列出两项。"
+      ]
+    }
+  ],
+  "residual_risks": [
+    "四项验证均在 Node 内存中运行项目逻辑。考核实验用可控回调模拟画像读取失败，阅读记录实验用 SQLite 执行项目 SQL。ArkData 实际故障频率、ArkUI 的首次绘制时机和设备前后台生命周期仍需设备证据。"
+  ],
+  "testing_gaps": [
+    "为考核补充保存成功后画像读取失败的用例，同时断言回执、作答次数和首次奖励。现有考核用例的奖励刷新回调成功返回。",
+    "补充保留进程跨午夜、当天尚未阅读就进入终端的用例，同时断言今日额度和七日柱图。",
+    "为跟读卡补充主线 19/19 时的文案与点击目标断言。为资料库补充两篇未完成旧文同时超出 500 条时，从可见入口打开完整续读列表的用例。"
+  ]
+}
