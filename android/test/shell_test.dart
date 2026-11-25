@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:anomicon/src/anomicon_app.dart';
 import 'package:anomicon/src/foundation_page.dart';
+import 'package:anomicon/src/discovery.dart';
 import 'package:anomicon/src/local_store.dart';
 import 'package:anomicon/src/models.dart';
 import 'package:anomicon/src/offline_article_store.dart';
@@ -152,6 +154,82 @@ void main() {
     expect(find.byType(TerminalScreen), findsOneWidget);
   });
 
+  testWidgets(
+    'clearing history from reader settings updates the retained search',
+    (tester) async {
+      await openApp(tester, const Size(440, 900));
+      await DiscoveryHistory.remember('SCP-173');
+      await tester.tap(find.byTooltip('搜索'));
+      await tester.pumpAndSettle();
+      expect(find.byType(DiscoverySearchScreen), findsOneWidget);
+      expect(find.text('SCP-173'), findsWidgets);
+      await tester.tap(find.widgetWithText(ActionChip, 'SCP-173'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'scp-173'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('阅读菜单'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('阅读设置'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('清空搜索历史'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('清空搜索历史'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('清空'));
+      await tester.pumpAndSettle();
+      expect(await DiscoveryHistory.load(), isEmpty);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.byType(DiscoverySearchScreen), findsOneWidget);
+      await tester.tap(find.byTooltip('清除查询'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ActionChip, 'SCP-173'), findsNothing);
+    },
+  );
+
+  testWidgets('model detail opens article and system back restores model', (
+    tester,
+  ) async {
+    await openApp(tester, const Size(440, 900));
+    await openSettings(tester, NavigationBar);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -480));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('三维档案馆'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('待下载 6'));
+    await tester.pumpAndSettle();
+    final card = find.byType(ArchiveGalleryCard).first;
+    final asset = tester.widget<ArchiveGalleryCard>(card).asset;
+    await tester.tap(card);
+    await tester.pumpAndSettle();
+    expect(find.byType(ArchiveDetailScreen), findsOneWidget);
+    final openArticle = find.text('打开条目');
+    await tester.drag(
+      find.descendant(
+        of: find.byType(ArchiveDetailScreen),
+        matching: find.byType(ListView),
+      ),
+      const Offset(0, -600),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(openArticle);
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<ArticleScreen>(find.byType(ArticleScreen)).content.id,
+      asset.contentId,
+    );
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ArchiveDetailScreen>(find.byType(ArchiveDetailScreen))
+          .asset,
+      asset,
+    );
+  });
+
   testWidgets('wide detail and compact back share the same route stack', (
     tester,
   ) async {
@@ -200,8 +278,22 @@ void main() {
 
 class _FixtureRepository extends Fake implements AnomiconRepository {
   @override
-  Future<ExploreHomeData> loadExplore({DateTime? date}) async =>
-      const ExploreHomeData();
+  final ContentCache contentCache = _FixtureCache();
+
+  @override
+  final WikiGateway wikiGateway = _FixtureWiki();
+
+  @override
+  final ArchiveAssetStore archiveAssetStore = _FixtureArchiveStore();
+
+  @override
+  Future<ArticleDocument> loadArticle(ContentRef content) async =>
+      ArticleDocument(
+        content: content,
+        sourceUrl: 'https://scp-wiki-cn.wikidot.com/${content.id}',
+        fetchedAt: 0,
+        blocks: const [ArticleParagraph('测试正文')],
+      );
 
   @override
   Future<File?> installedArchiveAsset(ArchiveAsset asset) async => null;
@@ -213,4 +305,38 @@ class _FixtureRepository extends Fake implements AnomiconRepository {
 class _EmptyOfflineStore extends Fake implements OfflineArticleStore {
   @override
   Future<List<OfflineArticleInfo>> list() async => [];
+}
+
+class _FixtureCache extends Fake implements ContentCache {
+  @override
+  Future<CachedContent?> read(String key, String extension) async =>
+      CachedContent(
+        jsonEncode({
+          'html': '<div id="page-content"><ul><li><a href="/scp-173">SCP-173</a> - 雕像</li><li><a href="/scp-cn-2000">SCP-CN-2000</a> - 辉光</li><li><a href="/ghost-story">白日之梦</a></li></ul></div>',
+        }),
+        DateTime.now().millisecondsSinceEpoch,
+      );
+}
+
+class _FixtureWiki extends Fake implements WikiGateway {
+  @override
+  List<ExploreEntry> parseExplore(ExploreSource source, String html) => [
+    const ExploreEntry(id: 'scp-173', title: '雕像'),
+  ];
+}
+
+class _FixtureArchiveStore extends Fake implements ArchiveAssetStore {
+  @override
+  final installedRevision = ValueNotifier<int>(0);
+
+  final _state = ValueNotifier(const ArchiveDownloadState());
+
+  @override
+  ValueNotifier<ArchiveDownloadState> stateOf(ArchiveAsset asset) => _state;
+
+  @override
+  Future<void> restoreProgress(ArchiveAsset asset) async {}
+
+  @override
+  Future<File?> installedFile(ArchiveAsset asset) async => null;
 }

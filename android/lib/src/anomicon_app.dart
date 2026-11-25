@@ -26,9 +26,7 @@ part 'archive_pages.dart';
 part 'settings_page.dart';
 part 'shared_widgets.dart';
 
-const _surface = Color(0xFF202528);
 const _accent = Color(0xFF2F80FF);
-const _muted = Color(0xFF92979C);
 
 enum HomeTab { explore, catalog, foundation, stories, terminal }
 
@@ -123,6 +121,7 @@ class _AnomiconAppState extends State<AnomiconApp> {
         library: _library,
         onSelectTab: _selectTab,
         onOpenSettings: _openSettings,
+        onOpenSearch: _openSearch,
         onOpenArchiveGallery: _openArchiveGallery,
         onOpenContent: _openContent,
         foundationStore: widget.localStore.foundationStore,
@@ -172,6 +171,15 @@ class _AnomiconAppState extends State<AnomiconApp> {
       MaterialPageRoute(builder: builder),
     );
   }
+
+  Future<void> _openSearch([String? initialSeriesId]) => _openDetail(
+    (context) => DiscoverySearchScreen(
+      repository: widget.repository,
+      onOpenContent: _openContent,
+      initialSeriesId: initialSeriesId,
+      onBack: _popDetail,
+    ),
+  );
 
   Future<void> _openSettings() => _openDetail(
     (context) => SettingsScreen(
@@ -328,6 +336,7 @@ class HomeShell extends StatelessWidget {
     required this.library,
     required this.onSelectTab,
     required this.onOpenSettings,
+    required this.onOpenSearch,
     required this.onOpenArchiveGallery,
     required this.onOpenContent,
     required this.onToggleFavorite,
@@ -346,6 +355,7 @@ class HomeShell extends StatelessWidget {
   final LibrarySnapshot library;
   final ValueChanged<HomeTab> onSelectTab;
   final VoidCallback onOpenSettings;
+  final void Function([String?]) onOpenSearch;
   final VoidCallback onOpenArchiveGallery;
   final ValueChanged<ContentRef> onOpenContent;
   final ValueChanged<ContentRef> onToggleFavorite;
@@ -362,10 +372,12 @@ class HomeShell extends StatelessWidget {
     final child = switch (selectedTab) {
       HomeTab.explore => ExploreScreen(
         repository: repository,
+        onOpenSearch: onOpenSearch,
         onOpenContent: onOpenContent,
       ),
       HomeTab.catalog => CatalogScreen(
         repository: repository,
+        onOpenSearch: onOpenSearch,
         onOpenContent: onOpenContent,
         onOpenArchiveGallery: onOpenArchiveGallery,
         onHaptic: onHaptic,

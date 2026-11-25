@@ -18,6 +18,39 @@ class SettingsScreen extends StatelessWidget {
   final VoidCallback? onOpenArchiveGallery;
   final VoidCallback? onOpenOffline;
 
+  Future<void> _clearSearchHistory(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('清空搜索历史？'),
+        content: const Text('本机保存的搜索词将被删除。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await DiscoveryHistory.clear();
+    } on FileSystemException catch (error) {
+      if (context.mounted) {
+        messenger.showSnackBar(SnackBar(content: Text(error.message)));
+      }
+      return;
+    }
+    if (context.mounted) {
+      messenger.showSnackBar(const SnackBar(content: Text('搜索历史已清空')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return DetailCanvas(
@@ -112,6 +145,14 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
               ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.history),
+              title: const Text('清空搜索历史'),
+              onTap: () => _clearSearchHistory(context),
             ),
           ),
           if (onOpenOffline != null) ...[
