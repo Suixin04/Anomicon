@@ -1,4 +1,6 @@
+import 'package:anomicon/src/anomicon_app.dart';
 import 'package:anomicon/src/discovery.dart';
+import 'package:flutter/material.dart';
 import 'package:anomicon/src/models.dart';
 import 'package:anomicon/src/repository.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -6,8 +8,70 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+class _EmptyContentCache extends Fake implements ContentCache {
+  @override
+  Future<CachedContent?> read(String key, String extension) async => null;
+}
+
+class _UnusedArchiveAssetStore extends Fake implements ArchiveAssetStore {}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
+
+  testWidgets('official Wiki link opens content with no indexed results', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues({});
+    final repository = AnomiconRepository(
+      wikiGateway: WikiGateway(),
+      contentCache: _EmptyContentCache(),
+      archiveAssetStore: _UnusedArchiveAssetStore(),
+    );
+    ContentRef? opened;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: DiscoverySearchScreen(
+          repository: repository,
+          initialSeriesId: 'scp-series',
+          onOpenContent: (content) => opened = content,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('已覆盖 0 / 1 个系列'), findsOneWidget);
+    await tester.enterText(
+      find.byType(TextField),
+      'https://scp-wiki-cn.wikidot.com/scp-173',
+    );
+    await tester.pumpAndSettle();
+    await tester.runAsync(() async {
+      await tester.tap(find.text('SCP-173'));
+      // Drain the preference work in the same zone as the other history tests.
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pumpAndSettle();
+    expect(opened?.id, 'scp-173');
+    expect(opened?.kind, ContentKind.scp);
+  });
+
+  test('Wiki links route stories and enrich direct targets from the index', () {
+    final tale = ContentRef.create(
+      ContentKind.tale,
+      'ghost-story',
+      'Ghost story',
+    );
+    expect(
+      directDiscoveryTarget('www.scp-wiki.wikidot.com/ghost-story')?.kind,
+      ContentKind.tale,
+    );
+    expect(
+      discoveryMatches(
+        [tale],
+        'https://scp-wiki-cn.wikidot.com/ghost-story?foo=1#notes',
+      ).single.title,
+      'Ghost story',
+    );
+  });
 
   test(
     'directory branches, native numbers and story search share content routing',
