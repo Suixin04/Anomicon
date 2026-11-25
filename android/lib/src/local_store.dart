@@ -3,7 +3,9 @@ import 'dart:math' as math;
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'foundation.dart';
 import 'models.dart';
+import 'raisa.dart';
 
 class LocalStore {
   LocalStore._(this._prefs);
@@ -19,6 +21,8 @@ class LocalStore {
   static const _activeReadIdleCapMs = 90000;
 
   final SharedPreferences _prefs;
+  late final FoundationStore foundationStore = FoundationStore(_prefs);
+  late final RaisaStore raisaStore = RaisaStore(_prefs);
 
   AppSettings loadSettings() {
     final raw = _prefs.getString(_settingsKey);

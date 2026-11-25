@@ -698,6 +698,7 @@ double readingProgressPercent(ReadingHistoryEntry entry) {
 ResearchProgress deriveResearchProgress(
   List<ResearchActivitySegment> segments, {
   int? now,
+  int assessmentXp = 0,
 }) {
   final currentMs = normalizeResearchDuration(now ?? DateTime.now().millisecondsSinceEpoch);
   final normalizedSegments = segments
@@ -746,7 +747,7 @@ ResearchProgress deriveResearchProgress(
     });
   final researchedContentCount = contents.where((item) => item.researched).length;
   final experience = math.min(
-    creditedActiveMs ~/ researchMinuteMs + researchedContentCount * researchedContentReward,
+    creditedActiveMs ~/ researchMinuteMs + researchedContentCount * researchedContentReward + assessmentXp,
     0x7fffffff,
   );
   final level = researchLevelForExperience(experience);
